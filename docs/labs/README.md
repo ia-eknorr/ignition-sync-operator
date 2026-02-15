@@ -23,7 +23,7 @@ The automated functional tests assert pass/fail on specific conditions. These la
 | `jq` | 1.7+ | `brew install jq` |
 | `curl` | any | pre-installed |
 
-**Resource requirements:** Docker Desktop should have at least 6 GB memory and 4 CPUs allocated. Ignition + operator + git server together need ~3 GB.
+**Resource requirements:** Docker Desktop should have at least 6 GB memory and 4 CPUs allocated. Ignition + operator together need ~3 GB.
 
 ## Lab Structure
 
@@ -72,6 +72,5 @@ export KIND_CLUSTER=ignition-sync-lab
 export OPERATOR_IMG=ignition-sync-operator:lab
 export OPERATOR_NS=ignition-sync-operator-system
 export LAB_NS=lab
-export GIT_SERVER_HOST=test-git-server.${LAB_NS}.svc.cluster.local
-export GIT_REPO_URL=git://${GIT_SERVER_HOST}/test-repo.git
+export GIT_REPO_URL=https://github.com/ia-eknorr/test-ignition-project.git
 ```

@@ -94,6 +94,11 @@ spec:
   git:
     repo: "${GIT_REPO_URL}"
     ref: "main"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: missing-secret
@@ -202,20 +207,26 @@ metadata:
   name: test-sync-badrepo
 spec:
   git:
-    repo: "git://test-git-server.${TEST_NAMESPACE}.svc.cluster.local/nonexistent.git"
+    repo: "https://github.com/ia-eknorr/nonexistent-repo-does-not-exist.git"
     ref: "main"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
       key: apiKey
 EOF
 
-# Wait for RepoCloned=False
-wait_for_typed_condition "ignitionsync/test-sync-badrepo" "RepoCloned" "False" 60
-log_pass "RepoCloned=False for bad repo"
+# Wait for repoCloneStatus=Error (clone to nonexistent repo takes time over network)
+wait_for_condition "ignitionsync/test-sync-badrepo" '{.status.repoCloneStatus}' "Error" 90
+log_pass "repoCloneStatus is Error for bad repo"
 
-clone_status=$(kubectl_json "ignitionsync/test-sync-badrepo" '{.status.repoCloneStatus}')
-assert_eq "Error" "$clone_status" "repoCloneStatus is Error"
+repo_cloned=$(kubectl_json "ignitionsync/test-sync-badrepo" \
+    '{.status.conditions[?(@.type=="RepoCloned")].status}')
+assert_eq "False" "$repo_cloned" "RepoCloned=False for bad repo"
 
 # Verify controller still running
 ctrl_phase=$($KUBECTL get pods -n "$controller_ns" -l control-plane=controller-manager \
@@ -269,22 +280,27 @@ metadata:
 spec:
   git:
     repo: "${GIT_REPO_URL}"
-    ref: "v1.0.0"
+    ref: "0.1.0"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
       key: apiKey
 EOF
 
-# Wait for clone at v1
+# Wait for clone at 0.1.0
 wait_for_typed_condition "ignitionsync/test-sync-ref" "RepoCloned" "True" 90
 commit_v1=$(kubectl_json "ignitionsync/test-sync-ref" '{.status.lastSyncCommit}')
-assert_not_empty "$commit_v1" "v1 commit recorded"
-log_info "v1 commit: $commit_v1"
+assert_not_empty "$commit_v1" "0.1.0 commit recorded"
+log_info "0.1.0 commit: $commit_v1"
 
-# Patch to v2
+# Patch to 0.2.0
 $KUBECTL patch ignitionsync test-sync-ref -n "$TEST_NAMESPACE" \
-    --type=merge -p '{"spec":{"git":{"ref":"v2.0.0"}}}'
+    --type=merge -p '{"spec":{"git":{"ref":"0.2.0"}}}'
 
 # Wait for commit to change
 commit_v2=$(wait_for_change "ignitionsync/test-sync-ref" '{.status.lastSyncCommit}' "$commit_v1" 90)
@@ -339,7 +355,12 @@ metadata:
 spec:
   git:
     repo: "${GIT_REPO_URL}"
-    ref: "v1.0.0"
+    ref: "0.1.0"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
@@ -352,7 +373,12 @@ metadata:
 spec:
   git:
     repo: "${GIT_REPO_URL}"
-    ref: "v2.0.0"
+    ref: "0.2.0"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
@@ -385,6 +411,27 @@ assert_eq "Cloned" "$b_status" "test-multi-b unaffected by test-multi-a deletion
 # Clean up
 $KUBECTL delete ignitionsync test-multi-b -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
 wait_for_deletion ignitionsync test-multi-b 30 2>/dev/null || true
+
+# ────────────────────────────────────────────────────────────────────
+# Test 2.11: SSH Auth Clone
+# ────────────────────────────────────────────────────────────────────
+log_test "2.11: SSH Auth Clone"
+
+apply_fixture "test-cr-ssh.yaml"
+
+wait_for_typed_condition "ignitionsync/test-sync-ssh" "RepoCloned" "True" 90
+log_pass "RepoCloned=True via SSH auth"
+
+ssh_commit=$(kubectl_json "ignitionsync/test-sync-ssh" '{.status.lastSyncCommit}')
+assert_not_empty "$ssh_commit" "SSH clone has lastSyncCommit"
+
+ssh_ref=$(kubectl_json "ignitionsync/test-sync-ssh" '{.status.lastSyncRef}')
+assert_eq "main" "$ssh_ref" "SSH clone ref is main"
+
+# Clean up
+$KUBECTL delete ignitionsync test-sync-ssh -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
+wait_for_deletion ignitionsync test-sync-ssh 30 2>/dev/null || true
+sleep 2
 
 # ────────────────────────────────────────────────────────────────────
 # Phase cleanup & summary

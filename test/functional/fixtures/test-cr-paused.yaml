@@ -7,6 +7,11 @@ spec:
   git:
     repo: "${GIT_REPO_URL}"
     ref: "main"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key

@@ -308,8 +308,13 @@ metadata:
   name: orphan-sync
 spec:
   git:
-    repo: "git://test-git-server.lab.svc.cluster.local/test-repo.git"
+    repo: "https://github.com/ia-eknorr/test-ignition-project.git"
     ref: "main"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
@@ -411,8 +416,13 @@ metadata:
   name: isolated-sync
 spec:
   git:
-    repo: "git://test-git-server.lab.svc.cluster.local/test-repo.git"
-    ref: "v1.0.0"
+    repo: "https://github.com/ia-eknorr/test-ignition-project.git"
+    ref: "0.1.0"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key

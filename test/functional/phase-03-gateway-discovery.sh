@@ -133,6 +133,11 @@ spec:
   git:
     repo: "${GIT_REPO_URL}"
     ref: "main"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
@@ -321,9 +326,8 @@ assert_eq "False" "$all_synced" "AllGatewaysSynced=False when one gateway has Er
 log_test "3.7: Ready Condition (Full Stack)"
 
 # RepoCloned=True + AllGatewaysSynced=False → Ready=False
-repo_cloned=$(kubectl_json "ignitionsync/test-sync" \
-    '{.status.conditions[?(@.type=="RepoCloned")].status}')
-assert_eq "True" "$repo_cloned" "RepoCloned=True"
+wait_for_typed_condition "ignitionsync/test-sync" "RepoCloned" "True" 30
+log_pass "RepoCloned=True"
 
 ready_status=$(kubectl_json "ignitionsync/test-sync" \
     '{.status.conditions[?(@.type=="Ready")].status}')

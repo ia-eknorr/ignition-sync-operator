@@ -31,8 +31,8 @@ FIXTURES_DIR="${SCRIPT_DIR}/fixtures"
 TEST_NAMESPACE="${TEST_NAMESPACE:-func-test}"
 KIND_CLUSTER="${KIND_CLUSTER:-ignition-sync-func-test}"
 KUBECTL="${KUBECTL:-kubectl}"
-GIT_SERVER_HOST="test-git-server.${TEST_NAMESPACE}.svc.cluster.local"
-GIT_REPO_URL="git://${GIT_SERVER_HOST}/test-repo.git"
+GIT_REPO_URL="${GIT_REPO_URL:-https://github.com/ia-eknorr/test-ignition-project.git}"
+GIT_REPO_URL_SSH="${GIT_REPO_URL_SSH:-git@github.com:ia-eknorr/test-ignition-project.git}"
 
 # ── Logging ─────────────────────────────────────────────────────────
 log_phase() {
@@ -333,7 +333,7 @@ apply_fixture() {
     sed \
         -e "s|\${NAMESPACE}|${TEST_NAMESPACE}|g" \
         -e "s|\${GIT_REPO_URL}|${GIT_REPO_URL}|g" \
-        -e "s|\${GIT_SERVER_HOST}|${GIT_SERVER_HOST}|g" \
+        -e "s|\${GIT_REPO_URL_SSH}|${GIT_REPO_URL_SSH}|g" \
         "$filepath" | $KUBECTL apply -n "$TEST_NAMESPACE" -f - "$@"
 }
 
@@ -347,7 +347,7 @@ delete_fixture() {
     sed \
         -e "s|\${NAMESPACE}|${TEST_NAMESPACE}|g" \
         -e "s|\${GIT_REPO_URL}|${GIT_REPO_URL}|g" \
-        -e "s|\${GIT_SERVER_HOST}|${GIT_SERVER_HOST}|g" \
+        -e "s|\${GIT_REPO_URL_SSH}|${GIT_REPO_URL_SSH}|g" \
         "$filepath" | $KUBECTL delete -n "$TEST_NAMESPACE" --ignore-not-found -f - 2>/dev/null || true
 }
 

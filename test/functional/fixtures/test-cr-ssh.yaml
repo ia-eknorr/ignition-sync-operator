@@ -1,16 +1,16 @@
 apiVersion: sync.ignition.io/v1alpha1
 kind: IgnitionSync
 metadata:
-  name: test-sync
+  name: test-sync-ssh
 spec:
   git:
-    repo: "${GIT_REPO_URL}"
+    repo: "${GIT_REPO_URL_SSH}"
     ref: "main"
     auth:
-      token:
+      sshKey:
         secretRef:
-          name: git-token-secret
-          key: token
+          name: git-ssh-secret
+          key: ssh-privatekey
   gateway:
     apiKeySecretRef:
       name: ignition-api-key

@@ -61,7 +61,7 @@ kubectl delete ignitionsync invalid-test -n lab --ignore-not-found
 ## Lab 2.2: Create First IgnitionSync CR
 
 ### Purpose
-Create a valid CR pointing to the in-cluster git server and watch the full reconciliation cycle.
+Create a valid CR pointing to the GitHub repo and watch the full reconciliation cycle.
 
 ### Steps
 
@@ -74,8 +74,13 @@ metadata:
   name: lab-sync
 spec:
   git:
-    repo: "git://test-git-server.lab.svc.cluster.local/test-repo.git"
+    repo: "https://github.com/ia-eknorr/test-ignition-project.git"
     ref: "main"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
@@ -228,7 +233,7 @@ The git clone wrote real files to the PVC in the correct Ignition project struct
 ## Lab 2.4: Ref Tracking — Tag Switch
 
 ### Purpose
-Verify the controller detects spec.git.ref changes and fetches the new ref. The git server has two commits tagged v1.0.0 (initial, 1 view) and v2.0.0 (second commit, 2 views).
+Verify the controller detects spec.git.ref changes and fetches the new ref. The repo has two commits tagged 0.1.0 (initial, 1 view) and 0.2.0 (second commit, 2 views).
 
 ### Steps
 
@@ -237,9 +242,9 @@ Verify the controller detects spec.git.ref changes and fetches the new ref. The 
 COMMIT_BEFORE=$(kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
 echo "Current commit: $COMMIT_BEFORE"
 
-# Switch to v1.0.0
+# Switch to 0.1.0
 kubectl patch ignitionsync lab-sync -n lab --type=merge \
-  -p '{"spec":{"git":{"ref":"v1.0.0"}}}'
+  -p '{"spec":{"git":{"ref":"0.1.0"}}}'
 
 # Watch for commit change
 kubectl get ignitionsync lab-sync -n lab -w
@@ -247,7 +252,7 @@ kubectl get ignitionsync lab-sync -n lab -w
 
 ### What to Verify
 
-1. **lastSyncRef updates** to `v1.0.0`:
+1. **lastSyncRef updates** to `0.1.0`:
    ```bash
    kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.lastSyncRef}'
    ```
@@ -255,7 +260,7 @@ kubectl get ignitionsync lab-sync -n lab -w
 2. **lastSyncCommit changes** to a different SHA:
    ```bash
    COMMIT_V1=$(kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
-   echo "v1 commit: $COMMIT_V1"
+   echo "0.1.0 commit: $COMMIT_V1"
    ```
 
 3. **PVC contents reflect v1** — only 1 view (no SecondView):
@@ -275,10 +280,10 @@ kubectl get ignitionsync lab-sync -n lab -w
    ```
    Expected: Only `MainView` directory (no `SecondView`).
 
-4. **Now switch to v2.0.0:**
+4. **Now switch to 0.2.0:**
    ```bash
    kubectl patch ignitionsync lab-sync -n lab --type=merge \
-     -p '{"spec":{"git":{"ref":"v2.0.0"}}}'
+     -p '{"spec":{"git":{"ref":"0.2.0"}}}'
    ```
 
 5. **Verify SecondView now appears:**
@@ -304,7 +309,7 @@ kubectl get ignitionsync lab-sync -n lab -w
    ```bash
    kubectl get configmap ignition-sync-metadata-lab-sync -n lab -o jsonpath='{.data.ref}'
    ```
-   Expected: `v2.0.0`
+   Expected: `0.2.0`
 
 ### Restore
 ```bash
@@ -330,8 +335,13 @@ metadata:
   name: bad-repo-test
 spec:
   git:
-    repo: "git://test-git-server.lab.svc.cluster.local/does-not-exist.git"
+    repo: "https://github.com/ia-eknorr/nonexistent-repo-does-not-exist.git"
     ref: "main"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
@@ -369,7 +379,7 @@ EOF
 5. **Fix the URL and verify recovery:**
    ```bash
    kubectl patch ignitionsync bad-repo-test -n lab --type=merge \
-     -p '{"spec":{"git":{"repo":"git://test-git-server.lab.svc.cluster.local/test-repo.git"}}}'
+     -p '{"spec":{"git":{"repo":"https://github.com/ia-eknorr/test-ignition-project.git"}}}'
    ```
    Wait ~30s, then:
    ```bash
@@ -400,8 +410,13 @@ metadata:
   name: missing-secret-test
 spec:
   git:
-    repo: "git://test-git-server.lab.svc.cluster.local/test-repo.git"
+    repo: "https://github.com/ia-eknorr/test-ignition-project.git"
     ref: "main"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: nonexistent-secret
@@ -460,8 +475,13 @@ metadata:
 spec:
   paused: true
   git:
-    repo: "git://test-git-server.lab.svc.cluster.local/test-repo.git"
+    repo: "https://github.com/ia-eknorr/test-ignition-project.git"
     ref: "main"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
@@ -516,8 +536,13 @@ metadata:
   name: cleanup-test
 spec:
   git:
-    repo: "git://test-git-server.lab.svc.cluster.local/test-repo.git"
+    repo: "https://github.com/ia-eknorr/test-ignition-project.git"
     ref: "main"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
@@ -589,8 +614,13 @@ metadata:
   name: multi-a
 spec:
   git:
-    repo: "git://test-git-server.lab.svc.cluster.local/test-repo.git"
-    ref: "v1.0.0"
+    repo: "https://github.com/ia-eknorr/test-ignition-project.git"
+    ref: "0.1.0"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
@@ -602,8 +632,13 @@ metadata:
   name: multi-b
 spec:
   git:
-    repo: "git://test-git-server.lab.svc.cluster.local/test-repo.git"
-    ref: "v2.0.0"
+    repo: "https://github.com/ia-eknorr/test-ignition-project.git"
+    ref: "0.2.0"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
@@ -620,7 +655,7 @@ sleep 45
    ```bash
    kubectl get ignitionsyncs -n lab
    ```
-   Expected: Both show `REF` (v1.0.0 / v2.0.0) and status fields populated.
+   Expected: Both show `REF` (0.1.0 / 0.2.0) and status fields populated.
 
 2. **Separate PVCs:**
    ```bash
@@ -664,7 +699,7 @@ Verify the controller handles rapid spec changes without getting confused or lea
 kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.repoCloneStatus}'
 
 # Flip refs rapidly
-for ref in v1.0.0 v2.0.0 main v1.0.0 v2.0.0 main; do
+for ref in 0.1.0 0.2.0 main 0.1.0 0.2.0 main; do
   kubectl patch ignitionsync lab-sync -n lab --type=merge \
     -p "{\"spec\":{\"git\":{\"ref\":\"$ref\"}}}"
   sleep 2

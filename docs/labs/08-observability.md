@@ -161,8 +161,13 @@ metadata:
   name: event-test
 spec:
   git:
-    repo: "git://test-git-server.lab.svc.cluster.local/nonexistent.git"
+    repo: "https://github.com/ia-eknorr/nonexistent-repo-does-not-exist.git"
     ref: "main"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
@@ -176,7 +181,7 @@ kubectl get events -n lab --field-selector involvedObject.name=event-test --sort
 
 # Fix it
 kubectl patch ignitionsync event-test -n lab --type=merge \
-  -p '{"spec":{"git":{"repo":"git://test-git-server.lab.svc.cluster.local/test-repo.git"}}}'
+  -p '{"spec":{"git":{"repo":"https://github.com/ia-eknorr/test-ignition-project.git"}}}'
 
 sleep 30
 
@@ -338,13 +343,16 @@ kubectl logs ignition-0 -n lab -c sync-agent --tail=20 2>/dev/null || \
 Simulate a real debugging scenario: something breaks, and we use only observability tools (no code reading) to diagnose it.
 
 ### Scenario
-Break the git server, observe the operator's response, then fix it.
+Point the CR at a bad repo URL, observe the operator's response, then fix it.
+
+> **Note:** Since we use a real GitHub repo, we simulate a git failure by switching the CR to a nonexistent repo URL, then fixing it back.
 
 ### Steps
 
 ```bash
-# Break the git server
-kubectl delete pod test-git-server -n lab
+# Break the git connection by pointing to a nonexistent repo
+kubectl patch ignitionsync lab-sync -n lab --type=merge \
+  -p '{"spec":{"git":{"repo":"https://github.com/ia-eknorr/nonexistent-repo-does-not-exist.git"}}}'
 
 # Watch the operator's response
 echo "=== Events ==="
@@ -360,9 +368,9 @@ kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manage
   jq '{ts: .ts, msg: .msg, error: .error}' 2>/dev/null || \
   kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manager --tail=10
 
-# Fix it — redeploy git server
-kubectl apply -n lab -f test/functional/fixtures/git-server.yaml
-kubectl wait --for=condition=Ready pod/test-git-server -n lab --timeout=120s
+# Fix it — restore the correct repo URL
+kubectl patch ignitionsync lab-sync -n lab --type=merge \
+  -p '{"spec":{"git":{"repo":"https://github.com/ia-eknorr/test-ignition-project.git"}}}'
 
 sleep 30
 
@@ -373,10 +381,10 @@ kill $WATCH_PID 2>/dev/null || true
 ```
 
 ### What to Verify
-1. **During outage:** Events and conditions clearly indicate the problem (git clone failed)
+1. **During outage:** Events and conditions clearly indicate the problem (git clone failed for nonexistent repo)
 2. **Logs:** Error messages include enough context (repo URL, error details) to diagnose
 3. **After recovery:** Conditions return to healthy state, events show recovery
-4. **No manual intervention needed** beyond fixing the root cause (git server)
+4. **No manual intervention needed** beyond fixing the root cause (repo URL)
 
 ---
 
