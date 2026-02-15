@@ -1,0 +1,582 @@
+# Lab 03A — SyncProfile CRD
+
+## Objective
+
+Validate the SyncProfile CRD: installation, validation, the 3-tier config precedence model (IgnitionSync → SyncProfile → pod annotation), backward compatibility with 2-tier mode, and graceful degradation on profile deletion. This lab confirms the SyncProfile abstraction works correctly before the agent (Phase 5) relies on it for file routing.
+
+**Prerequisite:** Complete [00 — Environment Setup](00-environment-setup.md) and [02 — Controller Core](02-controller-core.md).
+
+---
+
+## Lab 3A.1: CRD Smoke Test
+
+### Purpose
+Verify the SyncProfile CRD is installed with expected schema, short names, and print columns.
+
+### Steps
+
+```bash
+# Verify CRD exists
+kubectl get crd syncprofiles.sync.ignition.io -o yaml | head -30
+
+# Verify short name
+kubectl get sp -n lab
+
+# Verify print columns show in kubectl output
+kubectl get syncprofiles -n lab
+```
+
+### Expected Output
+- Short name `sp` works (empty list is fine)
+- Column headers include: `NAME`, `MAPPINGS`, `MODE`, `GATEWAYS`, `ACCEPTED`, `AGE`
+
+---
+
+## Lab 3A.2: Create Valid SyncProfile
+
+### Purpose
+Create a valid SyncProfile and verify the controller sets the `Accepted=True` condition.
+
+### Steps
+
+```bash
+cat <<EOF | kubectl apply -n lab -f -
+apiVersion: sync.ignition.io/v1alpha1
+kind: SyncProfile
+metadata:
+  name: lab-site-profile
+spec:
+  mappings:
+    - source: "services/site/projects"
+      destination: "projects"
+    - source: "services/site/config/resources/core"
+      destination: "config/resources/core"
+    - source: "shared/external-resources"
+      destination: "config/resources/external"
+  deploymentMode:
+    name: "prd-cloud"
+    source: "services/site/overlays/prd-cloud"
+  excludePatterns:
+    - "**/tag-*/MQTT Engine/"
+  syncPeriod: 30
+EOF
+```
+
+### What to Verify
+
+1. **Accepted=True** (within ~5s):
+   ```bash
+   kubectl get syncprofile lab-site-profile -n lab \
+     -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}'
+   ```
+   Expected: `True`
+
+2. **observedGeneration matches**:
+   ```bash
+   kubectl get syncprofile lab-site-profile -n lab \
+     -o jsonpath='{.status.observedGeneration}'
+   ```
+   Expected: `1`
+
+3. **kubectl get shows columns**:
+   ```bash
+   kubectl get sp -n lab
+   ```
+   Expected: Row showing `lab-site-profile` with Mode=`prd-cloud`, Accepted=`True`
+
+---
+
+## Lab 3A.3: Invalid SyncProfile — Path Traversal
+
+### Purpose
+Verify that SyncProfile with path traversal (`..`) is rejected with `Accepted=False`.
+
+### Steps
+
+```bash
+cat <<EOF | kubectl apply -n lab -f -
+apiVersion: sync.ignition.io/v1alpha1
+kind: SyncProfile
+metadata:
+  name: bad-traversal
+spec:
+  mappings:
+    - source: "../../../etc/passwd"
+      destination: "config"
+EOF
+```
+
+### What to Verify
+
+1. **Accepted=False**:
+   ```bash
+   kubectl get syncprofile bad-traversal -n lab \
+     -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}'
+   ```
+   Expected: `False`
+
+2. **Reason contains "traversal"**:
+   ```bash
+   kubectl get syncprofile bad-traversal -n lab \
+     -o jsonpath='{.status.conditions[?(@.type=="Accepted")].message}'
+   ```
+   Expected: Message mentions path traversal not allowed.
+
+### Cleanup
+```bash
+kubectl delete syncprofile bad-traversal -n lab
+```
+
+---
+
+## Lab 3A.4: Invalid SyncProfile — Absolute Path
+
+### Purpose
+Verify absolute paths in mappings are rejected.
+
+### Steps
+
+```bash
+cat <<EOF | kubectl apply -n lab -f -
+apiVersion: sync.ignition.io/v1alpha1
+kind: SyncProfile
+metadata:
+  name: bad-absolute
+spec:
+  mappings:
+    - source: "/etc/passwd"
+      destination: "config"
+EOF
+```
+
+### What to Verify
+
+```bash
+kubectl get syncprofile bad-absolute -n lab \
+  -o jsonpath='{.status.conditions[?(@.type=="Accepted")]}'  | jq .
+```
+Expected: `status: "False"`, message mentions absolute paths.
+
+### Cleanup
+```bash
+kubectl delete syncprofile bad-absolute -n lab
+```
+
+---
+
+## Lab 3A.5: Pod References SyncProfile (3-Tier Mode)
+
+### Purpose
+Verify that a pod with `ignition-sync.io/sync-profile` annotation is correctly associated with the referenced SyncProfile, and the profile's `gatewayCount` status is updated.
+
+### Steps
+
+```bash
+# Ensure the IgnitionSync CR exists (from Lab 02)
+cat <<EOF | kubectl apply -n lab -f -
+apiVersion: sync.ignition.io/v1alpha1
+kind: IgnitionSync
+metadata:
+  name: lab-sync
+spec:
+  git:
+    repo: "git://test-git-server.lab.svc.cluster.local/test-repo.git"
+    ref: "main"
+  gateway:
+    apiKeySecretRef:
+      name: ignition-api-key
+      key: apiKey
+EOF
+
+# Wait for clone
+sleep 30
+
+# Create a pod with sync-profile annotation
+cat <<EOF | kubectl apply -n lab -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gateway-profile-test
+  labels:
+    app.kubernetes.io/name: gateway-profile-test
+  annotations:
+    ignition-sync.io/inject: "true"
+    ignition-sync.io/cr-name: "lab-sync"
+    ignition-sync.io/sync-profile: "lab-site-profile"
+    ignition-sync.io/gateway-name: "profile-gw"
+spec:
+  containers:
+    - name: ignition
+      image: registry.k8s.io/pause:3.9
+      imagePullPolicy: IfNotPresent
+EOF
+```
+
+### What to Verify
+
+1. **Gateway discovered by IgnitionSync controller**:
+   ```bash
+   kubectl get ignitionsync lab-sync -n lab \
+     -o jsonpath='{.status.discoveredGateways[?(@.name=="profile-gw")].name}'
+   ```
+   Expected: `profile-gw`
+
+2. **SyncProfile gatewayCount updated**:
+   ```bash
+   kubectl get syncprofile lab-site-profile -n lab \
+     -o jsonpath='{.status.gatewayCount}'
+   ```
+   Expected: `1` (or greater, if other pods reference it)
+
+### Cleanup
+```bash
+kubectl delete pod gateway-profile-test -n lab
+```
+
+---
+
+## Lab 3A.6: Pod Without SyncProfile (2-Tier Backward Compatibility)
+
+### Purpose
+Verify that a pod without `sync-profile` annotation still works in 2-tier mode using the `service-path` annotation.
+
+### Steps
+
+```bash
+# Create a pod with service-path but NO sync-profile
+cat <<EOF | kubectl apply -n lab -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gateway-2tier-test
+  labels:
+    app.kubernetes.io/name: gateway-2tier-test
+  annotations:
+    ignition-sync.io/inject: "true"
+    ignition-sync.io/cr-name: "lab-sync"
+    ignition-sync.io/service-path: "services/gateway"
+    ignition-sync.io/gateway-name: "two-tier-gw"
+spec:
+  containers:
+    - name: ignition
+      image: registry.k8s.io/pause:3.9
+      imagePullPolicy: IfNotPresent
+EOF
+```
+
+### What to Verify
+
+1. **Gateway discovered**:
+   ```bash
+   kubectl get ignitionsync lab-sync -n lab \
+     -o jsonpath='{.status.discoveredGateways[?(@.name=="two-tier-gw")].name}'
+   ```
+   Expected: `two-tier-gw`
+
+2. **servicePath populated from annotation**:
+   ```bash
+   kubectl get ignitionsync lab-sync -n lab \
+     -o jsonpath='{.status.discoveredGateways[?(@.name=="two-tier-gw")].servicePath}'
+   ```
+   Expected: `services/gateway`
+
+3. **No errors in operator logs**:
+   ```bash
+   kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manager --tail=20 | grep -i error
+   ```
+   Expected: No errors related to missing sync-profile.
+
+### Cleanup
+```bash
+kubectl delete pod gateway-2tier-test -n lab
+```
+
+---
+
+## Lab 3A.7: Multiple Gateways Share One Profile
+
+### Purpose
+Verify that multiple pods can reference the same SyncProfile and the `gatewayCount` reflects the total.
+
+### Steps
+
+```bash
+# Create an area profile
+cat <<EOF | kubectl apply -n lab -f -
+apiVersion: sync.ignition.io/v1alpha1
+kind: SyncProfile
+metadata:
+  name: lab-area-profile
+spec:
+  mappings:
+    - source: "services/area/projects"
+      destination: "projects"
+    - source: "services/area/config/resources/core"
+      destination: "config/resources/core"
+EOF
+
+# Create 3 pods referencing it
+for i in 1 2 3; do
+cat <<EOF | kubectl apply -n lab -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gateway-area-${i}
+  labels:
+    app.kubernetes.io/name: gateway-area-${i}
+  annotations:
+    ignition-sync.io/inject: "true"
+    ignition-sync.io/cr-name: "lab-sync"
+    ignition-sync.io/sync-profile: "lab-area-profile"
+    ignition-sync.io/gateway-name: "area${i}"
+spec:
+  containers:
+    - name: ignition
+      image: registry.k8s.io/pause:3.9
+      imagePullPolicy: IfNotPresent
+EOF
+done
+
+sleep 15
+```
+
+### What to Verify
+
+1. **All 3 gateways discovered**:
+   ```bash
+   kubectl get ignitionsync lab-sync -n lab \
+     -o json | jq '[.status.discoveredGateways[].name] | sort'
+   ```
+   Expected: List includes `area1`, `area2`, `area3`
+
+2. **Profile gatewayCount is 3**:
+   ```bash
+   kubectl get syncprofile lab-area-profile -n lab \
+     -o jsonpath='{.status.gatewayCount}'
+   ```
+   Expected: `3`
+
+### Cleanup
+```bash
+kubectl delete pod gateway-area-1 gateway-area-2 gateway-area-3 -n lab
+```
+
+---
+
+## Lab 3A.8: Profile Update Triggers Re-Reconcile
+
+### Purpose
+Verify that updating a SyncProfile triggers the IgnitionSync controller to re-reconcile affected gateways.
+
+### Steps
+
+```bash
+# Create a pod using lab-site-profile
+cat <<EOF | kubectl apply -n lab -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gateway-update-test
+  labels:
+    app.kubernetes.io/name: gateway-update-test
+  annotations:
+    ignition-sync.io/inject: "true"
+    ignition-sync.io/cr-name: "lab-sync"
+    ignition-sync.io/sync-profile: "lab-site-profile"
+    ignition-sync.io/gateway-name: "update-gw"
+spec:
+  containers:
+    - name: ignition
+      image: registry.k8s.io/pause:3.9
+      imagePullPolicy: IfNotPresent
+EOF
+
+sleep 10
+
+# Update the profile — add a new mapping
+kubectl patch syncprofile lab-site-profile -n lab --type=merge \
+  -p '{"spec":{"mappings":[{"source":"services/site/projects","destination":"projects"},{"source":"services/site/config/resources/core","destination":"config/resources/core"},{"source":"shared/external-resources","destination":"config/resources/external"},{"source":"shared/new-mapping","destination":"new-dest"}]}}'
+```
+
+### What to Verify
+
+1. **Profile still Accepted=True**:
+   ```bash
+   kubectl get syncprofile lab-site-profile -n lab \
+     -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}'
+   ```
+   Expected: `True`
+
+2. **Operator logs show re-reconcile** triggered by profile change:
+   ```bash
+   kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manager --tail=20 | grep -i "reconcil"
+   ```
+   Expected: Recent reconciliation log lines for `lab-sync`
+
+### Cleanup
+```bash
+kubectl delete pod gateway-update-test -n lab
+```
+
+---
+
+## Lab 3A.9: Profile Deletion — Graceful Degradation
+
+### Purpose
+Verify that deleting a SyncProfile referenced by pods triggers a warning but doesn't crash the controller or break existing gateways.
+
+### Steps
+
+```bash
+# Create a temporary profile
+cat <<EOF | kubectl apply -n lab -f -
+apiVersion: sync.ignition.io/v1alpha1
+kind: SyncProfile
+metadata:
+  name: temp-profile
+spec:
+  mappings:
+    - source: "services/temp"
+      destination: "temp"
+EOF
+
+# Create a pod referencing it
+cat <<EOF | kubectl apply -n lab -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gateway-temp
+  labels:
+    app.kubernetes.io/name: gateway-temp
+  annotations:
+    ignition-sync.io/inject: "true"
+    ignition-sync.io/cr-name: "lab-sync"
+    ignition-sync.io/sync-profile: "temp-profile"
+    ignition-sync.io/gateway-name: "temp-gw"
+spec:
+  containers:
+    - name: ignition
+      image: registry.k8s.io/pause:3.9
+      imagePullPolicy: IfNotPresent
+EOF
+
+sleep 10
+
+# Delete the profile
+kubectl delete syncprofile temp-profile -n lab
+sleep 10
+```
+
+### What to Verify
+
+1. **Controller still running**:
+   ```bash
+   kubectl get pods -n ignition-sync-operator-system \
+     -o jsonpath='{.items[0].status.phase}'
+   ```
+   Expected: `Running`
+
+2. **Warning logged** about missing profile:
+   ```bash
+   kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manager --tail=30 | grep -i "profile\|warning"
+   ```
+   Expected: Warning about profile `temp-profile` not found.
+
+3. **IgnitionSync CR still healthy**:
+   ```bash
+   kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.repoCloneStatus}'
+   ```
+   Expected: Still `Cloned`
+
+### Cleanup
+```bash
+kubectl delete pod gateway-temp -n lab
+```
+
+---
+
+## Lab 3A.10: SyncProfile with Paused=true
+
+### Purpose
+Verify that a paused profile is still accepted but signals gateways to halt sync.
+
+### Steps
+
+```bash
+cat <<EOF | kubectl apply -n lab -f -
+apiVersion: sync.ignition.io/v1alpha1
+kind: SyncProfile
+metadata:
+  name: paused-profile
+spec:
+  paused: true
+  mappings:
+    - source: "services/gateway"
+      destination: "."
+EOF
+```
+
+### What to Verify
+
+1. **Accepted=True** (paused doesn't affect validation):
+   ```bash
+   kubectl get syncprofile paused-profile -n lab \
+     -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}'
+   ```
+   Expected: `True`
+
+2. **Paused field preserved**:
+   ```bash
+   kubectl get syncprofile paused-profile -n lab \
+     -o jsonpath='{.spec.paused}'
+   ```
+   Expected: `true`
+
+### Cleanup
+```bash
+kubectl delete syncprofile paused-profile -n lab
+```
+
+---
+
+## Lab 3A.11: Ignition Gateway Health Check
+
+### Purpose
+Confirm nothing in this phase affected the Ignition gateway.
+
+### Steps
+
+```bash
+# Gateway pod health
+kubectl get pod -n lab -l app.kubernetes.io/name=ignition -o json | jq '{
+  phase: .items[0].status.phase,
+  ready: (.items[0].status.conditions[] | select(.type=="Ready") | .status),
+  restarts: .items[0].status.containerStatuses[0].restartCount
+}'
+
+# Gateway HTTP health
+curl -s http://localhost:8088/StatusPing
+```
+
+### Expected
+- Pod Running, Ready, 0 restarts
+- StatusPing returns `200`
+
+---
+
+## Phase 3A Completion Checklist
+
+| Check | Status |
+|-------|--------|
+| SyncProfile CRD installed with short name `sp` and print columns | |
+| Valid SyncProfile → Accepted=True, observedGeneration set | |
+| Path traversal (`..`) → Accepted=False | |
+| Absolute paths → Accepted=False | |
+| Pod with `sync-profile` annotation discovered by controller | |
+| Pod without `sync-profile` works in 2-tier mode | |
+| Multiple pods share one profile, gatewayCount accurate | |
+| Profile update triggers re-reconcile of affected gateways | |
+| Profile deletion → graceful degradation, warning logged | |
+| Paused profile → still Accepted, paused flag preserved | |
+| Ignition gateway unaffected | |
+| Operator pod has 0 restarts and no ERROR logs | |
