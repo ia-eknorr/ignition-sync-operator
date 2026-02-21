@@ -53,6 +53,9 @@ const (
 
 	// Environment variable for operator-level default agent image.
 	envDefaultAgentImage = "DEFAULT_AGENT_IMAGE"
+
+	// annotationTrue is the canonical "true" value for boolean annotations.
+	annotationTrue = "true"
 )
 
 // PodInjector implements admission.Handler for sidecar injection.
@@ -71,7 +74,7 @@ func (p *PodInjector) Handle(ctx context.Context, req admission.Request) admissi
 	}
 
 	// Early return for non-annotated pods (~1ms, no network calls)
-	if pod.Annotations[synctypes.AnnotationInject] != "true" {
+	if pod.Annotations[synctypes.AnnotationInject] != annotationTrue {
 		return admission.Allowed("injection not requested")
 	}
 
@@ -191,7 +194,7 @@ func injectSidecar(pod *corev1.Pod, isync *syncv1alpha1.IgnitionSync) {
 	if isync.Spec.Gateway.Port == 0 {
 		gatewayPort = "8043"
 	}
-	gatewayTLS := "true"
+	gatewayTLS := annotationTrue
 	if isync.Spec.Gateway.TLS != nil && !*isync.Spec.Gateway.TLS {
 		gatewayTLS = "false"
 	}
@@ -279,7 +282,7 @@ func injectSidecar(pod *corev1.Pod, isync *syncv1alpha1.IgnitionSync) {
 	if pod.Annotations == nil {
 		pod.Annotations = make(map[string]string)
 	}
-	pod.Annotations[synctypes.AnnotationInjected] = "true"
+	pod.Annotations[synctypes.AnnotationInjected] = annotationTrue
 }
 
 // resolveAgentImage resolves the agent image using 3-tier priority:

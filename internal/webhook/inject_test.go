@@ -307,7 +307,7 @@ func TestInject_SSHAuth(t *testing.T) {
 	}
 
 	patched := injectDirect(t, pod, isync)
-	agent := findInitContainer(patched, agentContainerName)
+	agent := findInitContainer(patched)
 	if agent == nil {
 		t.Fatal("sync-agent not found")
 	}
@@ -330,7 +330,7 @@ func TestInject_TokenAuth(t *testing.T) {
 	}
 
 	patched := injectDirect(t, pod, isync)
-	agent := findInitContainer(patched, agentContainerName)
+	agent := findInitContainer(patched)
 	if agent == nil {
 		t.Fatal("sync-agent not found")
 	}
@@ -356,7 +356,7 @@ func TestInject_AgentImageOverrideViaAnnotation(t *testing.T) {
 	// Verify via direct injection — annotation image takes priority
 	patched := pod.DeepCopy()
 	injectSidecar(patched, isync)
-	agent := findInitContainer(patched, agentContainerName)
+	agent := findInitContainer(patched)
 	if agent == nil {
 		t.Fatal("sync-agent not found")
 	}
@@ -390,7 +390,7 @@ func TestInject_AgentResourcesFromCR(t *testing.T) {
 	}
 
 	patched := injectDirect(t, pod, isync)
-	agent := findInitContainer(patched, agentContainerName)
+	agent := findInitContainer(patched)
 	if agent == nil {
 		t.Fatal("sync-agent not found")
 	}
@@ -442,9 +442,9 @@ func assertAnnotation(t *testing.T, pod *corev1.Pod, key, value string) {
 	}
 }
 
-func findInitContainer(pod *corev1.Pod, name string) *corev1.Container {
+func findInitContainer(pod *corev1.Pod) *corev1.Container {
 	for i, c := range pod.Spec.InitContainers {
-		if c.Name == name {
+		if c.Name == agentContainerName {
 			return &pod.Spec.InitContainers[i]
 		}
 	}
