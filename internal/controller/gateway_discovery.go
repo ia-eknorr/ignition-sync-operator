@@ -90,12 +90,20 @@ func (r *IgnitionSyncReconciler) discoverGateways(ctx context.Context, isync *sy
 		// Get sync profile from annotation
 		syncProfile := pod.Annotations[synctypes.AnnotationSyncProfile]
 
+		// Detect missing sidecar: pod has inject annotation but no sync-agent container
+		syncStatus := synctypes.SyncStatusPending
+		if pod.Annotations[synctypes.AnnotationInject] == "true" && !hasSyncAgent(&pod) {
+			syncStatus = synctypes.SyncStatusMissingSidecar
+			r.Recorder.Eventf(isync, corev1.EventTypeWarning, "MissingSidecar",
+				"Pod %s has inject annotation but no sync-agent sidecar — webhook may have been unavailable during pod creation. Delete and recreate the pod.", pod.Name)
+		}
+
 		gateway := syncv1alpha1.DiscoveredGateway{
 			Name:        gatewayName,
 			Namespace:   pod.Namespace,
 			PodName:     pod.Name,
 			SyncProfile: syncProfile,
-			SyncStatus:  synctypes.SyncStatusPending,
+			SyncStatus:  syncStatus,
 		}
 
 		discovered = append(discovered, gateway)
@@ -103,6 +111,16 @@ func (r *IgnitionSyncReconciler) discoverGateways(ctx context.Context, isync *sy
 
 	log.Info("discovered gateways", "count", len(discovered))
 	return discovered, nil
+}
+
+// hasSyncAgent checks if a pod has the sync-agent sidecar container.
+func hasSyncAgent(pod *corev1.Pod) bool {
+	for _, c := range pod.Spec.InitContainers {
+		if c.Name == "sync-agent" {
+			return true
+		}
+	}
+	return false
 }
 
 // collectGatewayStatus reads the ConfigMap ignition-sync-status-{isync.Name} in isync.Namespace
@@ -174,9 +192,13 @@ func (r *IgnitionSyncReconciler) updateAllGatewaysSyncedCondition(ctx context.Co
 	}
 
 	syncedCount := 0
+	missingSidecarCount := 0
 	for _, gw := range isync.Status.DiscoveredGateways {
 		if gw.SyncStatus == synctypes.SyncStatusSynced {
 			syncedCount++
+		}
+		if gw.SyncStatus == synctypes.SyncStatusMissingSidecar {
+			missingSidecarCount++
 		}
 	}
 
@@ -186,8 +208,20 @@ func (r *IgnitionSyncReconciler) updateAllGatewaysSyncedCondition(ctx context.Co
 			conditions.ReasonSyncSucceeded, message)
 	} else {
 		message := fmt.Sprintf("%d/%d gateways synced", syncedCount, totalGateways)
+		if missingSidecarCount > 0 {
+			message = fmt.Sprintf("%d/%d gateways synced (%d missing sidecar)", syncedCount, totalGateways, missingSidecarCount)
+		}
 		r.setCondition(ctx, isync, conditions.TypeAllGatewaysSynced, metav1.ConditionFalse,
 			conditions.ReasonSyncInProgress, message)
+	}
+
+	// Update SidecarInjected condition
+	if missingSidecarCount > 0 {
+		r.setCondition(ctx, isync, conditions.TypeSidecarInjected, metav1.ConditionFalse,
+			conditions.ReasonSidecarMissing, fmt.Sprintf("%d gateway(s) missing sync-agent sidecar", missingSidecarCount))
+	} else {
+		r.setCondition(ctx, isync, conditions.TypeSidecarInjected, metav1.ConditionTrue,
+			conditions.ReasonSidecarPresent, "All gateways have sync-agent sidecar")
 	}
 }
 

@@ -114,6 +114,12 @@ func (a *Agent) Run(ctx context.Context) error {
 	a.HealthServer.MarkReady()
 	log.Info("initial sync complete, startup probe now passing")
 
+	// After the gateway finishes commissioning (first boot), re-sync files
+	// and trigger a scan. Ignition's commissioning can overwrite resources
+	// (e.g. security-properties) with defaults. This post-commission sync
+	// restores the git-sourced config.
+	go a.postCommissionSync(ctx, result.Commit, result.Ref)
+
 	// Start watcher in background.
 	go a.Watcher.Run(ctx)
 
@@ -127,6 +133,40 @@ func (a *Agent) Run(ctx context.Context) error {
 			log.Info("sync triggered")
 			a.handleSyncTrigger(ctx, gitURL, auth)
 		}
+	}
+}
+
+// postCommissionSync waits for the gateway to become responsive after first boot,
+// then forces a re-sync and scan. This is needed because Ignition's commissioning
+// process can overwrite config resources (e.g. security-properties) with defaults.
+// Since the agent syncs as a native sidecar BEFORE the gateway starts, the
+// commissioning defaults would otherwise shadow the git-sourced config.
+func (a *Agent) postCommissionSync(ctx context.Context, commit, ref string) {
+	log := logf.FromContext(ctx).WithName("post-commission")
+
+	// Poll until gateway port is responding. We can't use HealthCheck() here
+	// because it requires API token auth, and the commissioning defaults may
+	// have overwritten the security-properties that grant the token access.
+	// Instead, check for any HTTP response (even 401/403 means the gateway is up).
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(5 * time.Second):
+		}
+
+		if err := a.IgnitionAPI.PortCheck(); err != nil {
+			log.V(1).Info("gateway not ready yet", "error", err)
+			continue
+		}
+
+		log.Info("gateway responsive, running post-commission re-sync")
+		if err := a.syncOnce(ctx, commit, ref, false); err != nil {
+			log.Error(err, "post-commission sync failed")
+		} else {
+			log.Info("post-commission sync complete")
+		}
+		return
 	}
 }
 

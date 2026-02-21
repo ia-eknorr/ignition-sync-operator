@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -138,6 +139,39 @@ type GatewaySpec struct {
 }
 
 // ============================================================
+// Agent
+// ============================================================
+
+// AgentSpec configures the sync agent sidecar injected by the webhook.
+type AgentSpec struct {
+	// image configures the agent container image.
+	// +optional
+	Image AgentImageSpec `json:"image,omitempty"`
+
+	// resources configures the agent container resource requirements.
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+}
+
+// AgentImageSpec configures the agent container image.
+type AgentImageSpec struct {
+	// repository is the container image repository.
+	// +kubebuilder:default="ghcr.io/inductiveautomation/ignition-sync-agent"
+	// +optional
+	Repository string `json:"repository,omitempty"`
+
+	// tag is the container image tag.
+	// +kubebuilder:default="latest"
+	// +optional
+	Tag string `json:"tag,omitempty"`
+
+	// pullPolicy is the image pull policy.
+	// +kubebuilder:default="IfNotPresent"
+	// +optional
+	PullPolicy string `json:"pullPolicy,omitempty"`
+}
+
+// ============================================================
 // Top-Level Spec
 // ============================================================
 
@@ -159,6 +193,10 @@ type IgnitionSyncSpec struct {
 	// +kubebuilder:default={"**/.git/","**/.gitkeep","**/.resources/**"}
 	// +optional
 	ExcludePatterns []string `json:"excludePatterns,omitempty"`
+
+	// agent configures the sync agent sidecar injected by the mutating webhook.
+	// +optional
+	Agent AgentSpec `json:"agent,omitempty"`
 
 	// paused halts all sync operations when set to true.
 	// +optional
@@ -185,7 +223,7 @@ type DiscoveredGateway struct {
 	SyncProfile string `json:"syncProfile,omitempty"`
 
 	// syncStatus is the current sync state of this gateway.
-	// +kubebuilder:validation:Enum=Pending;Synced;Error
+	// +kubebuilder:validation:Enum=Pending;Synced;Error;MissingSidecar
 	// +optional
 	SyncStatus string `json:"syncStatus,omitempty"`
 

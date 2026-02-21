@@ -27,6 +27,9 @@ const (
 	// TypeAllGatewaysSynced indicates whether all discovered gateways have completed sync.
 	TypeAllGatewaysSynced = "AllGatewaysSynced"
 
+	// TypeSidecarInjected indicates whether all gateway pods have the sync-agent sidecar.
+	TypeSidecarInjected = "SidecarInjected"
+
 	// SyncProfile condition types
 
 	// TypeAccepted indicates whether the SyncProfile spec is valid.
@@ -44,4 +47,6 @@ const (
 	ReasonNoGateways          = "NoGatewaysDiscovered"
 	ReasonValidationPassed    = "ValidationPassed"
 	ReasonValidationFailed    = "ValidationFailed"
+	ReasonSidecarMissing      = "SidecarMissing"
+	ReasonSidecarPresent      = "SidecarPresent"
 )

@@ -126,6 +126,26 @@ func (c *Client) HealthCheck() error {
 	return fmt.Errorf("gateway returned HTTP %d", resp.StatusCode)
 }
 
+// PortCheck verifies the gateway HTTP port is responding (any status code).
+// Unlike HealthCheck, this does not require API token authentication.
+// Used for post-commission sync where security-properties may not yet grant token access.
+func (c *Client) PortCheck() error {
+	url := c.BaseURL + "/system/gwinfo"
+
+	resp, err := c.HTTPClient.Get(url)
+	if err != nil {
+		return fmt.Errorf("gateway port check: %w", err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+
+	// Any response means the gateway is up. 503 means still starting.
+	if resp.StatusCode == http.StatusServiceUnavailable {
+		return fmt.Errorf("gateway returned HTTP 503 (still starting)")
+	}
+	return nil
+}
+
 // setAuth adds the Ignition API key header to a request.
 func (c *Client) setAuth(req *http.Request) {
 	if c.APIKey != "" {

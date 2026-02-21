@@ -977,7 +977,8 @@ Set `TMPDIR=/tmp` env var so Go's `os.TempDir()` uses the writable emptyDir.
 ```yaml
 securityContext:
   runAsNonRoot: true
-  runAsUser: 65534      # distroless nonroot
+  # RunAsUser intentionally omitted — inherits pod-level UID (e.g., 2003
+  # for Ignition) so files on the shared data volume have correct ownership.
   readOnlyRootFilesystem: true
   allowPrivilegeEscalation: false
   capabilities:
@@ -986,7 +987,7 @@ securityContext:
     type: RuntimeDefault
 ```
 
-**UID mismatch note (Security M-1):** The agent runs as UID 65534. Ignition typically runs as UID 2003. Files written by the agent to `/ignition-data/` must be readable by Ignition. Use `fsGroup` on the pod security context, or ensure the agent writes files with permissions `0664` (group-readable). Add `agent.securityContext` to AgentSpec for user configurability.
+**UID inheritance note:** The agent omits `RunAsUser` so it inherits the pod-level UID set by the Ignition Helm chart (typically 2003). This means files written by the agent to the shared data volume are owned by the same UID as the gateway container — no `fsGroup` workaround or special file permissions needed.
 
 ---
 

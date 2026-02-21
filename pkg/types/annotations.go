@@ -55,13 +55,31 @@ const (
 	// AnnotationRequestedBy records the source of the webhook request (e.g., "argocd", "kargo", "github").
 	AnnotationRequestedBy = AnnotationPrefix + "/requested-by"
 
+	// Webhook injection annotations — set by the webhook on injected pods.
+
+	// AnnotationInjected is set by the webhook after successful injection for tracking.
+	AnnotationInjected = AnnotationPrefix + "/injected"
+
+	// AnnotationAgentImage overrides the agent image for a specific pod (debugging use).
+	// Format: "repo:tag" or "repo@sha256:digest"
+	AnnotationAgentImage = AnnotationPrefix + "/agent-image"
+
 	// Labels
 
 	// LabelCRName is used on owned resources (PVCs, ConfigMaps) to identify the parent CR.
 	LabelCRName = AnnotationPrefix + "/cr-name"
 
+	// LabelNamespaceInjection enables webhook injection for a namespace via namespaceSelector.
+	// Applied to namespaces: kubectl label namespace site1 ignition-sync.io/injection=enabled
+	LabelNamespaceInjection = AnnotationPrefix + "/injection"
+
 	// Finalizer
 
 	// Finalizer is added to IgnitionSync CRs to ensure cleanup on deletion.
 	Finalizer = AnnotationPrefix + "/finalizer"
+
+	// Sync status values for missing sidecar detection.
+
+	// SyncStatusMissingSidecar indicates the pod has the inject annotation but no agent container.
+	SyncStatusMissingSidecar = "MissingSidecar"
 )

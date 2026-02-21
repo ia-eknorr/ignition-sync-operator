@@ -52,6 +52,7 @@ Each phase doc follows this structure:
 | [07 — Sidecar Injection](07-sidecar-injection.md) | 7 | Mutating webhook, pod injection, git secret injection |
 | [08 — Helm Chart](08-helm-chart.md) | 8 | Operator helm install, values, upgrades |
 | [09 — Observability](09-observability.md) | 9 | Metrics, structured logging, events |
+| [10 — E2E Webhook Sync](10-e2e-webhook-sync.md) | 10 | Full e2e: webhook injection, file sync, API verification, re-sync |
 
 ## Phase Gate Rule
 

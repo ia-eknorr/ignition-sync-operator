@@ -1,14 +1,30 @@
+# -- Number of controller replicas. Only one replica holds the leader lock
+# at a time; additional replicas provide fast failover.
 replicaCount: 1
 
+# -- Controller container image configuration.
 image:
+  # -- Image repository for the controller manager.
   repository: ghcr.io/inductiveautomation/ignition-sync-operator
-  tag: ""  # defaults to appVersion
+  # -- Image tag. Defaults to the chart's appVersion if empty.
+  tag: ""
+  # -- Image pull policy (Always, IfNotPresent, Never).
   pullPolicy: IfNotPresent
 
+# -- Credentials for private container registries.
+# Example:
+#   imagePullSecrets:
+#     - name: my-registry-secret
 imagePullSecrets: []
+
+# -- Override the chart name used in resource names.
 nameOverride: ""
+# -- Override the full release name used in resource names.
 fullnameOverride: ""
 
+# -- CPU and memory resource requests/limits for the controller container.
+# The controller runs git ls-remote (no clone) and watches CRs, so resource
+# requirements are modest.
 resources:
   limits:
     cpu: 500m
@@ -17,21 +33,63 @@ resources:
     cpu: 10m
     memory: 64Mi
 
+# -- Leader election prevents multiple controller instances from reconciling
+# simultaneously. Disable only for single-replica development setups.
 leaderElection:
+  # -- Enable leader election for controller manager.
   enabled: true
 
+# -- Metrics endpoint configuration. The controller exposes Prometheus metrics
+# over HTTPS on the metrics service port.
 metrics:
+  # -- Enable the metrics Service.
   enabled: true
   service:
+    # -- Port the metrics service listens on.
     port: 8443
+    # -- Service type for the metrics endpoint.
     type: ClusterIP
 
+# -- Prometheus ServiceMonitor for automatic scrape target discovery.
+# Requires the prometheus-operator CRDs to be installed in the cluster.
 serviceMonitor:
+  # -- Create a ServiceMonitor resource.
   enabled: false
 
+# -- NetworkPolicy restricts ingress to the metrics port. Only allows traffic
+# from namespaces labeled `metrics: enabled`.
 networkPolicy:
+  # -- Create a NetworkPolicy for the controller.
   enabled: false
 
+# -- Mutating webhook for sidecar injection. When enabled, pods with annotation
+# `ignition-sync.io/inject: "true"` in labeled namespaces get the sync-agent
+# sidecar injected automatically.
+webhook:
+  # -- Enable the MutatingWebhookConfiguration and webhook Service.
+  enabled: true
+  # -- Webhook server port on the controller container.
+  port: 9443
+
+# -- cert-manager integration for webhook TLS certificates.
+# Requires cert-manager to be installed in the cluster.
+certManager:
+  # -- Create a self-signed Issuer and Certificate for webhook TLS.
+  enabled: false
+
+# -- Git webhook receiver for push-event-driven sync.
+webhookReceiver:
+  # -- Port for the inbound git webhook receiver. Set to 0 to disable.
+  port: 9444
+
+# -- Node selector labels for scheduling the controller pod.
+# Example:
+#   nodeSelector:
+#     kubernetes.io/os: linux
 nodeSelector: {}
+
+# -- Tolerations for scheduling the controller pod on tainted nodes.
 tolerations: []
+
+# -- Affinity rules for scheduling the controller pod.
 affinity: {}

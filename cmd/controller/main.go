@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	syncv1alpha1 "github.com/inductiveautomation/ignition-sync-operator/api/v1alpha1"
 	"github.com/inductiveautomation/ignition-sync-operator/internal/controller"
@@ -82,8 +83,8 @@ func main() {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
-	flag.IntVar(&webhookReceiverPort, "webhook-receiver-port", 9443,
-		"Port for the inbound webhook receiver. Set to 0 to disable.")
+	flag.IntVar(&webhookReceiverPort, "webhook-receiver-port", 9444,
+		"Port for the inbound webhook receiver (git push events). Set to 0 to disable.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -201,6 +202,14 @@ func main() {
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
+
+	// Register mutating webhook for pod injection
+	mgr.GetWebhookServer().Register("/mutate-v1-pod", &webhook.Admission{
+		Handler: &iswebhook.PodInjector{
+			Client:  mgr.GetClient(),
+			Decoder: admission.NewDecoder(mgr.GetScheme()),
+		},
+	})
 
 	// Register webhook receiver if port is set
 	if webhookReceiverPort > 0 {
