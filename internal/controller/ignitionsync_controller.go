@@ -280,6 +280,22 @@ func (r *IgnitionSyncReconciler) ensureMetadataConfigMap(ctx context.Context, is
 		"commit":  result.Commit,
 		"ref":     result.Ref,
 		"trigger": time.Now().UTC().Format(time.RFC3339),
+		"gitURL":  isync.Spec.Git.Repo,
+		"paused":  fmt.Sprintf("%t", isync.Spec.Paused),
+	}
+
+	// Include auth type so agent knows which credential file to use.
+	data["authType"] = resolveAuthType(isync.Spec.Git.Auth)
+
+	// Include exclude patterns as CSV.
+	if len(isync.Spec.ExcludePatterns) > 0 {
+		data["excludePatterns"] = joinCSV(isync.Spec.ExcludePatterns)
+	}
+
+	// Gateway connection info for agent's Ignition API calls.
+	data["gatewayPort"] = fmt.Sprintf("%d", isync.Spec.Gateway.Port)
+	if isync.Spec.Gateway.TLS != nil {
+		data["gatewayTLS"] = fmt.Sprintf("%t", *isync.Spec.Gateway.TLS)
 	}
 
 	err := r.Get(ctx, key, cm)
@@ -306,6 +322,35 @@ func (r *IgnitionSyncReconciler) ensureMetadataConfigMap(ctx context.Context, is
 
 	cm.Data = data
 	return r.Update(ctx, cm)
+}
+
+// resolveAuthType determines the auth type string from the git auth spec.
+func resolveAuthType(auth *syncv1alpha1.GitAuthSpec) string {
+	if auth == nil {
+		return "none"
+	}
+	if auth.SSHKey != nil {
+		return "ssh"
+	}
+	if auth.Token != nil {
+		return "token"
+	}
+	if auth.GitHubApp != nil {
+		return "githubApp"
+	}
+	return "none"
+}
+
+// joinCSV joins strings with commas.
+func joinCSV(items []string) string {
+	result := ""
+	for i, item := range items {
+		if i > 0 {
+			result += ","
+		}
+		result += item
+	}
+	return result
 }
 
 // setCondition sets a condition on the CR's status.

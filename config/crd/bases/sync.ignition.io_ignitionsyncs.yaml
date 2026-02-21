@@ -583,27 +583,6 @@ spec:
                         type: string
                     type: object
                 type: object
-              storage:
-                description: |-
-                  storage is deprecated — agent clones locally, no shared PVC needed.
-                  Retained for backward compatibility; has no effect.
-                properties:
-                  accessMode:
-                    default: ReadWriteMany
-                    description: accessMode is the PVC access mode.
-                    enum:
-                    - ReadWriteOnce
-                    - ReadWriteMany
-                    type: string
-                  size:
-                    default: 1Gi
-                    description: size is the PVC capacity request.
-                    type: string
-                  storageClassName:
-                    description: storageClassName selects the StorageClass. Empty
-                      string uses the cluster default.
-                    type: string
-                type: object
               validation:
                 description: validation configures pre-sync validation checks.
                 properties:

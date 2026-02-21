@@ -100,30 +100,6 @@ type TokenAuth struct {
 }
 
 // ============================================================
-// Storage (DEPRECATED — agent clones locally, no shared PVC)
-// ============================================================
-
-// StorageSpec is deprecated. The agent now clones the git repository
-// independently to a local emptyDir. No shared PVC is needed.
-// This type is retained for backward compatibility but has no effect.
-type StorageSpec struct {
-	// storageClassName selects the StorageClass. Empty string uses the cluster default.
-	// +optional
-	StorageClassName string `json:"storageClassName,omitempty"`
-
-	// size is the PVC capacity request.
-	// +kubebuilder:default="1Gi"
-	// +optional
-	Size string `json:"size,omitempty"`
-
-	// accessMode is the PVC access mode.
-	// +kubebuilder:default="ReadWriteMany"
-	// +kubebuilder:validation:Enum=ReadWriteOnce;ReadWriteMany
-	// +optional
-	AccessMode string `json:"accessMode,omitempty"`
-}
-
-// ============================================================
 // Webhook
 // ============================================================
 
@@ -542,11 +518,6 @@ type IgnitionSyncSpec struct {
 	// git configures the source repository.
 	// +kubebuilder:validation:Required
 	Git GitSpec `json:"git"`
-
-	// storage is deprecated — agent clones locally, no shared PVC needed.
-	// Retained for backward compatibility; has no effect.
-	// +optional
-	Storage StorageSpec `json:"storage,omitempty"`
 
 	// webhook configures the inbound webhook receiver.
 	// +optional

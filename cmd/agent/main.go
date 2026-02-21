@@ -1,32 +1,66 @@
-/*
-Copyright 2026.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package main
 
 import (
-	"fmt"
+	"context"
 	"os"
+	"os/signal"
+	"syscall"
+
+	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	syncv1alpha1 "github.com/inductiveautomation/ignition-sync-operator/api/v1alpha1"
+	"github.com/inductiveautomation/ignition-sync-operator/internal/agent"
 )
 
 func main() {
-	fmt.Println("ignition-sync-agent starting...")
-	// TODO: implement agent — see docs/architecture/06a-agent-development-plan.md
-	// Watches metadata ConfigMap for sync signals, clones repo to local emptyDir,
-	// builds staging from SyncProfile mappings, merges to /ignition-data/,
-	// triggers Ignition scan API, reports status via ConfigMap.
-	fmt.Println("agent not yet implemented")
-	os.Exit(0)
+	logf.SetLogger(zap.New(zap.UseDevMode(true)))
+	log := logf.Log.WithName("agent")
+
+	log.Info("ignition-sync-agent starting")
+
+	// Load configuration from environment.
+	cfg, err := agent.LoadConfig()
+	if err != nil {
+		log.Error(err, "failed to load config")
+		os.Exit(1)
+	}
+
+	// Build K8s client.
+	k8sClient, err := buildK8sClient()
+	if err != nil {
+		log.Error(err, "failed to build K8s client")
+		os.Exit(1)
+	}
+
+	// Create and run the agent.
+	a := agent.New(cfg, k8sClient)
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	if err := a.Run(logf.IntoContext(ctx, log)); err != nil {
+		log.Error(err, "agent exited with error")
+		os.Exit(1)
+	}
+
+	log.Info("agent shutdown complete")
+}
+
+func buildK8sClient() (client.Client, error) {
+	scheme := runtime.NewScheme()
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(syncv1alpha1.AddToScheme(scheme))
+
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	return client.New(config, client.Options{Scheme: scheme})
 }

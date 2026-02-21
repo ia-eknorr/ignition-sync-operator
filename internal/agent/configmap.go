@@ -1,0 +1,115 @@
+package agent
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	synctypes "github.com/inductiveautomation/ignition-sync-operator/pkg/types"
+)
+
+// MetadataConfigMapName returns the metadata ConfigMap name for a CR.
+func MetadataConfigMapName(crName string) string {
+	return fmt.Sprintf("ignition-sync-metadata-%s", crName)
+}
+
+// StatusConfigMapName returns the status ConfigMap name for a CR.
+func StatusConfigMapName(crName string) string {
+	return fmt.Sprintf("ignition-sync-status-%s", crName)
+}
+
+// Metadata holds the data read from the metadata ConfigMap.
+type Metadata struct {
+	Commit  string
+	Ref     string
+	Trigger string
+	GitURL  string
+	Paused  string
+}
+
+// ReadMetadataConfigMap reads the metadata ConfigMap and returns its data.
+func ReadMetadataConfigMap(ctx context.Context, c client.Client, namespace, crName string) (*Metadata, error) {
+	cm := &corev1.ConfigMap{}
+	key := types.NamespacedName{
+		Name:      MetadataConfigMapName(crName),
+		Namespace: namespace,
+	}
+
+	if err := c.Get(ctx, key, cm); err != nil {
+		return nil, fmt.Errorf("reading metadata ConfigMap %s: %w", key.Name, err)
+	}
+
+	return &Metadata{
+		Commit:  cm.Data["commit"],
+		Ref:     cm.Data["ref"],
+		Trigger: cm.Data["trigger"],
+		GitURL:  cm.Data["gitURL"],
+		Paused:  cm.Data["paused"],
+	}, nil
+}
+
+// WriteStatusConfigMap writes the agent's status to the status ConfigMap.
+// Uses optimistic concurrency with retry on conflict.
+func WriteStatusConfigMap(ctx context.Context, c client.Client, namespace, crName, gatewayName string, status *synctypes.GatewayStatus) error {
+	cmName := StatusConfigMapName(crName)
+	key := types.NamespacedName{Name: cmName, Namespace: namespace}
+
+	statusJSON, err := json.Marshal(status)
+	if err != nil {
+		return fmt.Errorf("marshaling status: %w", err)
+	}
+
+	for attempt := 0; attempt < 3; attempt++ {
+		cm := &corev1.ConfigMap{}
+		err := c.Get(ctx, key, cm)
+
+		if errors.IsNotFound(err) {
+			// Create new ConfigMap.
+			cm = &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      cmName,
+					Namespace: namespace,
+					Labels: map[string]string{
+						"app.kubernetes.io/managed-by": "ignition-sync-agent",
+						synctypes.LabelCRName:          crName,
+					},
+				},
+				Data: map[string]string{
+					gatewayName: string(statusJSON),
+				},
+			}
+			if createErr := c.Create(ctx, cm); createErr != nil {
+				if errors.IsAlreadyExists(createErr) {
+					continue // retry — another agent created it first
+				}
+				return fmt.Errorf("creating status ConfigMap: %w", createErr)
+			}
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("getting status ConfigMap: %w", err)
+		}
+
+		// Update existing ConfigMap.
+		if cm.Data == nil {
+			cm.Data = make(map[string]string)
+		}
+		cm.Data[gatewayName] = string(statusJSON)
+
+		if updateErr := c.Update(ctx, cm); updateErr != nil {
+			if errors.IsConflict(updateErr) {
+				continue // retry with fresh resourceVersion
+			}
+			return fmt.Errorf("updating status ConfigMap: %w", updateErr)
+		}
+		return nil
+	}
+
+	return fmt.Errorf("failed to write status after 3 retries")
+}
