@@ -156,7 +156,6 @@ type SyncProfileStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:storageversion
 // +kubebuilder:resource:shortName=sp
-// +kubebuilder:printcolumn:name="Mappings",type="integer",JSONPath=`.spec.mappings`,description="Number of source→dest mappings",priority=0
 // +kubebuilder:printcolumn:name="Mode",type="string",JSONPath=`.spec.deploymentMode.name`
 // +kubebuilder:printcolumn:name="Gateways",type="integer",JSONPath=`.status.gatewayCount`
 // +kubebuilder:printcolumn:name="Accepted",type="string",JSONPath=`.status.conditions[?(@.type=="Accepted")].status`

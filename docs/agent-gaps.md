@@ -11,7 +11,7 @@ Checklist of remaining work from [06a-agent-development-plan.md](architecture/06
 - [ ] 0.2 Metadata ConfigMap auth detail fields (`authSecretName`, `authSecretKey`, `apiKeySecret`, `apiKeySecretKey`) — may not be needed since agent reads from mounted files
 - [ ] 0.3 Downward API annotation reader — agent reads `SYNC_PROFILE` from env var; no projected annotations volume, so profile/ref-override changes require pod restart
 - [ ] 0.4 New condition types — `AgentReady`, `RefSkew`, `DependenciesMet` and associated reasons not in `pkg/conditions/conditions.go`
-- [ ] 0.5 SyncProfile printcolumn fix — `JSONPath=.spec.mappings` returns an array, not a count (`api/v1alpha1/syncprofile_types.go:180`)
+- [x] 0.5 SyncProfile printcolumn fix — removed broken `Mappings` printcolumn (array, not count)
 - [ ] 0.6 `dependsOn` cycle detection — no `validateDependsOnCycles()` in SyncProfile controller
 - [x] 0.7 ~~Redundant SyncProfile self-watch~~ — removed in dead code cleanup
 
@@ -41,7 +41,7 @@ Checklist of remaining work from [06a-agent-development-plan.md](architecture/06
 - [x] 3.1 Reuse existing `CloneOrFetch`
 - [ ] 3.2 Ref override support — no annotation reading for `AnnotationRefOverride`
 - [ ] 3.3 SSH host key verification — still `ssh.InsecureIgnoreHostKey()` with no warning log (`internal/agent/agent.go:354`)
-- [ ] 3.4 Shallow clone (`Depth: 1`) — not confirmed in `CloneOrFetch`
+- [x] 3.4 Shallow clone (`Depth: 1`) in `cloneAndCheckout`
 
 ## Phase 4 — ConfigMap Communication
 
@@ -68,7 +68,7 @@ Checklist of remaining work from [06a-agent-development-plan.md](architecture/06
 
 ## Phase 7 — Security Hardening
 
-- [ ] **7.1 Symlink guard (CRITICAL)** — uses `filepath.Walk` (follows symlinks) and `os.Stat` everywhere; no `Lstat`/`WalkDir`/`ModeSymlink` checks in the engine
+- [x] 7.1 Symlink guard — all walks use `WalkDir` + `Lstat`; symlinks are skipped everywhere
 - [ ] 7.2 Max template path length (4096 chars)
 - [ ] 7.2 Secret file paths via env vars — plan recommended hardcoded mount paths to avoid `/proc` leakage (S-H2); current impl exposes `API_KEY_FILE`, `GIT_TOKEN_FILE`, `GIT_SSH_KEY_FILE`
 - [ ] 7.3 `readOnlyRootFilesystem` compatibility — `/tmp` emptyDir, `TMPDIR` env var (deployment config)
@@ -87,14 +87,14 @@ Checklist of remaining work from [06a-agent-development-plan.md](architecture/06
 
 High-impact items to address first:
 
-1. **Symlink guard (7.1)** — critical security gap; every file walk needs `WalkDir` + `Lstat`
+1. ~~**Symlink guard (7.1)**~~ — done
 2. **Hook abstraction (2.2)** — `PostSyncHook`/`PreSyncHook` types unblock 5.3 and 5.4 without growing `agent.go`
 3. **Downward API annotation reader (0.3 / 1.2)** — enables ref-override and profile switching without pod restart
 4. **New condition types (0.4)** — needed before 8.2 and 8.4
 5. **dependsOn cycle detection (0.6)** — safety net for SyncProfile graph
 6. **Designer session detection (5.3)** — prevents sync conflicts with active designers
 7. **Post-sync verification (5.4)** — confirms Ignition picked up changes
-8. **SyncProfile printcolumn fix (0.5)** — low-effort fix
+8. ~~**SyncProfile printcolumn fix (0.5)**~~ — done
 
 ---
 

@@ -87,8 +87,9 @@ func (g *GoGitClient) CloneOrFetch(ctx context.Context, repoURL, ref, path strin
 
 func (g *GoGitClient) cloneAndCheckout(ctx context.Context, repoURL, ref, path string, auth transport.AuthMethod) (Result, error) {
 	repo, err := gogit.PlainCloneContext(ctx, path, false, &gogit.CloneOptions{
-		URL:  repoURL,
-		Auth: auth,
+		URL:   repoURL,
+		Auth:  auth,
+		Depth: 1,
 	})
 	if err != nil {
 		return Result{}, fmt.Errorf("git clone %s: %w", repoURL, err)

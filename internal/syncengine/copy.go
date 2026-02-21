@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -37,7 +38,7 @@ func copyFile(src, dst string) (bool, error) {
 	}
 
 	// Preserve source file permissions.
-	srcInfo, err := os.Stat(src)
+	srcInfo, err := os.Lstat(src)
 	if err == nil {
 		_ = os.Chmod(dst, srcInfo.Mode())
 	}
@@ -46,10 +47,15 @@ func copyFile(src, dst string) (bool, error) {
 }
 
 // filesEqual returns true if both files exist and have identical content.
+// Returns false if either path is a symlink.
 func filesEqual(a, b string) bool {
-	infoA, errA := os.Stat(a)
-	infoB, errB := os.Stat(b)
+	infoA, errA := os.Lstat(a)
+	infoB, errB := os.Lstat(b)
 	if errA != nil || errB != nil {
+		return false
+	}
+	// Never consider symlinks equal.
+	if infoA.Mode()&fs.ModeSymlink != 0 || infoB.Mode()&fs.ModeSymlink != 0 {
 		return false
 	}
 	// Quick size check.

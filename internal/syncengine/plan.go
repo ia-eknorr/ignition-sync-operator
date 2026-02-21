@@ -2,6 +2,7 @@ package syncengine
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -124,9 +125,12 @@ func stageSingleFile(m ResolvedMapping, stagingDir string, excludes []string, st
 // stageDirectory walks a source directory and copies its contents into staging
 // under the mapping's destination prefix.
 func stageDirectory(m ResolvedMapping, stagingDir string, excludes []string, staged map[string]bool) error {
-	return filepath.Walk(m.Source, func(srcPath string, info os.FileInfo, err error) error {
+	return filepath.WalkDir(m.Source, func(srcPath string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil // skip symlinks
 		}
 
 		relToSrc, err := filepath.Rel(m.Source, srcPath)
@@ -142,13 +146,13 @@ func stageDirectory(m ResolvedMapping, stagingDir string, excludes []string, sta
 		dstRelSlash := filepath.ToSlash(dstRel)
 
 		if ShouldExclude(dstRelSlash, excludes) {
-			if info.IsDir() {
+			if d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 		if IsProtected(dstRelSlash) {
-			if info.IsDir() {
+			if d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
@@ -156,7 +160,7 @@ func stageDirectory(m ResolvedMapping, stagingDir string, excludes []string, sta
 
 		dstPath := filepath.Join(stagingDir, dstRel)
 
-		if info.IsDir() {
+		if d.IsDir() {
 			return os.MkdirAll(dstPath, 0755)
 		}
 
@@ -206,9 +210,12 @@ func isUnderManagedRoot(relPath string, managedRoots map[string]bool) bool {
 
 // mergeStagingToLive walks staging and copies changed files to live.
 func mergeStagingToLive(stagingDir, liveDir string) (added, modified int, err error) {
-	err = filepath.Walk(stagingDir, func(stagingPath string, info os.FileInfo, walkErr error) error {
+	err = filepath.WalkDir(stagingDir, func(stagingPath string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil // skip symlinks
 		}
 
 		relPath, relErr := filepath.Rel(stagingDir, stagingPath)
@@ -221,11 +228,11 @@ func mergeStagingToLive(stagingDir, liveDir string) (added, modified int, err er
 
 		livePath := filepath.Join(liveDir, relPath)
 
-		if info.IsDir() {
+		if d.IsDir() {
 			return os.MkdirAll(livePath, 0755)
 		}
 
-		_, existErr := os.Stat(livePath)
+		_, existErr := os.Lstat(livePath)
 		existed := existErr == nil
 
 		written, copyErr := copyFile(stagingPath, livePath)
@@ -249,12 +256,15 @@ func mergeStagingToLive(stagingDir, liveDir string) (added, modified int, err er
 func cleanOrphans(stagingDir, liveDir string, managedRoots map[string]bool, excludes []string) (int, error) {
 	deleted := 0
 
-	err := filepath.Walk(liveDir, func(livePath string, info os.FileInfo, walkErr error) error {
+	err := filepath.WalkDir(liveDir, func(livePath string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			if os.IsNotExist(walkErr) {
 				return nil
 			}
 			return walkErr
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil // skip symlinks
 		}
 
 		relPath, relErr := filepath.Rel(liveDir, livePath)
@@ -267,13 +277,13 @@ func cleanOrphans(stagingDir, liveDir string, managedRoots map[string]bool, excl
 
 		// Skip protected and excluded paths.
 		if IsProtected(relPath) {
-			if info.IsDir() {
+			if d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 		if ShouldExclude(relPath, excludes) {
-			if info.IsDir() {
+			if d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
@@ -281,19 +291,19 @@ func cleanOrphans(stagingDir, liveDir string, managedRoots map[string]bool, excl
 
 		// Only clean within managed roots.
 		if !isUnderManagedRoot(relPath, managedRoots) {
-			if info.IsDir() {
+			if d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 
-		if info.IsDir() {
+		if d.IsDir() {
 			return nil
 		}
 
 		// Check if this file exists in staging.
 		stagingPath := filepath.Join(stagingDir, relPath)
-		if _, err := os.Stat(stagingPath); os.IsNotExist(err) {
+		if _, err := os.Lstat(stagingPath); os.IsNotExist(err) {
 			if removeErr := os.Remove(livePath); removeErr != nil && !os.IsNotExist(removeErr) {
 				return fmt.Errorf("removing orphan %s: %w", relPath, removeErr)
 			}
@@ -310,21 +320,24 @@ func computeDryRunDiff(stagingDir, liveDir string, managedRoots map[string]bool,
 	diff := &DryRunDiff{}
 
 	// Find added and modified files.
-	err := filepath.Walk(stagingDir, func(stagingPath string, info os.FileInfo, walkErr error) error {
+	err := filepath.WalkDir(stagingDir, func(stagingPath string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil // skip symlinks
 		}
 
 		relPath, relErr := filepath.Rel(stagingDir, stagingPath)
 		if relErr != nil {
 			return relErr
 		}
-		if relPath == "." || info.IsDir() {
+		if relPath == "." || d.IsDir() {
 			return nil
 		}
 
 		livePath := filepath.Join(liveDir, relPath)
-		if _, err := os.Stat(livePath); os.IsNotExist(err) {
+		if _, err := os.Lstat(livePath); os.IsNotExist(err) {
 			diff.Added = append(diff.Added, filepath.ToSlash(relPath))
 		} else if !filesEqual(stagingPath, livePath) {
 			diff.Modified = append(diff.Modified, filepath.ToSlash(relPath))
@@ -336,12 +349,15 @@ func computeDryRunDiff(stagingDir, liveDir string, managedRoots map[string]bool,
 	}
 
 	// Find deleted files (in live under managed roots but not in staging).
-	err = filepath.Walk(liveDir, func(livePath string, info os.FileInfo, walkErr error) error {
+	err = filepath.WalkDir(liveDir, func(livePath string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			if os.IsNotExist(walkErr) {
 				return nil
 			}
 			return walkErr
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil // skip symlinks
 		}
 
 		relPath, relErr := filepath.Rel(liveDir, livePath)
@@ -353,25 +369,25 @@ func computeDryRunDiff(stagingDir, liveDir string, managedRoots map[string]bool,
 		}
 
 		if IsProtected(relPath) || ShouldExclude(relPath, excludes) {
-			if info.IsDir() {
+			if d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 
 		if !isUnderManagedRoot(relPath, managedRoots) {
-			if info.IsDir() {
+			if d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 
-		if info.IsDir() {
+		if d.IsDir() {
 			return nil
 		}
 
 		stagingPath := filepath.Join(stagingDir, relPath)
-		if _, err := os.Stat(stagingPath); os.IsNotExist(err) {
+		if _, err := os.Lstat(stagingPath); os.IsNotExist(err) {
 			diff.Deleted = append(diff.Deleted, filepath.ToSlash(relPath))
 		}
 		return nil

@@ -293,6 +293,51 @@ func TestExecutePlan_ModifiedCounting(t *testing.T) {
 	}
 }
 
+func TestExecutePlan_SkipsSymlinks(t *testing.T) {
+	tmp := t.TempDir()
+
+	src := filepath.Join(tmp, "src")
+	staging := filepath.Join(tmp, "staging")
+	live := filepath.Join(tmp, "live")
+
+	// Create a regular file and a symlink in the source directory.
+	writeTestFile(t, filepath.Join(src, "real.txt"), "real-content")
+
+	// Create a symlink pointing to the regular file.
+	if err := os.Symlink(filepath.Join(src, "real.txt"), filepath.Join(src, "link.txt")); err != nil {
+		t.Fatalf("creating symlink: %v", err)
+	}
+
+	engine := &Engine{}
+	plan := &SyncPlan{
+		Mappings: []ResolvedMapping{
+			{Source: src, Destination: "data", Type: "dir"},
+		},
+		StagingDir: staging,
+		LiveDir:    live,
+	}
+
+	result, err := engine.ExecutePlan(plan)
+	if err != nil {
+		t.Fatalf("ExecutePlan: %v", err)
+	}
+
+	// Regular file should be synced.
+	got := readTestFile(t, filepath.Join(live, "data", "real.txt"))
+	if got != "real-content" {
+		t.Errorf("expected real-content, got %q", got)
+	}
+
+	// Symlink should NOT be synced.
+	if _, err := os.Lstat(filepath.Join(live, "data", "link.txt")); !os.IsNotExist(err) {
+		t.Error("symlink link.txt should not have been synced to live")
+	}
+
+	if result.FilesAdded != 1 {
+		t.Errorf("expected 1 added (only real.txt), got %d", result.FilesAdded)
+	}
+}
+
 // Helpers
 
 func writeTestFile(t *testing.T, path, content string) {
