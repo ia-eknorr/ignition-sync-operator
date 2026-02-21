@@ -65,7 +65,7 @@ func (r *IgnitionSyncReconciler) discoverGateways(ctx context.Context, isync *sy
 		return nil, fmt.Errorf("listing pods: %w", err)
 	}
 
-	var discovered []syncv1alpha1.DiscoveredGateway
+	discovered := make([]syncv1alpha1.DiscoveredGateway, 0, len(podList.Items))
 
 	for _, pod := range podList.Items {
 		// Filter by annotation
@@ -191,27 +191,27 @@ func (r *IgnitionSyncReconciler) updateAllGatewaysSyncedCondition(ctx context.Co
 	}
 }
 
-// updateReadyCondition sets the Ready condition based on RepoCloned and AllGatewaysSynced.
-// Ready=True only when both RepoCloned=True AND AllGatewaysSynced=True.
+// updateReadyCondition sets the Ready condition based on RefResolved and AllGatewaysSynced.
+// Ready=True only when both RefResolved=True AND AllGatewaysSynced=True.
 func (r *IgnitionSyncReconciler) updateReadyCondition(ctx context.Context, isync *syncv1alpha1.IgnitionSync) {
-	repoCloned := false
+	refResolved := false
 	allGatewaysSynced := false
 
 	for _, cond := range isync.Status.Conditions {
-		if cond.Type == conditions.TypeRepoCloned && cond.Status == metav1.ConditionTrue {
-			repoCloned = true
+		if cond.Type == conditions.TypeRefResolved && cond.Status == metav1.ConditionTrue {
+			refResolved = true
 		}
 		if cond.Type == conditions.TypeAllGatewaysSynced && cond.Status == metav1.ConditionTrue {
 			allGatewaysSynced = true
 		}
 	}
 
-	if repoCloned && allGatewaysSynced {
+	if refResolved && allGatewaysSynced {
 		r.setCondition(ctx, isync, conditions.TypeReady, metav1.ConditionTrue,
 			conditions.ReasonSyncSucceeded, "All gateways synced")
-	} else if !repoCloned {
+	} else if !refResolved {
 		r.setCondition(ctx, isync, conditions.TypeReady, metav1.ConditionFalse,
-			conditions.ReasonReconciling, "Repository not cloned")
+			conditions.ReasonReconciling, "Ref not resolved")
 	} else {
 		r.setCondition(ctx, isync, conditions.TypeReady, metav1.ConditionFalse,
 			conditions.ReasonReconciling, "Waiting for gateways to sync")

@@ -93,11 +93,7 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
-        volumeMounts:
-          - name: repo-data
-            mountPath: /data
-      volumes:
-        - name: repo-data
-          emptyDir: {}
+        volumeMounts: []
+      volumes: []
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10

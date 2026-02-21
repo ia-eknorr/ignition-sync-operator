@@ -27,6 +27,7 @@ ENTRYPOINT ["/sync-agent"]
 
 
 The agent is **Go-first**: the sync agent binary is a self-contained executable that handles:
+- Git clone and fetch operations (using `github.com/go-git/go-git` or shelling out to git binary)
 - File synchronization (rsync-equivalent operations using Go's `filepath` and `io` packages)
 - Glob pattern matching with `**` support (using `github.com/bmatcuk/doublestar` — Go's `filepath.Match` does not support `**`)
 - JSON/YAML manipulation (using Go's `encoding/json` and `gopkg.in/yaml.v2`)
@@ -48,76 +49,79 @@ Image size: ~20MB (distroless + static Go binary). An Alpine-based variant (`-al
 
 The controller signals sync availability via ConfigMap:
 
-- **ConfigMap Watch** — Controller writes sync metadata to a ConfigMap (`ignition-sync-metadata-{crName}`); agent uses K8s informer to watch changes. Fast, event-driven, no polling. Agent receives push notifications when a new commit is available.
+- **ConfigMap Watch** — Controller writes sync metadata to a ConfigMap (`ignition-sync-metadata-{crName}`); agent uses K8s informer to watch for changes. When the controller updates the ConfigMap with a new commit SHA, the agent receives a push notification and initiates a git fetch + checkout to bring its local clone up to date.
 - **Fallback: Polling Timer** — Agent polls the ConfigMap at `spec.polling.interval` (default: 60s) as a safety net in case the informer watch is disrupted.
 
-ConfigMap is the single communication mechanism between controller and agents. No file-based signaling via PVC — this simplifies the architecture, eliminates PVC write contention concerns, and keeps controller-agent communication on well-understood K8s primitives.
+ConfigMap is the single communication mechanism between controller and agents. The agent owns its own git clone in a local emptyDir volume — no shared storage between controller and agent. This simplifies the architecture, eliminates cross-pod volume dependencies, and keeps controller-agent communication on well-understood K8s primitives.
 
 #### Full Sync Flow
 
 ```
 Startup:
-  1. Mount /repo (RO) — shared PVC from controller
+  1. Mount /repo (RW) — local emptyDir on the gateway pod (NOT a shared PVC)
   2. Mount /ignition-data (RW) — gateway's data PVC (shared with ignition container)
-  3. Read config from environment variables (set by webhook injection)
-  4. Establish K8s API connection for ConfigMap watch (if KUBECONFIG available)
-  5. Perform initial sync (blocking — gateway doesn't start until initial sync succeeds)
-  6. Start watching ConfigMap for changes (preferred) or inotify fallback
-  7. Start periodic fallback timer (configurable, default 30s)
-  8. If bidirectional: start inotify on configured watch paths
-  9. Expose health endpoint on :8082
+  3. Mount git auth secret (RO) — injected by webhook as a volume mount
+  4. Read config from environment variables (set by webhook injection)
+  5. Establish K8s API connection for ConfigMap watch
+  6. Read metadata ConfigMap to get current commit SHA and ref
+  7. Clone git repository to /repo using commit SHA from metadata ConfigMap
+  8. Perform initial sync (blocking — gateway doesn't start until initial sync succeeds)
+  9. Start watching metadata ConfigMap for changes (preferred) or periodic fallback timer
+  10. If bidirectional: start inotify on configured watch paths
+  11. Expose health endpoint on :8082
 
-On trigger (new content available via ConfigMap watch or polling timer):
-  1. Read ref + commit from ConfigMap data
+On trigger (metadata ConfigMap updated with new commit):
+  1. Read ref + commit from metadata ConfigMap data
   2. Compare against last-synced commit — skip if unchanged
-  3. **Project-Level Granular Sync**: Compute file-level SHA256 checksums of all files under {servicePath}
+  3. git fetch + checkout new commit in /repo (local emptyDir)
+  4. **Project-Level Granular Sync**: Compute file-level SHA256 checksums of all files under {servicePath}
      - Compare against previous sync checksums (stored in ConfigMap)
      - If no file checksums changed, skip sync entirely (fast path)
      - If some files changed, identify changed PROJECT directories (not individual files)
      - Build sync scope: only include changed projects + shared resources that changed
-  4. Create staging directory: /ignition-data/.sync-staging/
-  5. Sync project files:
+  5. Create staging directory: /ignition-data/.sync-staging/
+  6. Sync project files:
      - Source: /repo/{servicePath}/projects/{changedProject}/
      - Dest: staging/projects/{changedProject}/
      - Exclude patterns applied (using doublestar library for ** support)
-  6. Sync config/resources/core (ALWAYS — overlay depends on fresh core):
+  7. Sync config/resources/core (ALWAYS — overlay depends on fresh core):
      - Source: /repo/{servicePath}/config/resources/core/
      - Dest: staging/config/resources/core/
-  7. Apply deployment mode overlay ON TOP OF core (ALWAYS recomposed):
+  8. Apply deployment mode overlay ON TOP OF core (ALWAYS recomposed):
      - Source: /repo/{servicePath}/config/resources/{deploymentMode}/
-     - Dest: staging/config/resources/core/   ← overlay files overwrite core files
+     - Dest: staging/config/resources/core/   <- overlay files overwrite core files
      - NOTE: overlay is ALWAYS applied after core, even if only core changed.
        This preserves correct precedence — overlay files override core defaults.
        Skipping overlay when "unchanged" would lose overrides on core updates.
-  8. Sync shared resources:
-     - External resources → staging/config/resources/external/ (if enabled)
+  9. Sync shared resources:
+     - External resources -> staging/config/resources/external/ (if enabled)
        - If source dir doesn't exist in repo AND createFallback=true,
          create minimal dir with default config-mode.json
-     - Scripts → staging/projects/{projectName}/{destPath}/ (if enabled)
-     - UDTs → staging/config/resources/core/ignition/tag-type-definition/{tagProvider}/ (if enabled)
-     - Additional files → staging/{dest} (if enabled)
-  9. **Pre-Sync Validation**:
+     - Scripts -> staging/projects/{projectName}/{destPath}/ (if enabled)
+     - UDTs -> staging/config/resources/core/ignition/tag-type-definition/{tagProvider}/ (if enabled)
+     - Additional files -> staging/{dest} (if enabled)
+  10. **Pre-Sync Validation**:
      - JSON syntax validation on all config.json files
      - Verify no .resources/ directory included in staging
      - Checksum verification on critical files
-  10. Apply exclude patterns (combine global + per-gateway, doublestar matching)
-  11. Normalize configs (recursive — ALL config.json files):
+  11. Apply exclude patterns (combine global + per-gateway, doublestar matching)
+  12. Normalize configs (recursive — ALL config.json files):
       - Use filepath.Walk to discover EVERY config.json in staging
       - Apply systemName replacement to each (not just top-level)
       - Use targeted JSON patching (modify field in-place) to avoid
         reformatting the entire file (prevents false diffs from re-serialization)
       - YAML manipulation (if needed) using in-process YAML library
       - Support Go template syntax for advanced field mappings
-  12. Selective merge to live directory:
+  13. Selective merge to live directory:
       - Walk staging/, copy files to /ignition-data/
       - Delete files in /ignition-data/ that are NOT in staging
         AND NOT in protected list (.resources/)
       - .resources/ is NEVER touched — not deleted, not overwritten, not modified
       - This is NOT an atomic swap — it is a merge with protected directories
-  13. **Ignition API Health Check**:
+  14. **Ignition API Health Check**:
       - GET /data/api/v1/status to verify gateway is responsive
       - If not ready, wait up to 5s before proceeding
-  14. Trigger Ignition scan API (SKIP on initial sync):
+  15. Trigger Ignition scan API (SKIP on initial sync):
       - On initial sync (first sync after pod startup): SKIP scan entirely.
         Ignition auto-scans its data directory on first boot. Calling the scan
         API during startup causes race conditions (duplicate project loads,
@@ -129,7 +133,7 @@ On trigger (new content available via ConfigMap watch or polling timer):
         d. HTTP retry logic: 3 retries with exponential backoff on connection failures
         e. Accept any 2xx response as success — the scan runs asynchronously
            inside the gateway. Do NOT attempt to poll for completion.
-  15. Write status to ConfigMap ignition-sync-status-{crName}:
+  16. Write status to ConfigMap ignition-sync-status-{crName}:
       {
         "gateway": "{gatewayName}",
         "syncedAt": "2026-02-12T10:30:00Z",
@@ -141,13 +145,13 @@ On trigger (new content available via ConfigMap watch or polling timer):
         "duration": "3.2s",
         "checksums": { "projects/site/...": "sha256:...", ... }
       }
-  16. Clean up staging directory
+  17. Clean up staging directory
 
 On filesystem change (bidirectional):
   1. inotify detects change in /ignition-data/{watchPath}
   2. Debounce (wait for configured quiet period)
   3. Diff changed files against /repo/{servicePath}/
-  4. Write change manifest to /repo/.sync-changes/{gatewayName}/{timestamp}.json:
+  4. Write change manifest to ConfigMap ignition-sync-changes-{crName}:
      {
        "gateway": "site",
        "timestamp": "2026-02-12T10:30:00Z",
@@ -291,7 +295,7 @@ ignition-sync.io/tag-inheritance-strategy: "full"  # or "leaf-only"
 
 Agent behavior:
 - Query gateway tag provider hierarchy via API: `GET /data/api/v2/tag-providers`
-- Detect parent/child relationships (site → area)
+- Detect parent/child relationships (site -> area)
 - If `leaf-only`, exclude UDTs that exist in parent gateway tag provider
 - Prevents duplicate definitions and inheritance conflicts
 
@@ -378,11 +382,11 @@ Context variables available to templates:
 **Critical Safety Guardrail**
 ```
 /ignition-data/
-├── .resources/               ← NEVER SYNC THIS
+├── .resources/               <- NEVER SYNC THIS
 │   ├── ...runtime caches...
 │   └── ...temporary files...
-├── config/                   ← Git-managed
-├── projects/                 ← Git-managed
+├── config/                   <- Git-managed
+├── projects/                 <- Git-managed
 └── ...
 ```
 
@@ -402,7 +406,7 @@ The `.resources/` directory contains:
 
 2. **Pre-Sync Check** — Agent verifies staging directory doesn't contain `.resources/`
    ```
-   If staging/.resources/ exists → ERROR
+   If staging/.resources/ exists -> ERROR
    Fail sync with reason "StagingDirectoryContainsRuntimeFiles"
    ```
 
@@ -429,4 +433,3 @@ The `.resources/` directory contains:
    - Changes in `.resources/` are never captured as "gateway changes" for PR creation
 
 ---
-

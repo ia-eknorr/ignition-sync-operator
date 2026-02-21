@@ -115,9 +115,6 @@ spec:
         secretRef:
           name: git-sync-secret
           key: ssh-privatekey
-  storage:
-    storageClassName: efs-sc
-    size: 1Gi
   webhook:
     enabled: true
     port: 8443
@@ -235,9 +232,6 @@ spec:
         secretRef:
           name: git-sync-secret
           key: ssh-privatekey
-  storage:
-    storageClassName: efs-sc
-    size: 1Gi
   polling:
     interval: 30s
   gateway:
@@ -297,7 +291,7 @@ backend:
       ignition-sync.io/sync-profile: "demo-backend"
 ```
 
-Note: With 5 frontend replicas, all 5 pods get the sync agent injected, all mount the same shared repo PVC read-only, and all use the same `demo-frontend` SyncProfile. The controller discovers all 5 and tracks each in `status.discoveredGateways`.
+Note: With 5 frontend replicas, all 5 pods get the sync agent injected, all independently clone the repository to local emptyDir volumes, and all use the same `demo-frontend` SyncProfile. The controller discovers all 5 and tracks each in `status.discoveredGateways`.
 
 ### Simple Single Gateway
 
@@ -318,10 +312,6 @@ spec:
         secretRef:
           name: git-token
           key: token
-  storage:
-    storageClassName: ""     # cluster default
-    size: 500Mi
-    accessMode: ReadWriteOnce  # only one gateway, RWO is fine
   polling:
     interval: 30s
   gateway:
@@ -564,8 +554,6 @@ spec:
     repo: "..."
     auth:
       sshKey: ...  # Maps to existing secret
-  storage:
-    storageClassName: "..."
   # ... rest of spec derived from ConfigMap ...
 ```
 

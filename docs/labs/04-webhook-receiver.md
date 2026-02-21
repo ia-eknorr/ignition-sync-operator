@@ -2,9 +2,9 @@
 
 ## Objective
 
-Validate the inbound webhook HTTP handler end-to-end: port reachability, all four payload formats (generic, GitHub, ArgoCD, Kargo), HMAC signature validation, error responses, idempotency, and that a webhook-triggered ref change actually propagates through the reconciliation loop to update PVC contents. Test with the real Ignition gateways running alongside.
+Validate the inbound webhook HTTP handler end-to-end: port reachability, all four payload formats (generic, GitHub, ArgoCD, Kargo), HMAC signature validation, error responses, idempotency, and that a webhook-triggered ref change actually propagates through the reconciliation loop to resolve the ref and populate the metadata ConfigMap. Test with the real Ignition gateways running alongside.
 
-**Prerequisite:** Complete [03 — Gateway Discovery](03-gateway-discovery.md). The `lab-sync` CR should be `Ready=True` with 2 discovered gateways.
+**Prerequisite:** Complete [03 — Gateway Discovery](03-gateway-discovery.md). The `lab-sync` CR should be `Ready=True` with ref resolved and metadata ConfigMap populated.
 
 ---
 
@@ -414,7 +414,7 @@ echo "Body: $BODY2"
 ## Lab 4.10: Webhook Triggers Full Reconciliation
 
 ### Purpose
-This is the end-to-end test: send a webhook to change the ref, and verify the controller actually fetches the new ref, updates PVC contents, and refreshes status.
+This is the end-to-end test: send a webhook to change the ref, and verify the controller actually resolves the new ref, updates the metadata ConfigMap, and refreshes status.
 
 ### Steps
 
@@ -424,8 +424,8 @@ kubectl patch ignitionsync lab-sync -n lab --type=merge \
   -p '{"spec":{"git":{"ref":"main"}}}'
 sleep 20
 
-# Record current state
-COMMIT_BEFORE=$(kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
+# Record current state from metadata ConfigMap
+COMMIT_BEFORE=$(kubectl get configmap ignition-sync-metadata-lab-sync -n lab -o jsonpath='{.data.commit}')
 echo "Before: commit=$COMMIT_BEFORE, ref=main"
 
 # Clear webhook annotations
@@ -446,21 +446,25 @@ curl -s -w '\nHTTP %{http_code}\n' \
 echo "Waiting for reconciliation..."
 sleep 30
 
-# Check if the commit changed
-COMMIT_AFTER=$(kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
+# Check if the commit changed in the metadata ConfigMap
+COMMIT_AFTER=$(kubectl get configmap ignition-sync-metadata-lab-sync -n lab -o jsonpath='{.data.commit}')
 echo "After: commit=$COMMIT_AFTER"
 
 if [ "$COMMIT_BEFORE" != "$COMMIT_AFTER" ]; then
-  echo "PASS: Commit changed — webhook triggered reconciliation"
+  echo "PASS: Commit changed in metadata ConfigMap — webhook triggered reconciliation"
 else
   echo "INFO: Commit did not change. Check if controller uses annotation to override spec.git.ref"
   echo "The webhook annotation sets requested-ref, which the controller may read during reconcile."
 fi
+
+# Verify metadata ConfigMap contents
+echo "--- Metadata ConfigMap ---"
+kubectl get configmap ignition-sync-metadata-lab-sync -n lab -o json | jq '.data'
 ```
 
 ### What to Watch For
 The exact behavior depends on how the controller uses the `requested-ref` annotation:
-- If the controller reads `requested-ref` and uses it instead of `spec.git.ref`, the PVC content should update
+- If the controller reads `requested-ref` and uses it instead of `spec.git.ref`, the metadata ConfigMap should update with the new commit SHA
 - If the controller only reacts to `spec.git.ref` changes, the webhook's effect is to signal to an external system (like ArgoCD) that should then update the spec
 
 Check the operator logs:
@@ -531,7 +535,7 @@ curl -s -o /dev/null -w 'Ignition HTTP: %{http_code}\n' http://localhost:8088/St
 | Invalid JSON → 400 | |
 | Nonexistent CR with valid HMAC → 404 | |
 | Duplicate ref → 200 idempotent | |
-| Webhook triggers reconciliation (annotation set, controller reacts) | |
+| Webhook triggers reconciliation (annotation set, metadata ConfigMap updates) | |
 | HMAC secret removal restores unauthenticated mode | |
 | Ignition gateways healthy throughout | |
 | Operator pod 0 restarts | |

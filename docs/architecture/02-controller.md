@@ -1,7 +1,7 @@
 <!-- Part of: Ignition Sync Operator Architecture (v3) -->
 <!-- See also: 00-overview.md, 01-crd.md, 03-sync-agent.md, 04-deployment-operations.md, 05-enterprise-examples.md, 06-security-testing-roadmap.md -->
 
-# Ignition Sync Operator — Controller Manager & Storage
+# Ignition Sync Operator — Controller Manager & Ref Resolution
 
 ## Controller Manager
 
@@ -130,11 +130,6 @@ rules:
     resources: ["pods"]
     verbs: ["get", "list", "watch"]
 
-  # PVCs — for repo PVC lifecycle
-  - apiGroups: [""]
-    resources: ["persistentvolumeclaims"]
-    verbs: ["get", "list", "watch", "create", "update", "delete"]
-
   # ConfigMaps — for sync metadata signaling to agents
   - apiGroups: [""]
     resources: ["configmaps"]
@@ -163,17 +158,17 @@ For restricted environments, the Helm chart supports a `--watch-namespaces` flag
 ### Reconciliation Loop
 
 **Controller Setup:**
-- `MaxConcurrentReconciles: 5` (configurable) to prevent a single slow git clone from blocking all CRs
+- `MaxConcurrentReconciles: 5` (configurable) to prevent a single slow ref resolution from blocking all CRs
 - `GenerationChangedPredicate` on the primary watch — prevents reconciliation storms from status-only updates
 - Pod watch filtered to only pods with `ignition-sync.io/cr-name` annotation
-- Context timeout on all git operations (default: 2m)
+- Context timeout on all git operations (default: 30s)
 
 ```
 Watch: IgnitionSync CRs (all namespaces, or filtered)
   Predicate: GenerationChangedPredicate (skip status-only updates)
 Watch: Pods with annotation ignition-sync.io/cr-name (for gateway discovery)
   Predicate: filter to only annotated pods
-Owns: PVCs, ConfigMaps (for sync metadata)
+Owns: ConfigMaps (for sync metadata)
        ↓
 ┌──────────────────────────────────────────────────────────────────┐
 │  0. Finalizer handling                                           │
@@ -186,24 +181,19 @@ Owns: PVCs, ConfigMaps (for sync metadata)
 ├──────────────────────────────────────────────────────────────────┤
 │  1. Validate CR spec                                             │
 │     - Git repo URL and auth secret exist                         │
-│     - Storage class exists (if specified)                        │
 │     - Referenced secrets exist in CR's namespace                 │
 ├──────────────────────────────────────────────────────────────────┤
-│  2. Ensure repo PVC exists                                       │
-│     - Create RWX PVC in CR's namespace if not exists             │
-│     - Name: ignition-sync-repo-{crName}                         │
-│     - StorageClass from spec.storage.storageClassName            │
-│     - Owner reference: the IgnitionSync CR (garbage collected)   │
+│  2. Resolve git ref (non-blocking)                               │
+│     - Call `git ls-remote` to resolve spec.git.ref to a commit   │
+│       SHA. Single HTTP/SSH call, no clone.                       │
+│     - If operation is still in progress, requeue after 5s        │
+│     - Update condition: RefResolved = True                       │
+│     - On failure: condition RefResolutionFailed, requeue backoff │
 ├──────────────────────────────────────────────────────────────────┤
-│  3. Clone or update repo (non-blocking)                          │
-│     - Git operations run in a dedicated goroutine with context   │
-│       timeout (default: 2m). Controller does not block on git.   │
-│     - git clone (if PVC is empty)                                │
-│     - git fetch + git checkout {spec.git.ref} (if exists)        │
-│     - Update ConfigMap ignition-sync-metadata-{crName} with:     │
-│       commit SHA, ref, trigger timestamp                         │
-│     - Update condition: RepoCloned = True                        │
-│     - If git operation is still in progress, requeue after 5s    │
+│  3. Create/update metadata ConfigMap                             │
+│     - Write resolved commit SHA, ref, and trigger timestamp to   │
+│       ConfigMap ignition-sync-metadata-{crName}                  │
+│     - Agents watch for changes and act on new commits            │
 ├──────────────────────────────────────────────────────────────────┤
 │  4. Discover gateways                                            │
 │     - List pods in CR's namespace with annotation:               │
@@ -218,12 +208,13 @@ Owns: PVCs, ConfigMaps (for sync metadata)
 │     - Update condition: AllGatewaysSynced                        │
 ├──────────────────────────────────────────────────────────────────┤
 │  6. Process bi-directional changes (if enabled)                  │
-│     - Check /repo/.sync-changes/{gatewayName}/ for change files  │
+│     - Read change manifests from ConfigMap                       │
+│       ignition-sync-changes-{crName} (written by agents)         │
 │     - Apply conflict resolution strategy                         │
 │     - git checkout -b {targetBranch}                             │
 │     - Apply changes, commit, push                                │
 │     - Create PR via GitHub API (if githubApp auth configured)    │
-│     - Clean up processed change files                            │
+│     - Clean up processed change manifests                        │
 │     - Update condition: BidirectionalReady                       │
 ├──────────────────────────────────────────────────────────────────┤
 │  7. Update CR status                                             │
@@ -287,61 +278,20 @@ For ArgoCD integration, this replaces the post-sync Job pattern with a simpler A
 
 ---
 
+## Controller-Agent Communication
 
-## Storage Strategy
+The controller and agents communicate exclusively via Kubernetes ConfigMaps. There is no shared PVC — each agent clones the git repository independently to a local emptyDir.
 
-The operator creates one shared PVC per `IgnitionSync` CR. The **controller mounts the PVC read-write** (for git clone/fetch operations). All **sync agents mount the same PVC read-only** (they only read repo content, never write to it). Agent status reporting uses ConfigMaps, not PVC files.
+### Ref Resolution
 
-### PVC Lifecycle
-
-```yaml
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: ignition-sync-repo-proveit-sync
-  namespace: site1
-  ownerReferences:
-    - apiVersion: sync.ignition.io/v1alpha1
-      kind: IgnitionSync
-      name: proveit-sync
-      uid: ...
-  labels:
-    app.kubernetes.io/managed-by: ignition-sync-controller
-    sync.ignition.io/cr-name: proveit-sync
-spec:
-  accessModes:
-    - ReadWriteMany
-  storageClassName: ""         # from spec.storage.storageClassName
-  resources:
-    requests:
-      storage: 1Gi             # from spec.storage.size
-```
-
-The PVC has an ownerReference to the `IgnitionSync` CR, so it gets garbage collected when the CR is deleted.
-
-### Storage Class Compatibility
-
-| Environment | Storage Class | RWX Support | Notes |
-|---|---|---|---|
-| AWS EKS | `efs-sc` (EFS CSI) | Yes | Recommended for multi-gateway |
-| GCP GKE | `standard-rwx` (Filestore) | Yes | Filestore basic tier |
-| Azure AKS | `azurefile-csi` | Yes | Azure Files SMB/NFS |
-| On-prem | NFS provisioner, Longhorn, Rook-Ceph | Yes | Any NFS-backed class |
-| Single gateway | Any (even `gp3`) | RWO sufficient | Only one pod mounts it |
-
-For clusters **without RWX storage** (e.g., a single-gateway deployment on a minimal cluster), the operator falls back gracefully:
-
-- If `spec.storage.accessMode` is `ReadWriteOnce`, the controller runs git operations inside the same pod as the agent (via an init container pattern) instead of a separate persistent clone. This is essentially the current git-sync model but with better tooling.
-- The CRD validates that RWO mode is only used when there's a single gateway pod referencing the CR.
+The controller resolves `spec.git.ref` to a commit SHA using `git ls-remote` — a single HTTP/SSH call that returns remote ref→SHA mappings without downloading any objects. This is fast (~100ms), requires no local storage, and uses minimal memory.
 
 ### Communication via ConfigMap
 
-The operator uses K8s ConfigMaps as the sole communication mechanism between controller and agents:
-
 **Controller → Agents: Metadata ConfigMap**
-- Controller creates ConfigMap `ignition-sync-metadata-{crName}` with current commit, ref, and trigger timestamp
+- Controller creates ConfigMap `ignition-sync-metadata-{crName}` with resolved commit SHA, ref, and trigger timestamp
 - Agents watch the ConfigMap via K8s informer (fast, event-driven)
-- Fallback: agents poll ConfigMap at `spec.polling.interval` if informer watch is disrupted
+- When agent sees a new commit, it fetches/checks out that commit from git
 
 **Agents → Controller: Status ConfigMap**
 - Agents write sync results to ConfigMap `ignition-sync-status-{crName}`
@@ -354,48 +304,36 @@ The operator uses K8s ConfigMaps as the sole communication mechanism between con
 
 ```
 ConfigMaps per IgnitionSync CR:
-  ignition-sync-metadata-{crName}    # Controller → Agents (commit, ref, trigger timestamp)
+  ignition-sync-metadata-{crName}    # Controller → Agents (commit SHA, ref, trigger timestamp)
   ignition-sync-status-{crName}      # Agents → Controller (per-gateway sync results)
   ignition-sync-changes-{crName}     # Agents → Controller (bidirectional change manifests)
-
-Shared PVC structure (repository content only — no signaling files):
-/repo/
-├── services/           # Actual repo content
-│   ├── site/
-│   └── area/
-├── shared/
-│   ├── scripts/
-│   ├── udts/
-│   └── config/
-└── ...
 ```
 
-**Why ConfigMap-only (no PVC file-based signaling):**
-- Eliminates PVC write contention — PVC is mounted read-only by agents, read-write only by controller for git operations
-- ConfigMap watch is faster than inotify (~instant vs ~100ms)
-- Status is visible via standard K8s tools (`kubectl get configmap`)
-- No orphaned status files if agents crash
-- Controller-agent communication stays on well-understood K8s primitives
+**Why no shared PVC:**
+- Eliminates RWX storage requirement — works on any cluster, even single-node
+- Each agent independently clones, avoiding cross-pod volume sharing issues
+- No WaitForFirstConsumer binding problems
+- Controller is lightweight — ref resolution via ls-remote, no local filesystem needed
+- Agent autonomy — each agent manages its own repo lifecycle
 
 ---
 
 ## Multi-Repo Support
 
-A single controller instance handles any number of `IgnitionSync` CRs across any number of namespaces. Each CR references its own git repository and has its own shared PVC.
+A single controller instance handles any number of `IgnitionSync` CRs across any number of namespaces. Each CR references its own git repository.
 
 ```
 Namespace: site1
-  IgnitionSync/proveit-sync  →  repo: conf-proveit26-app.git    → PVC: ignition-sync-repo-proveit-sync
-  IgnitionSync/modules-sync  →  repo: ignition-custom-modules.git → PVC: ignition-sync-repo-modules-sync
+  IgnitionSync/proveit-sync  →  repo: conf-proveit26-app.git
+  IgnitionSync/modules-sync  →  repo: ignition-custom-modules.git
 
 Namespace: site2
-  IgnitionSync/proveit-sync  →  repo: conf-proveit26-app.git    → PVC: ignition-sync-repo-proveit-sync
+  IgnitionSync/proveit-sync  →  repo: conf-proveit26-app.git
 
 Namespace: public-demo
-  IgnitionSync/demo-sync     →  repo: publicdemo-all.git        → PVC: ignition-sync-repo-demo-sync
+  IgnitionSync/demo-sync     →  repo: publicdemo-all.git
 ```
 
 Pods reference a specific CR via `ignition-sync.io/cr-name`, so there's no ambiguity when multiple CRs exist in the same namespace. A gateway pod always syncs from exactly one repository.
 
 ---
-

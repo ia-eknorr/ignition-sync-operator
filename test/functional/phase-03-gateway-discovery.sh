@@ -46,8 +46,8 @@ create_status_cm() {
 # Setup: create API key secret and a CR for discovery tests
 apply_fixture "api-key-secret.yaml"
 apply_fixture "test-cr.yaml"
-wait_for_typed_condition "ignitionsync/test-sync" "RepoCloned" "True" 90
-CLONE_COMMIT=$(kubectl_json "ignitionsync/test-sync" '{.status.lastSyncCommit}')
+wait_for_typed_condition "ignitionsync/test-sync" "RefResolved" "True" 90
+RESOLVED_COMMIT=$(kubectl_json "ignitionsync/test-sync" '{.status.lastSyncCommit}')
 
 # ────────────────────────────────────────────────────────────────────
 # Test 3.1: Discover Annotated Pods
@@ -133,13 +133,18 @@ spec:
   git:
     repo: "${GIT_REPO_URL}"
     ref: "main"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
       key: apiKey
 EOF
 
-wait_for_typed_condition "ignitionsync/test-sync-b" "RepoCloned" "True" 90
+wait_for_typed_condition "ignitionsync/test-sync-b" "RefResolved" "True" 90
 
 # Create a pod for test-sync-b
 create_gateway_pod "b1" "test-sync-b" "gateway-bravo"
@@ -248,7 +253,7 @@ wait_for_named_pod_phase "gateway-test-s1" "Running" 60
 sleep 5
 
 # Create status ConfigMap with Synced status
-create_status_cm "test-sync" "gw-status-test" "Synced" "$CLONE_COMMIT"
+create_status_cm "test-sync" "gw-status-test" "Synced" "$RESOLVED_COMMIT"
 sleep 10
 
 # Verify status fields are populated
@@ -256,7 +261,7 @@ gw_sync=$(kubectl_jq "ignitionsync/test-sync" '.status.discoveredGateways[] | se
 assert_eq "Synced" "$gw_sync" "syncStatus is Synced"
 
 gw_commit=$(kubectl_jq "ignitionsync/test-sync" '.status.discoveredGateways[] | select(.name=="gw-status-test") | .syncedCommit')
-assert_eq "$CLONE_COMMIT" "$gw_commit" "syncedCommit matches"
+assert_eq "$RESOLVED_COMMIT" "$gw_commit" "syncedCommit matches"
 
 gw_agent=$(kubectl_jq "ignitionsync/test-sync" '.status.discoveredGateways[] | select(.name=="gw-status-test") | .agentVersion')
 assert_eq "0.1.0" "$gw_agent" "agentVersion populated"
@@ -295,7 +300,7 @@ assert_contains "$all_synced_msg" "1/2" "Message shows 1/2 gateways synced"
 
 # Update status CM to include second gateway as Synced
 $KUBECTL get configmap "ignition-sync-status-test-sync" -n "$TEST_NAMESPACE" -o json | \
-    jq --arg name "gw-status-test-2" --arg commit "$CLONE_COMMIT" \
+    jq --arg name "gw-status-test-2" --arg commit "$RESOLVED_COMMIT" \
     '.data[$name] = "{\"syncStatus\":\"Synced\",\"syncedCommit\":\"" + $commit + "\",\"syncedRef\":\"main\",\"lastSyncTime\":\"2025-01-01T00:00:00Z\",\"agentVersion\":\"0.1.0\",\"filesChanged\":3,\"projectsSynced\":[\"MyProject\"]}"' | \
     $KUBECTL apply -n "$TEST_NAMESPACE" -f -
 sleep 10
@@ -320,10 +325,9 @@ assert_eq "False" "$all_synced" "AllGatewaysSynced=False when one gateway has Er
 # ────────────────────────────────────────────────────────────────────
 log_test "3.7: Ready Condition (Full Stack)"
 
-# RepoCloned=True + AllGatewaysSynced=False → Ready=False
-repo_cloned=$(kubectl_json "ignitionsync/test-sync" \
-    '{.status.conditions[?(@.type=="RepoCloned")].status}')
-assert_eq "True" "$repo_cloned" "RepoCloned=True"
+# RefResolved=True + AllGatewaysSynced=False → Ready=False
+wait_for_typed_condition "ignitionsync/test-sync" "RefResolved" "True" 30
+log_pass "RefResolved=True"
 
 ready_status=$(kubectl_json "ignitionsync/test-sync" \
     '{.status.conditions[?(@.type=="Ready")].status}')
@@ -331,15 +335,15 @@ assert_eq "False" "$ready_status" "Ready=False when AllGatewaysSynced=False"
 
 # Fix the error gateway
 $KUBECTL get configmap "ignition-sync-status-test-sync" -n "$TEST_NAMESPACE" -o json | \
-    jq --arg name "gw-status-test-2" --arg commit "$CLONE_COMMIT" \
+    jq --arg name "gw-status-test-2" --arg commit "$RESOLVED_COMMIT" \
     '.data[$name] = "{\"syncStatus\":\"Synced\",\"syncedCommit\":\"" + $commit + "\",\"syncedRef\":\"main\",\"lastSyncTime\":\"2025-01-01T00:00:00Z\",\"agentVersion\":\"0.1.0\",\"filesChanged\":3,\"projectsSynced\":[\"MyProject\"]}"' | \
     $KUBECTL apply -n "$TEST_NAMESPACE" -f -
 sleep 10
 
-# Now RepoCloned=True + AllGatewaysSynced=True → Ready=True
+# Now RefResolved=True + AllGatewaysSynced=True → Ready=True
 ready_status=$(kubectl_json "ignitionsync/test-sync" \
     '{.status.conditions[?(@.type=="Ready")].status}')
-assert_eq "True" "$ready_status" "Ready=True when RepoCloned and AllGatewaysSynced are True"
+assert_eq "True" "$ready_status" "Ready=True when RefResolved and AllGatewaysSynced are True"
 
 # ────────────────────────────────────────────────────────────────────
 # Test 3.8: No Gateways → AllGatewaysSynced=False, reason=NoGatewaysDiscovered

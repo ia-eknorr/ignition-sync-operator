@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: ignition-sync-operator
-  newTag: lab
+  newTag: func-test

@@ -31,8 +31,8 @@ FIXTURES_DIR="${SCRIPT_DIR}/fixtures"
 TEST_NAMESPACE="${TEST_NAMESPACE:-func-test}"
 KIND_CLUSTER="${KIND_CLUSTER:-ignition-sync-func-test}"
 KUBECTL="${KUBECTL:-kubectl}"
-GIT_SERVER_HOST="test-git-server.${TEST_NAMESPACE}.svc.cluster.local"
-GIT_REPO_URL="git://${GIT_SERVER_HOST}/test-repo.git"
+GIT_REPO_URL="${GIT_REPO_URL:-https://github.com/ia-eknorr/test-ignition-project.git}"
+GIT_REPO_URL_SSH="${GIT_REPO_URL_SSH:-git@github.com:ia-eknorr/test-ignition-project.git}"
 
 # ── Logging ─────────────────────────────────────────────────────────
 log_phase() {
@@ -333,7 +333,7 @@ apply_fixture() {
     sed \
         -e "s|\${NAMESPACE}|${TEST_NAMESPACE}|g" \
         -e "s|\${GIT_REPO_URL}|${GIT_REPO_URL}|g" \
-        -e "s|\${GIT_SERVER_HOST}|${GIT_SERVER_HOST}|g" \
+        -e "s|\${GIT_REPO_URL_SSH}|${GIT_REPO_URL_SSH}|g" \
         "$filepath" | $KUBECTL apply -n "$TEST_NAMESPACE" -f - "$@"
 }
 
@@ -347,7 +347,7 @@ delete_fixture() {
     sed \
         -e "s|\${NAMESPACE}|${TEST_NAMESPACE}|g" \
         -e "s|\${GIT_REPO_URL}|${GIT_REPO_URL}|g" \
-        -e "s|\${GIT_SERVER_HOST}|${GIT_SERVER_HOST}|g" \
+        -e "s|\${GIT_REPO_URL_SSH}|${GIT_REPO_URL_SSH}|g" \
         "$filepath" | $KUBECTL delete -n "$TEST_NAMESPACE" --ignore-not-found -f - 2>/dev/null || true
 }
 
@@ -367,7 +367,7 @@ port_forward_bg() {
 
 # ── Phase cleanup ───────────────────────────────────────────────────
 
-# Clean all test CRs, pods, configmaps, secrets, PVCs created during a phase.
+# Clean all test CRs, pods, configmaps, secrets created during a phase.
 # Leaves infrastructure (git server, controller) intact.
 phase_cleanup() {
     log_info "Cleaning up test resources..."
@@ -387,8 +387,6 @@ phase_cleanup() {
     $KUBECTL delete pods -n "$TEST_NAMESPACE" -l app=gateway-test --ignore-not-found 2>/dev/null || true
     $KUBECTL delete configmaps -n "$TEST_NAMESPACE" -l ignition-sync.io/cr-name --ignore-not-found 2>/dev/null || true
     $KUBECTL delete secrets -n "$TEST_NAMESPACE" -l app=func-test --ignore-not-found 2>/dev/null || true
-    # PVCs should be garbage collected via owner references, but clean stragglers
-    $KUBECTL delete pvc -n "$TEST_NAMESPACE" -l ignition-sync.io/cr-name --ignore-not-found 2>/dev/null || true
     sleep 2
 }
 

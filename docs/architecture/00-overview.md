@@ -7,7 +7,7 @@
 
 A first-class Kubernetes operator, published and maintained by Inductive Automation alongside the `ignition` Helm chart at `charts.ia.io`. It provides declarative, webhook-driven, bi-directional git synchronization for Ignition gateway deployments — replacing the current git-sync sidecar pattern with a purpose-built, production-ready solution.
 
-The operator auto-discovers Ignition gateway pods via annotations, injects sync agent sidecars through a mutating admission webhook, manages one or more git repositories, and reconciles file state across any number of gateways and namespaces. It works on any Kubernetes distribution — EKS, GKE, AKS, on-prem, single-node — with configurable storage backends.
+The operator auto-discovers Ignition gateway pods via annotations, injects sync agent sidecars through a mutating admission webhook, manages one or more git repositories, and reconciles file state across any number of gateways and namespaces. It works on any Kubernetes distribution — EKS, GKE, AKS, on-prem, single-node — with no shared storage requirements.
 
 ## Design Principles
 
@@ -17,7 +17,7 @@ This operator is built on core principles that guide all architectural and imple
 2. **K8s-Native Patterns** — Uses ConfigMaps for metadata signaling (preferred over trigger files), informers for change detection, conditions for status reporting, and standard K8s conventions for RBAC and ownership.
 3. **Ignition Domain Awareness** — Deep understanding of Ignition's architecture: gateway hierarchy, tag inheritance, module systems, scan API semantics, session management, and configuration best practices.
 4. **Security by Default** — No plaintext secrets in CRDs, HMAC validation on webhooks, signed container images, air-gap support, and least-privilege access controls.
-5. **Cloud-Agnostic** — Works on any Kubernetes distribution without vendor lock-in. Abstracts storage backend (EFS, Filestore, NFS, Longhorn) behind a StorageClass interface.
+5. **Cloud-Agnostic** — Works on any Kubernetes distribution without vendor lock-in. No RWX storage requirements — each agent clones independently.
 
 ```
 charts.ia.io/
@@ -77,7 +77,7 @@ EOF
 kubectl get ignitionsyncs
 ```
 
-That's it. The operator auto-discovers the gateway via annotation, injects the sync agent sidecar, clones the repo, and syncs files. All other fields (`storage`, `polling`, `webhook`, `excludePatterns`) use sensible defaults.
+That's it. The operator auto-discovers the gateway via annotation, injects the sync agent sidecar, clones the repo, and syncs files. All other fields (`polling`, `webhook`, `excludePatterns`) use sensible defaults.
 
 ---
 
@@ -101,76 +101,83 @@ The current git-sync approach has fundamental limitations:
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  Cluster-Scoped                                                              │
 │                                                                              │
-│  ┌─────────────────────────────────────────────────┐                         │
-│  │  Ignition Sync Controller Manager               │                         │
-│  │  (Deployment, leader-elected, 1 active replica) │                         │
-│  │                                                  │                         │
-│  │  Reconciles: IgnitionSync CRs (all namespaces)  │                         │
-│  │  Manages: Repo PVCs, git clones, PR creation    │                         │
-│  │  Reports: CR .status with conditions             │                         │
-│  └─────────────────────┬───────────────────────────┘                         │
+│  ┌─────────────────────────────────────────────────────┐                     │
+│  │  Ignition Sync Controller Manager                   │                     │
+│  │  (Deployment, leader-elected, 1 active replica)     │                     │
+│  │                                                      │                     │
+│  │  Reconciles: IgnitionSync CRs (all namespaces)      │                     │
+│  │  Manages: ref resolution, metadata ConfigMaps,      │                     │
+│  │           PR creation, status reporting              │                     │
+│  └─────────────────────┬───────────────────────────────┘                     │
 │                        │                                                     │
-│  ┌─────────────────────┴───────────────────────────┐                         │
-│  │  Mutating Admission Webhook                      │                         │
-│  │  (separate Deployment, HA, TLS via cert-manager) │                         │
-│  │                                                  │                         │
-│  │  Watches: Pod CREATE with annotation             │                         │
-│  │    ignition-sync.io/inject: "true"               │                         │
-│  │  Injects: Sync agent sidecar + volumes           │                         │
-│  └──────────────────────────────────────────────────┘                         │
+│  ┌─────────────────────┴───────────────────────────────┐                     │
+│  │  Mutating Admission Webhook                          │                     │
+│  │  (separate Deployment, HA, TLS via cert-manager)     │                     │
+│  │                                                      │                     │
+│  │  Watches: Pod CREATE with annotation                 │                     │
+│  │    ignition-sync.io/inject: "true"                   │                     │
+│  │  Injects: Sync agent sidecar + volumes               │                     │
+│  └──────────────────────────────────────────────────────┘                     │
 │                                                                              │
-│  ┌─────────────────────────────────────────────────┐                         │
-│  │  Webhook Receiver (Deployment or in-controller)  │                         │
-│  │                                                  │                         │
-│  │  POST /webhook/{namespace}/{crName}               │                         │
-│  │  Accepts: ArgoCD, Kargo, GitHub, generic         │                         │
-│  │  Action: Annotates CR → triggers reconcile       │                         │
-│  └──────────────────────────────────────────────────┘                         │
+│  ┌──────────────────────────────────────────────────────┐                    │
+│  │  Webhook Receiver (Deployment or in-controller)       │                    │
+│  │                                                       │                    │
+│  │  POST /webhook/{namespace}/{crName}                   │                    │
+│  │  Accepts: ArgoCD, Kargo, GitHub, generic              │                    │
+│  │  Action: Annotates CR → triggers reconcile            │                    │
+│  └──────────────────────────────────────────────────────┘                     │
 │                                                                              │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  Namespace: site1                                                            │
 │                                                                              │
 │  ┌───────────────────┐   ┌───────────────────┐   ┌───────────────────┐       │
-│  │ IgnitionSync CR   │   │ Repo PVC (RWX)    │   │ Webhook Secret    │       │
-│  │ "proveit-sync"    │   │ ignition-sync-    │   │ (HMAC for auth)   │       │
-│  │                   │   │ repo-proveit-sync │   │                   │       │
-│  └───────────────────┘   └────────┬──────────┘   └───────────────────┘       │
-│                                   │                                          │
-│  ┌────────────────────────────────┼─────────────────────────────────────┐    │
-│  │ StatefulSet: site              │                                      │    │
-│  │ ┌───────────┐ ┌───────────┐   │                                      │    │
-│  │ │ ignition  │ │ sync-agent│◄──┘  /repo (RO)                          │    │
-│  │ │ container │ │ (injected)│      /ignition-data (RW, shared w/ gw)   │    │
-│  │ │           │ │           │                                           │    │
-│  │ │  annotations:           │                                           │    │
-│  │ │  ignition-sync.io/inject: "true"                                   │    │
-│  │ │  ignition-sync.io/cr-name: "proveit-sync"                          │    │
-│  │ │  ignition-sync.io/service-path: "services/site"                    │    │
-│  │ └───────────┘ └───────────┘                                           │    │
-│  └───────────────────────────────────────────────────────────────────────┘    │
+│  │ IgnitionSync CR   │   │ Metadata ConfigMap │   │ Webhook Secret    │       │
+│  │ "proveit-sync"    │   │ ignition-sync-     │   │ (HMAC for auth)   │       │
+│  │                   │   │ metadata-proveit-  │   │                   │       │
+│  │                   │   │ sync               │   │                   │       │
+│  └───────────────────┘   └───────────────────┘   └───────────────────┘       │
 │                                                                              │
-│  ┌────────────────────────────────┬─────────────────────────────────────┐    │
-│  │ StatefulSet: area1             │                                      │    │
-│  │ ┌───────────┐ ┌───────────┐   │                                      │    │
-│  │ │ ignition  │ │ sync-agent│◄──┘  /repo (RO)                          │    │
-│  │ │ container │ │ (injected)│      /ignition-data (RW)                  │    │
-│  │ └───────────┘ └───────────┘                                           │    │
-│  └───────────────────────────────────────────────────────────────────────┘    │
+│  ┌───────────────────────────────────────────────────────────────────────┐   │
+│  │ StatefulSet: site                                                      │   │
+│  │ ┌───────────┐ ┌───────────────────────────────────────┐                │   │
+│  │ │ ignition  │ │ sync-agent (injected sidecar)         │                │   │
+│  │ │ container │ │                                        │                │   │
+│  │ │           │ │  /repo          — emptyDir (local)    │                │   │
+│  │ │           │ │  /ignition-data — shared w/ gateway   │                │   │
+│  │ │           │ │  git auth       — projected secret    │                │   │
+│  │ │           │ │  agent config   — projected ConfigMap  │                │   │
+│  │ │           │ └───────────────────────────────────────┘                │   │
+│  │ │  annotations:                                                        │   │
+│  │ │  ignition-sync.io/inject: "true"                                     │   │
+│  │ │  ignition-sync.io/cr-name: "proveit-sync"                            │   │
+│  │ │  ignition-sync.io/service-path: "services/site"                      │   │
+│  │ └───────────┘                                                          │   │
+│  └───────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+│  ┌───────────────────────────────────────────────────────────────────────┐   │
+│  │ StatefulSet: area1                                                     │   │
+│  │ ┌───────────┐ ┌───────────────────────────────────────┐                │   │
+│  │ │ ignition  │ │ sync-agent (injected sidecar)         │                │   │
+│  │ │ container │ │                                        │                │   │
+│  │ │           │ │  /repo          — emptyDir (local)    │                │   │
+│  │ │           │ │  /ignition-data — shared w/ gateway   │                │   │
+│  │ └───────────┘ └───────────────────────────────────────┘                │   │
+│  └───────────────────────────────────────────────────────────────────────┘   │
 │  ... area2, area3, area4                                                     │
 │                                                                              │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │  Namespace: site2                                                            │
-│  (same pattern — own IgnitionSync CR, own Repo PVC, own gateway pods)        │
+│  (same pattern — own IgnitionSync CR, own gateway pods with agent sidecars)  │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 The operator has three logical components:
 
-1. **Controller Manager** — a single cluster-scoped Deployment that reconciles all `IgnitionSync` CRs across namespaces, manages git clones, handles bi-directional PR creation, and reports status.
+1. **Controller Manager** — a single cluster-scoped Deployment that reconciles all `IgnitionSync` CRs across namespaces, manages ref resolution via git ls-remote, handles bi-directional PR creation, and reports status.
 
 2. **Mutating Admission Webhook** — a separate high-availability Deployment that intercepts Pod creation and injects sync agent sidecars into annotated Ignition gateway pods. TLS certificates managed by cert-manager.
 
-3. **Sync Agent** — a lightweight sidecar container injected into each Ignition gateway pod. No git operations — it reads from the shared repo PVC and writes to the local gateway data volume using rsync, jq, and yq.
+3. **Sync Agent** — a lightweight sidecar container injected into each Ignition gateway pod. It clones the git repository to a local emptyDir, syncs files to the gateway data volume, and reports status via ConfigMap.
 
 ---
 
@@ -259,7 +266,7 @@ The `MutatingWebhookConfiguration` targets Pod CREATE events where `ignition-syn
 2. Looks up the referenced `IgnitionSync` CR in the pod's namespace.
 3. **Validates service-path** — checks that `ignition-sync.io/service-path` is a valid relative path (no `..`, no absolute paths). Logs a warning if the path cannot be validated against the repo at injection time (repo may not be cloned yet). Agent validates path existence at sync time.
 4. Injects a sidecar container with the sync agent image.
-5. Adds volume mounts: shared repo PVC (read-only), agent config (projected ConfigMap/downward API).
+5. Adds volume mounts: emptyDir for repo clone, git auth secret (projected), agent config.
 6. Adds the Ignition API key secret volume mount (from the CR spec).
 7. Sets environment variables derived from annotations + CR spec.
 8. Adds a startup probe so the gateway doesn't start before initial sync completes.

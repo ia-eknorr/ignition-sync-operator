@@ -19,7 +19,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -39,28 +38,13 @@ import (
 
 	syncv1alpha1 "github.com/inductiveautomation/ignition-sync-operator/api/v1alpha1"
 	"github.com/inductiveautomation/ignition-sync-operator/internal/git"
-	"github.com/inductiveautomation/ignition-sync-operator/internal/storage"
 	"github.com/inductiveautomation/ignition-sync-operator/pkg/conditions"
 	synctypes "github.com/inductiveautomation/ignition-sync-operator/pkg/types"
 )
 
 const (
-	gitOpTimeout    = 2 * time.Minute
-	gitPollInterval = 5 * time.Second
+	lsRemoteTimeout = 30 * time.Second
 )
-
-// gitOpResult stores the outcome of an async git operation.
-type gitOpResult struct {
-	commit string
-	ref    string
-	err    error
-}
-
-// gitOpState tracks an in-flight git operation.
-type gitOpState struct {
-	done   chan struct{}
-	result gitOpResult
-}
 
 // IgnitionSyncReconciler reconciles an IgnitionSync object.
 type IgnitionSyncReconciler struct {
@@ -68,13 +52,11 @@ type IgnitionSyncReconciler struct {
 	Scheme    *runtime.Scheme
 	GitClient git.Client
 	Recorder  record.EventRecorder
-	gitOps    sync.Map // map[string]*gitOpState — keyed by "namespace/name"
 }
 
 // +kubebuilder:rbac:groups=sync.ignition.io,resources=ignitionsyncs,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=sync.ignition.io,resources=ignitionsyncs/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=sync.ignition.io,resources=ignitionsyncs/finalizers,verbs=update
-// +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
@@ -88,6 +70,9 @@ func (r *IgnitionSyncReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if err := r.Get(ctx, req.NamespacedName, &isync); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+
+	// Capture the original for merge-patch base (avoids resourceVersion conflicts).
+	base := isync.DeepCopy()
 
 	// --- Step 0: Finalizer handling ---
 
@@ -113,62 +98,42 @@ func (r *IgnitionSyncReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if isync.Spec.Paused {
 		log.Info("CR is paused, skipping reconciliation")
 		r.setCondition(ctx, &isync, conditions.TypeReady, metav1.ConditionFalse, conditions.ReasonPaused, "Reconciliation paused")
-		return ctrl.Result{}, r.patchStatus(ctx, &isync)
+		return ctrl.Result{}, r.patchStatus(ctx, &isync, base)
 	}
 
 	// --- Step 1: Validate secrets exist ---
 
 	if err := r.validateSecrets(ctx, &isync); err != nil {
 		r.setCondition(ctx, &isync, conditions.TypeReady, metav1.ConditionFalse, conditions.ReasonReconciling, err.Error())
-		_ = r.patchStatus(ctx, &isync)
+		_ = r.patchStatus(ctx, &isync, base)
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
-	// --- Step 2: Ensure repo PVC ---
+	// --- Step 2: Resolve git ref via ls-remote ---
 
-	pvc, created, err := storage.EnsurePVC(ctx, r.Client, r.Scheme, &isync)
+	result, err := r.resolveRef(ctx, &isync)
 	if err != nil {
-		r.setCondition(ctx, &isync, conditions.TypeReady, metav1.ConditionFalse, conditions.ReasonReconciling, fmt.Sprintf("PVC error: %v", err))
-		_ = r.patchStatus(ctx, &isync)
-		return ctrl.Result{}, err
-	}
-	if created {
-		log.Info("created repo PVC", "pvc", pvc.Name)
-	}
-
-	// --- Step 3: Clone or update repo (non-blocking) ---
-
-	crKey := req.NamespacedName.String()
-	result, requeue, err := r.handleGitOp(ctx, &isync, crKey)
-	if err != nil {
-		r.setCondition(ctx, &isync, conditions.TypeRepoCloned, metav1.ConditionFalse, conditions.ReasonCloneFailed, err.Error())
-		isync.Status.RepoCloneStatus = "Error"
-		_ = r.patchStatus(ctx, &isync)
+		r.setCondition(ctx, &isync, conditions.TypeRefResolved, metav1.ConditionFalse, conditions.ReasonRefResolutionFailed, err.Error())
+		isync.Status.RefResolutionStatus = "Error"
+		_ = r.patchStatus(ctx, &isync, base)
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
-	if requeue {
-		// Git op in progress — requeue to check again
-		r.setCondition(ctx, &isync, conditions.TypeRepoCloned, metav1.ConditionFalse, conditions.ReasonSyncInProgress, "Git operation in progress")
-		isync.Status.RepoCloneStatus = "Cloning"
-		_ = r.patchStatus(ctx, &isync)
-		return ctrl.Result{RequeueAfter: gitPollInterval}, nil
-	}
 
-	// Git op completed successfully
-	r.setCondition(ctx, &isync, conditions.TypeRepoCloned, metav1.ConditionTrue, conditions.ReasonCloneSucceeded, result.Commit)
-	isync.Status.RepoCloneStatus = "Cloned"
+	// Ref resolved successfully
+	r.setCondition(ctx, &isync, conditions.TypeRefResolved, metav1.ConditionTrue, conditions.ReasonRefResolved, result.Commit)
+	isync.Status.RefResolutionStatus = "Resolved"
 	isync.Status.LastSyncCommit = result.Commit
 	isync.Status.LastSyncRef = result.Ref
 	now := metav1.Now()
 	isync.Status.LastSyncTime = &now
 
-	// --- Step 4: Create/update metadata ConfigMap ---
+	// --- Step 3: Create/update metadata ConfigMap ---
 
 	if err := r.ensureMetadataConfigMap(ctx, &isync, result); err != nil {
 		log.Error(err, "failed to update metadata ConfigMap")
 	}
 
-	// --- Step 5: Discover gateways ---
+	// --- Step 4: Discover gateways ---
 
 	prevGatewayCount := len(isync.Status.DiscoveredGateways)
 	gateways, err := r.discoverGateways(ctx, &isync)
@@ -184,51 +149,27 @@ func (r *IgnitionSyncReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}
 
-	// --- Step 6: Update conditions ---
+	// --- Step 5: Update conditions ---
 
 	r.updateAllGatewaysSyncedCondition(ctx, &isync)
 	r.updateReadyCondition(ctx, &isync)
 
-	// --- Step 7: Update status ---
+	// --- Step 6: Update status ---
 
 	isync.Status.ObservedGeneration = isync.Generation
-	if err := r.patchStatus(ctx, &isync); err != nil {
+	if err := r.patchStatus(ctx, &isync, base); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	// --- Step 8: Requeue ---
+	// --- Step 7: Requeue ---
 
 	requeueAfter := r.pollingInterval(&isync)
 	log.Info("reconciliation complete", "commit", result.Commit, "gateways", len(isync.Status.DiscoveredGateways), "requeueAfter", requeueAfter)
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
 
-// handleGitOp manages async git operations. Returns (result, needsRequeue, error).
-func (r *IgnitionSyncReconciler) handleGitOp(ctx context.Context, isync *syncv1alpha1.IgnitionSync, crKey string) (git.Result, bool, error) {
-	// Check for an existing in-flight operation
-	if val, ok := r.gitOps.Load(crKey); ok {
-		state := val.(*gitOpState)
-		select {
-		case <-state.done:
-			// Operation finished — consume result and clean up
-			r.gitOps.Delete(crKey)
-			if state.result.err != nil {
-				return git.Result{}, false, state.result.err
-			}
-			return git.Result{Commit: state.result.commit, Ref: state.result.ref}, false, nil
-		default:
-			// Still running
-			return git.Result{}, true, nil
-		}
-	}
-
-	// No in-flight operation — resolve auth and launch one
-	auth, err := git.ResolveAuth(ctx, r.Client, isync.Namespace, isync.Spec.Git.Auth)
-	if err != nil {
-		return git.Result{}, false, fmt.Errorf("resolving git auth: %w", err)
-	}
-
-	pvcPath := fmt.Sprintf("/data/%s/%s", isync.Namespace, storage.PVCName(isync.Name))
+// resolveRef resolves the git ref to a commit SHA via ls-remote (single HTTP call, no clone).
+func (r *IgnitionSyncReconciler) resolveRef(ctx context.Context, isync *syncv1alpha1.IgnitionSync) (git.Result, error) {
 	ref := isync.Spec.Git.Ref
 
 	// Check for webhook-requested ref override
@@ -236,24 +177,26 @@ func (r *IgnitionSyncReconciler) handleGitOp(ctx context.Context, isync *syncv1a
 		ref = requested
 	}
 
-	state := &gitOpState{done: make(chan struct{})}
-	r.gitOps.Store(crKey, state)
-
-	go func() {
-		defer close(state.done)
-		gitCtx, cancel := context.WithTimeout(context.Background(), gitOpTimeout)
-		defer cancel()
-
-		result, err := r.GitClient.CloneOrFetch(gitCtx, isync.Spec.Git.Repo, ref, pvcPath, auth)
-		state.result = gitOpResult{
-			commit: result.Commit,
-			ref:    result.Ref,
-			err:    err,
+	// If the ref is already resolved at the desired ref and was resolved recently,
+	// return cached result to avoid redundant ls-remote calls on status-triggered reconciles.
+	if isync.Status.RefResolutionStatus == "Resolved" && isync.Status.LastSyncRef == ref &&
+		isync.Status.LastSyncCommit != "" && isync.Status.LastSyncTime != nil {
+		sinceLastSync := time.Since(isync.Status.LastSyncTime.Time)
+		if sinceLastSync < r.pollingInterval(isync) {
+			return git.Result{Commit: isync.Status.LastSyncCommit, Ref: isync.Status.LastSyncRef}, nil
 		}
-	}()
+	}
 
-	// Just launched — requeue to check later
-	return git.Result{}, true, nil
+	// Resolve auth and call ls-remote
+	auth, err := git.ResolveAuth(ctx, r.Client, isync.Namespace, isync.Spec.Git.Auth)
+	if err != nil {
+		return git.Result{}, fmt.Errorf("resolving git auth: %w", err)
+	}
+
+	lsCtx, cancel := context.WithTimeout(ctx, lsRemoteTimeout)
+	defer cancel()
+
+	return r.GitClient.LsRemote(lsCtx, isync.Spec.Git.Repo, ref, auth)
 }
 
 // cleanupOwnedResources removes ConfigMaps owned by this CR during deletion.
@@ -281,10 +224,6 @@ func (r *IgnitionSyncReconciler) cleanupOwnedResources(ctx context.Context, isyn
 		}
 		log.Info("deleted ConfigMap", "name", name)
 	}
-
-	// Cancel any in-flight git operation
-	crKey := fmt.Sprintf("%s/%s", isync.Namespace, isync.Name)
-	r.gitOps.Delete(crKey)
 
 	return nil
 }
@@ -392,9 +331,10 @@ func (r *IgnitionSyncReconciler) setCondition(_ context.Context, isync *syncv1al
 	isync.Status.Conditions = append(isync.Status.Conditions, condition)
 }
 
-// patchStatus applies a status update via merge patch.
-func (r *IgnitionSyncReconciler) patchStatus(ctx context.Context, isync *syncv1alpha1.IgnitionSync) error {
-	return r.Status().Update(ctx, isync)
+// patchStatus applies a status update via server-side merge patch.
+// This avoids resourceVersion conflicts when overlapping reconciles both update status.
+func (r *IgnitionSyncReconciler) patchStatus(ctx context.Context, isync *syncv1alpha1.IgnitionSync, base client.Object) error {
+	return r.Status().Patch(ctx, isync, client.MergeFrom(base))
 }
 
 // pollingInterval returns the requeue interval from the CR spec.
@@ -417,7 +357,6 @@ func (r *IgnitionSyncReconciler) pollingInterval(isync *syncv1alpha1.IgnitionSyn
 func (r *IgnitionSyncReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&syncv1alpha1.IgnitionSync{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
-		Owns(&corev1.PersistentVolumeClaim{}).
 		Owns(&corev1.ConfigMap{}).
 		Watches(&corev1.Pod{}, handler.EnqueueRequestsFromMapFunc(r.findIgnitionSyncForPod)).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 5}).

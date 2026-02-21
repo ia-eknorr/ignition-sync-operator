@@ -15,7 +15,7 @@
 
 - Controller reconciliation with fake CRs and pods
 - Webhook injection with sample pod specs
-- PVC creation and ownership
+- Metadata ConfigMap creation and ownership
 - Status condition transitions
 - Multi-CR, multi-namespace scenarios
 
@@ -35,7 +35,7 @@
 
 - Kind or k3d cluster with cert-manager
 - Deploy operator, create CR + SyncProfile, create annotated pods
-- Verify sidecar injection, PVC creation, git clone, file sync
+- Verify sidecar injection, ref resolution, metadata ConfigMap, agent clone, file sync
 - Verify SyncProfile mappings applied correctly by agent
 - Trigger webhook, verify ref update and sync propagation
 - Bi-directional: modify gateway files, verify PR creation
@@ -122,10 +122,11 @@ controller:
 **Never Export Secrets to Environment**
 - Git auth keys and Ignition API keys are mounted as volumes, never injected as env vars
 - Prevents accidental secret leakage via container logs, crash dumps, or exec history
+- Git auth secrets are injected into agent sidecar pods (not the controller), since agents perform the clone operations; the controller only runs ls-remote for ref resolution
 
 **External Secret Manager Integration**
 - Support for HashiCorp Vault, AWS Secrets Manager, Azure Key Vault via external-secrets operator
-- Example: Controller reads git key from Vault at reconciliation time, never storing it locally
+- Example: Agent reads git key from Vault-synced Secret at clone time, never storing it locally
 - Secret rotation policy: operator can be configured to re-read secrets every N minutes
 - Read-on-demand pattern: agent reads API key from mounted volume at sync time, discards after use
 
@@ -169,7 +170,7 @@ spec:
           port: 9443
 
 ---
-# Allow controller → git remotes (egress)
+# Allow controller → git remotes for ls-remote only (ref resolution, not full clone)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -190,6 +191,26 @@ spec:
           port: 22   # SSH for git
         - protocol: TCP
           port: 443  # HTTPS for git and GitHub API
+
+---
+# Allow agent sidecar → git remotes (egress)
+# Agents perform full git clone operations and need egress to git remotes
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agent-allow-git-egress
+spec:
+  podSelector:
+    matchLabels:
+      ignition-sync.io/inject: "true"
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - protocol: TCP
+          port: 22   # SSH for git
+        - protocol: TCP
+          port: 443  # HTTPS for git
 
 ---
 # Webhook must be separate deployment (security isolation)
@@ -411,7 +432,7 @@ Changes incorporated from the 6-agent architecture review:
 | Added doublestar library for ** glob support | Agent 2, 6 | Sync Flow, Agent |
 | .resources/ protection: merge-based, not atomic swap | Agent 2, 6 | .resources/ Protection, Sync Flow |
 | Recursive config normalization (filepath.Walk for all config.json) | Agent 2, 6 | Config Normalization, Sync Flow |
-| PVC access: controller=RW, agents=RO clarified | Agent 3 | Storage Strategy |
+| PVC eliminated: agent clones to local emptyDir, controller uses ls-remote only | Agent 3 | Storage Strategy |
 | Constant-time HMAC comparison (crypto/subtle) | Agent 3 | Webhook Receiver, Security |
 | CRD simplification with kubebuilder defaults | Agent 4 | CRD |
 | ConfigMap-only signaling (removed PVC file-based fallback) | Agent 5 | Communication, Sync Flow |

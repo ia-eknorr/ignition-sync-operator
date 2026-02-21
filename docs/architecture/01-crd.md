@@ -42,15 +42,15 @@ spec:
       #     key: "token"
 
   # ============================================================
-  # Storage — shared repo PVC
+  # Storage — DEPRECATED (agent clones locally, no shared PVC)
   # ============================================================
-  storage:
-    # +kubebuilder:default=""
-    storageClassName: ""        # e.g., "efs-sc", "nfs-client", "longhorn"; empty = cluster default
-    # +kubebuilder:default="1Gi"
-    size: "1Gi"
-    # +kubebuilder:default=ReadWriteMany
-    accessMode: ReadWriteMany   # ReadWriteOnce if only one gateway pod exists
+  # The storage field is deprecated and ignored. Each sync agent
+  # clones the repository to a local emptyDir. No shared PVC is needed.
+  # This field will be removed in v1beta1.
+  # storage:
+  #   storageClassName: ""
+  #   size: "1Gi"
+  #   accessMode: ReadWriteMany
 
   # ============================================================
   # Webhook Receiver
@@ -228,6 +228,8 @@ Fields are annotated in Go types to indicate stability:
 type IgnitionSyncSpec struct {
     // Stable — will not change in v1beta1
     Git     GitSpec     `json:"git"`
+    // Deprecated: Storage is no longer used. Agent clones locally.
+    // +optional
     Storage StorageSpec `json:"storage,omitempty"`
     Gateway GatewaySpec `json:"gateway"`
 
@@ -249,7 +251,7 @@ status:
   lastSyncTime: "2026-02-12T10:30:00Z"
   lastSyncRef: "2.0.0"
   lastSyncCommit: "abc123f"
-  repoCloneStatus: Cloned    # NotCloned | Cloning | Cloned | Error
+  refResolutionStatus: Resolved    # NotResolved | Resolving | Resolved | Error
 
   # Discovered gateways — populated by the controller watching annotated pods
   discoveredGateways:
@@ -306,10 +308,10 @@ status:
       lastTransitionTime: "2026-02-12T10:30:00Z"
       observedGeneration: 3
 
-    - type: RepoCloned
+    - type: RefResolved
       status: "True"
-      reason: CloneSucceeded
-      message: "Repository cloned at ref 2.0.0 (abc123f)"
+      reason: RefResolved
+      message: "Ref 2.0.0 resolved to abc123f"
       lastTransitionTime: "2026-02-12T10:00:00Z"
       observedGeneration: 3
 
@@ -338,7 +340,7 @@ status:
 Key status design decisions following K8s conventions:
 
 - **`observedGeneration`** on both the top-level status and on each condition — lets clients know if the status reflects the current spec.
-- **Conditions over phases** — `Ready`, `RepoCloned`, `AllGatewaysSynced`, `WebhookReady`, `BidirectionalReady` give a multi-dimensional view. No single "phase" field that can only express one state.
+- **Conditions over phases** — `Ready`, `RefResolved`, `AllGatewaysSynced`, `WebhookReady`, `BidirectionalReady` give a multi-dimensional view. No single "phase" field that can only express one state.
 - **`discoveredGateways`** is dynamic — controller populates it by watching for pods with `ignition-sync.io/cr-name` matching this CR. Gateways appear/disappear as pods are created/deleted.
 
 ---

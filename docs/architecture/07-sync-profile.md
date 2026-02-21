@@ -34,7 +34,7 @@ Problems:
 
 1. **Tightly coupled** — `shared.scripts`, `shared.udts`, `shared.externalResources` assume a specific Ignition project structure. Non-standard layouts require `additionalFiles` workarounds.
 2. **Not reusable** — Two gateways with the same role (e.g., all area gateways) duplicate the same mapping configuration in annotations.
-3. **Mixed concerns** — The IgnitionSync CR mixes infrastructure (git, storage, webhook) with file routing (what goes where on each gateway).
+3. **Mixed concerns** — The IgnitionSync CR mixes infrastructure (git, webhook) with file routing (what goes where on each gateway).
 4. **Flat annotation model** — Per-gateway overrides via 6+ annotations per pod are verbose and error-prone.
 
 ## Design: SyncProfile CRD
@@ -46,7 +46,7 @@ Problems:
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │  Tier 1: IgnitionSync CR (namespace defaults)                │
-│  git, storage, gateway API, webhook, polling, global excludes│
+│  git, gateway API, webhook, polling, global excludes          │
 │  agent image — pure infrastructure                           │
 ├──────────────────────────────────────────────────────────────┤
 │  Tier 2: SyncProfile (reusable gateway role config)          │
@@ -264,13 +264,13 @@ The `gatewayCount` status field is updated by the IgnitionSync controller whenev
 
 ## Agent Sync Algorithm
 
-The sync agent uses the profile's ordered mappings to construct the gateway filesystem:
+The sync agent clones the git repo to a local emptyDir volume (`/repo`) and uses the profile's ordered mappings to construct the gateway filesystem. There is no shared PVC between the controller and agent; each agent manages its own clone.
 
 ```
 1. Read SyncProfile from ConfigMap (injected by webhook)
 2. For each mapping in order:
-   a. Resolve source path against repo clone (/repo/{source})
-   b. If type=dir: rsync directory contents to /ignition-data/{destination}
+   a. Resolve source path against local repo clone (/repo/{source})
+   b. If type=dir: sync directory contents to /ignition-data/{destination}
    c. If type=file: copy single file to /ignition-data/{destination}
    d. Later mappings overlay earlier ones (last-write-wins)
 3. If deploymentMode specified:
@@ -316,6 +316,9 @@ With SyncProfile absorbing file routing, the IgnitionSync CR becomes pure infras
 type IgnitionSyncSpec struct {
     // Stable — infrastructure concerns
     Git             GitSpec             `json:"git"`
+    // Deprecated: Storage is no longer used. Agent clones to local emptyDir.
+    // Retained at v1alpha1 for backward compatibility; will be removed in v1beta1.
+    // +optional
     Storage         StorageSpec         `json:"storage,omitempty"`
     Webhook         WebhookSpec         `json:"webhook,omitempty"`
     Polling         PollingSpec         `json:"polling,omitempty"`

@@ -23,6 +23,8 @@ import (
 	"testing"
 )
 
+const testHMACSecret = "my-secret-key"
+
 func computeHMAC(payload []byte, secret string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(payload)
@@ -31,31 +33,27 @@ func computeHMAC(payload []byte, secret string) string {
 
 func TestValidateHMAC_Valid(t *testing.T) {
 	payload := []byte(`{"ref":"v1.0.0"}`)
-	secret := "my-secret-key"
-	signature := computeHMAC(payload, secret)
+	signature := computeHMAC(payload, testHMACSecret)
 
-	if err := ValidateHMAC(payload, signature, secret); err != nil {
+	if err := ValidateHMAC(payload, signature, testHMACSecret); err != nil {
 		t.Fatalf("expected valid HMAC, got error: %v", err)
 	}
 }
 
 func TestValidateHMAC_Invalid(t *testing.T) {
 	payload := []byte(`{"ref":"v1.0.0"}`)
-	secret := "my-secret-key"
-
-	if err := ValidateHMAC(payload, "sha256=deadbeef", secret); err == nil {
+	if err := ValidateHMAC(payload, "sha256=deadbeef", testHMACSecret); err == nil {
 		t.Fatal("expected error for invalid HMAC")
 	}
 }
 
 func TestValidateHMAC_MissingPrefix(t *testing.T) {
 	payload := []byte(`{"ref":"v1.0.0"}`)
-	secret := "my-secret-key"
-	mac := hmac.New(sha256.New, []byte(secret))
+	mac := hmac.New(sha256.New, []byte(testHMACSecret))
 	mac.Write(payload)
 	bare := hex.EncodeToString(mac.Sum(nil))
 
-	if err := ValidateHMAC(payload, bare, secret); err == nil {
+	if err := ValidateHMAC(payload, bare, testHMACSecret); err == nil {
 		t.Fatal("expected error for missing sha256= prefix")
 	}
 }

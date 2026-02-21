@@ -2,7 +2,9 @@
 
 ## Objective
 
-Validate the controller's core reconciliation loop with a real Ignition gateway running in the cluster. We verify CRD behavior, PVC provisioning, git clone operations, finalizer lifecycle, ref tracking, metadata ConfigMap creation, and error recovery — all while confirming the operator doesn't interfere with Ignition gateway health.
+Validate the controller's core reconciliation loop with a real Ignition gateway running in the cluster. We verify CRD behavior, git ref resolution via `git ls-remote`, metadata ConfigMap creation, finalizer lifecycle, ref tracking, and error recovery — all while confirming the operator doesn't interfere with Ignition gateway health.
+
+The controller never clones a git repository. It resolves refs to commit SHAs using a single `git ls-remote` HTTP call and writes the result to a metadata ConfigMap. The agent sidecar (not the controller) is responsible for cloning repos.
 
 **Prerequisite:** Complete [00 — Environment Setup](00-environment-setup.md).
 
@@ -61,7 +63,7 @@ kubectl delete ignitionsync invalid-test -n lab --ignore-not-found
 ## Lab 2.2: Create First IgnitionSync CR
 
 ### Purpose
-Create a valid CR pointing to the in-cluster git server and watch the full reconciliation cycle.
+Create a valid CR pointing to the GitHub repo and watch the full reconciliation cycle.
 
 ### Steps
 
@@ -74,8 +76,13 @@ metadata:
   name: lab-sync
 spec:
   git:
-    repo: "git://test-git-server.lab.svc.cluster.local/test-repo.git"
+    repo: "https://github.com/ia-eknorr/test-ignition-project.git"
     ref: "main"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
@@ -103,45 +110,39 @@ kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manage
    ```
    Expected: `["ignition-sync.io/finalizer"]`
 
-2. **PVC created** (within ~10s):
+2. **Ref resolved** (within ~10s):
    ```bash
-   kubectl get pvc -n lab -l ignition-sync.io/cr-name=lab-sync
+   kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
-   Expected: PVC named `ignition-sync-repo-lab-sync` in `Bound` state.
+   Expected: `Resolved`
 
-3. **PVC owner reference** — confirm garbage collection will work:
-   ```bash
-   kubectl get pvc ignition-sync-repo-lab-sync -n lab \
-     -o jsonpath='{.metadata.ownerReferences[0].kind}'
-   ```
-   Expected: `IgnitionSync`
-
-4. **Git clone completes** (within ~30s):
-   ```bash
-   kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.repoCloneStatus}'
-   ```
-   Expected: `Cloned`
-
-5. **RepoCloned condition**:
+3. **RefResolved condition**:
    ```bash
    kubectl get ignitionsync lab-sync -n lab \
-     -o jsonpath='{.status.conditions[?(@.type=="RepoCloned")].status}'
+     -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}'
    ```
    Expected: `True`
 
-6. **Commit SHA recorded**:
+4. **Commit SHA recorded**:
    ```bash
    kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}'
    ```
    Expected: Non-empty 40-char hex string
 
-7. **Metadata ConfigMap created**:
+5. **Metadata ConfigMap created**:
    ```bash
-   kubectl get configmap ignition-sync-metadata-lab-sync -n lab -o yaml
+   kubectl get configmap ignition-sync-metadata-lab-sync -n lab -o json | jq '.data'
    ```
-   Expected: `data.commit`, `data.ref`, and `data.trigger` keys populated
+   Expected: `commit`, `ref`, and `trigger` keys populated
 
-8. **Ignition gateway still healthy** — the operator should not have affected it:
+6. **Metadata ConfigMap has valid commit SHA**:
+   ```bash
+   kubectl get configmap ignition-sync-metadata-lab-sync -n lab \
+     -o jsonpath='{.data.commit}' | grep -qE '^[0-9a-f]{40}$' && echo "PASS" || echo "FAIL"
+   ```
+   Expected: `PASS`
+
+7. **Ignition gateway still healthy** — the operator should not have affected it:
    ```bash
    kubectl get pod ignition-0 -n lab -o jsonpath='{.status.phase}'
    curl -s -o /dev/null -w '%{http_code}' http://localhost:8088/StatusPing
@@ -152,83 +153,89 @@ kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manage
 
 In the operator logs, you should see (in order):
 1. `reconciling IgnitionSync` with namespace/name
-2. `ensuring PVC`
-3. `starting git operation` or `git clone`
-4. `git operation completed`
-5. `created metadata configmap`
-6. `discovered gateways` with count
+2. `resolving git ref` or `git ls-remote`
+3. `ref resolved` with commit SHA
+4. `created metadata configmap`
+5. `discovered gateways` with count
 
 **Red flags to watch for:** Any `ERROR` lines, stack traces, or `failed to` messages.
 
 ---
 
-## Lab 2.3: Inspect PVC Contents
+## Lab 2.3: Ref Resolution Verification
 
 ### Purpose
-Verify the git clone actually put files on the PVC with the expected Ignition project structure.
+Verify the controller's resolved commit SHA is correct by cross-referencing it against `git ls-remote` output, and confirm the metadata ConfigMap contains all expected keys.
 
 ### Steps
 
 ```bash
-# Launch a debug pod that mounts the same PVC
-kubectl run pvc-inspector --rm -i --restart=Never -n lab \
-  --overrides='{
-    "spec": {
-      "containers": [{
-        "name": "inspector",
-        "image": "alpine:latest",
-        "command": ["sh", "-c", "apk add --no-cache tree && tree /repo && echo --- && cat /repo/com.inductiveautomation.ignition/projects/MyProject/project.json"],
-        "volumeMounts": [{
-          "name": "repo",
-          "mountPath": "/repo",
-          "readOnly": true
-        }]
-      }],
-      "volumes": [{
-        "name": "repo",
-        "persistentVolumeClaim": {
-          "claimName": "ignition-sync-repo-lab-sync"
-        }
-      }]
-    }
-  }'
+# Get resolved commit from CR status
+RESOLVED_SHA=$(kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
+echo "Controller resolved SHA: $RESOLVED_SHA"
+
+# Verify it's a valid 40-character hex string
+echo "$RESOLVED_SHA" | grep -qE '^[0-9a-f]{40}$' && echo "PASS: Valid SHA format" || echo "FAIL: Invalid SHA format"
 ```
 
-### Expected Output
+### Cross-Reference Against Remote
 
-A tree showing:
-```
-/repo
-├── .resources
-│   └── platform_state.json
-├── com.inductiveautomation.ignition
-│   └── projects
-│       ├── MyProject
-│       │   ├── com.inductiveautomation.perspective
-│       │   │   └── views
-│       │   │       ├── MainView
-│       │   │       │   └── view.json
-│       │   │       └── SecondView
-│       │   │           └── view.json
-│       │   └── project.json
-│       └── SharedScripts
-│           └── project.json
-└── tags
-    └── default
-        └── tags.json
+```bash
+# Get the git token
+GIT_TOKEN=$(kubectl get secret git-token-secret -n lab -o jsonpath='{.data.token}' | base64 -d)
+
+# Run git ls-remote to get the actual remote commit for refs/heads/main
+REMOTE_SHA=$(git ls-remote https://${GIT_TOKEN}@github.com/ia-eknorr/test-ignition-project.git refs/heads/main | awk '{print $1}')
+echo "Remote SHA: $REMOTE_SHA"
+
+# Compare
+[ "$RESOLVED_SHA" = "$REMOTE_SHA" ] && echo "PASS: SHAs match" || echo "FAIL: SHAs differ"
 ```
 
-Plus the content of `project.json` showing valid JSON with `"title": "MyProject"`.
+### Verify Metadata ConfigMap Contents
+
+```bash
+# Dump all data keys
+kubectl get configmap ignition-sync-metadata-lab-sync -n lab -o json | jq '.data'
+```
+
+Expected output should contain at minimum:
+```json
+{
+  "commit": "<40-char hex SHA>",
+  "ref": "main",
+  "trigger": "<RFC3339 timestamp>"
+}
+```
+
+### Verify Each Key Individually
+
+```bash
+# commit key
+CM_COMMIT=$(kubectl get configmap ignition-sync-metadata-lab-sync -n lab -o jsonpath='{.data.commit}')
+echo "$CM_COMMIT" | grep -qE '^[0-9a-f]{40}$' && echo "PASS: commit is valid SHA" || echo "FAIL: commit invalid"
+
+# ref key
+CM_REF=$(kubectl get configmap ignition-sync-metadata-lab-sync -n lab -o jsonpath='{.data.ref}')
+[ "$CM_REF" = "main" ] && echo "PASS: ref is main" || echo "FAIL: ref is $CM_REF"
+
+# trigger key
+CM_TRIGGER=$(kubectl get configmap ignition-sync-metadata-lab-sync -n lab -o jsonpath='{.data.trigger}')
+[ -n "$CM_TRIGGER" ] && echo "PASS: trigger is $CM_TRIGGER" || echo "FAIL: trigger is empty"
+
+# commit in ConfigMap matches CR status
+[ "$CM_COMMIT" = "$RESOLVED_SHA" ] && echo "PASS: ConfigMap commit matches CR status" || echo "FAIL: mismatch"
+```
 
 ### What This Proves
-The git clone wrote real files to the PVC in the correct Ignition project structure. When the agent (phase 5) mounts this PVC, it will have valid project data to sync.
+The controller correctly resolves a git ref to its commit SHA using `git ls-remote` (no clone), records the SHA in both the CR status and the metadata ConfigMap, and the ConfigMap contains all keys (`commit`, `ref`, `trigger`) the agent sidecar will need to perform its own clone.
 
 ---
 
 ## Lab 2.4: Ref Tracking — Tag Switch
 
 ### Purpose
-Verify the controller detects spec.git.ref changes and fetches the new ref. The git server has two commits tagged v1.0.0 (initial, 1 view) and v2.0.0 (second commit, 2 views).
+Verify the controller detects `spec.git.ref` changes and resolves the new ref to a different commit SHA. The repo has two commits tagged `0.1.0` (initial, 1 view) and `0.2.0` (second commit, 2 views).
 
 ### Steps
 
@@ -237,9 +244,9 @@ Verify the controller detects spec.git.ref changes and fetches the new ref. The 
 COMMIT_BEFORE=$(kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
 echo "Current commit: $COMMIT_BEFORE"
 
-# Switch to v1.0.0
+# Switch to 0.1.0
 kubectl patch ignitionsync lab-sync -n lab --type=merge \
-  -p '{"spec":{"git":{"ref":"v1.0.0"}}}'
+  -p '{"spec":{"git":{"ref":"0.1.0"}}}'
 
 # Watch for commit change
 kubectl get ignitionsync lab-sync -n lab -w
@@ -247,7 +254,7 @@ kubectl get ignitionsync lab-sync -n lab -w
 
 ### What to Verify
 
-1. **lastSyncRef updates** to `v1.0.0`:
+1. **lastSyncRef updates** to `0.1.0`:
    ```bash
    kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.lastSyncRef}'
    ```
@@ -255,56 +262,43 @@ kubectl get ignitionsync lab-sync -n lab -w
 2. **lastSyncCommit changes** to a different SHA:
    ```bash
    COMMIT_V1=$(kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
-   echo "v1 commit: $COMMIT_V1"
+   echo "0.1.0 commit: $COMMIT_V1"
+   [ "$COMMIT_V1" != "$COMMIT_BEFORE" ] && echo "PASS: Commit changed" || echo "FAIL: Commit unchanged"
    ```
 
-3. **PVC contents reflect v1** — only 1 view (no SecondView):
+3. **Metadata ConfigMap updated with new ref and commit:**
    ```bash
-   kubectl run pvc-check-v1 --rm -i --restart=Never -n lab \
-     --overrides='{
-       "spec": {
-         "containers": [{
-           "name": "check",
-           "image": "alpine:latest",
-           "command": ["ls", "-la", "/repo/com.inductiveautomation.ignition/projects/MyProject/com.inductiveautomation.perspective/views/"],
-           "volumeMounts": [{"name": "repo", "mountPath": "/repo", "readOnly": true}]
-         }],
-         "volumes": [{"name": "repo", "persistentVolumeClaim": {"claimName": "ignition-sync-repo-lab-sync"}}]
-       }
-     }'
+   kubectl get configmap ignition-sync-metadata-lab-sync -n lab -o json | jq '.data'
    ```
-   Expected: Only `MainView` directory (no `SecondView`).
+   Expected: `ref` is `0.1.0`, `commit` matches `$COMMIT_V1`.
 
-4. **Now switch to v2.0.0:**
+4. **RefResolved condition still True:**
+   ```bash
+   kubectl get ignitionsync lab-sync -n lab \
+     -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}'
+   ```
+   Expected: `True`
+
+5. **Now switch to 0.2.0:**
    ```bash
    kubectl patch ignitionsync lab-sync -n lab --type=merge \
-     -p '{"spec":{"git":{"ref":"v2.0.0"}}}'
+     -p '{"spec":{"git":{"ref":"0.2.0"}}}'
    ```
 
-5. **Verify SecondView now appears:**
+6. **Verify new resolution:**
    ```bash
    # Wait for reconcile (~10s)
    sleep 15
-   kubectl run pvc-check-v2 --rm -i --restart=Never -n lab \
-     --overrides='{
-       "spec": {
-         "containers": [{
-           "name": "check",
-           "image": "alpine:latest",
-           "command": ["ls", "-la", "/repo/com.inductiveautomation.ignition/projects/MyProject/com.inductiveautomation.perspective/views/"],
-           "volumeMounts": [{"name": "repo", "mountPath": "/repo", "readOnly": true}]
-         }],
-         "volumes": [{"name": "repo", "persistentVolumeClaim": {"claimName": "ignition-sync-repo-lab-sync"}}]
-       }
-     }'
+   COMMIT_V2=$(kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
+   echo "0.2.0 commit: $COMMIT_V2"
+   [ "$COMMIT_V2" != "$COMMIT_V1" ] && echo "PASS: Commit changed for 0.2.0" || echo "FAIL: Commit unchanged"
    ```
-   Expected: Both `MainView` and `SecondView` directories.
 
-6. **Metadata ConfigMap updated:**
+7. **Metadata ConfigMap updated:**
    ```bash
    kubectl get configmap ignition-sync-metadata-lab-sync -n lab -o jsonpath='{.data.ref}'
    ```
-   Expected: `v2.0.0`
+   Expected: `0.2.0`
 
 ### Restore
 ```bash
@@ -317,7 +311,7 @@ kubectl patch ignitionsync lab-sync -n lab --type=merge \
 ## Lab 2.5: Error Recovery — Bad Repository URL
 
 ### Purpose
-Verify the controller handles git clone failures gracefully: sets error conditions, doesn't crash, and recovers when the URL is corrected.
+Verify the controller handles ref resolution failures gracefully: sets error conditions, doesn't crash, and recovers when the URL is corrected.
 
 ### Steps
 
@@ -330,8 +324,13 @@ metadata:
   name: bad-repo-test
 spec:
   git:
-    repo: "git://test-git-server.lab.svc.cluster.local/does-not-exist.git"
+    repo: "https://github.com/ia-eknorr/nonexistent-repo-does-not-exist.git"
     ref: "main"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
@@ -341,16 +340,16 @@ EOF
 
 ### What to Verify
 
-1. **RepoCloned=False** (within ~30s):
+1. **RefResolved=False** (within ~30s):
    ```bash
    kubectl get ignitionsync bad-repo-test -n lab \
-     -o jsonpath='{.status.conditions[?(@.type=="RepoCloned")]}'  | jq .
+     -o jsonpath='{.status.conditions[?(@.type=="RefResolved")]}'  | jq .
    ```
-   Expected: `status: "False"`, `reason: "CloneFailed"`
+   Expected: `status: "False"`, `reason: "RefResolutionFailed"`
 
-2. **repoCloneStatus is Error:**
+2. **refResolutionStatus is Error:**
    ```bash
-   kubectl get ignitionsync bad-repo-test -n lab -o jsonpath='{.status.repoCloneStatus}'
+   kubectl get ignitionsync bad-repo-test -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
    Expected: `Error`
 
@@ -362,20 +361,20 @@ EOF
 
 4. **Original CR unaffected:**
    ```bash
-   kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.repoCloneStatus}'
+   kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
-   Expected: Still `Cloned`
+   Expected: Still `Resolved`
 
 5. **Fix the URL and verify recovery:**
    ```bash
    kubectl patch ignitionsync bad-repo-test -n lab --type=merge \
-     -p '{"spec":{"git":{"repo":"git://test-git-server.lab.svc.cluster.local/test-repo.git"}}}'
+     -p '{"spec":{"git":{"repo":"https://github.com/ia-eknorr/test-ignition-project.git"}}}'
    ```
    Wait ~30s, then:
    ```bash
-   kubectl get ignitionsync bad-repo-test -n lab -o jsonpath='{.status.repoCloneStatus}'
+   kubectl get ignitionsync bad-repo-test -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
-   Expected: `Cloned` — the controller recovered.
+   Expected: `Resolved` — the controller recovered.
 
 ### Cleanup
 ```bash
@@ -400,8 +399,13 @@ metadata:
   name: missing-secret-test
 spec:
   git:
-    repo: "git://test-git-server.lab.svc.cluster.local/test-repo.git"
+    repo: "https://github.com/ia-eknorr/test-ignition-project.git"
     ref: "main"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: nonexistent-secret
@@ -432,9 +436,9 @@ EOF
    ```bash
    kubectl create secret generic nonexistent-secret -n lab --from-literal=apiKey=test-key
    sleep 15
-   kubectl get ignitionsync missing-secret-test -n lab -o jsonpath='{.status.repoCloneStatus}'
+   kubectl get ignitionsync missing-secret-test -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
-   Expected: Eventually reaches `Cloned`.
+   Expected: Eventually reaches `Resolved`.
 
 ### Cleanup
 ```bash
@@ -447,7 +451,7 @@ kubectl delete secret nonexistent-secret -n lab
 ## Lab 2.7: Paused CR
 
 ### Purpose
-Verify `spec.paused: true` halts all operations — no PVC, no clone, no reconciliation side effects.
+Verify `spec.paused: true` halts all operations — no ref resolution, no metadata ConfigMap, no reconciliation side effects.
 
 ### Steps
 
@@ -460,8 +464,13 @@ metadata:
 spec:
   paused: true
   git:
-    repo: "git://test-git-server.lab.svc.cluster.local/test-repo.git"
+    repo: "https://github.com/ia-eknorr/test-ignition-project.git"
     ref: "main"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
@@ -471,27 +480,39 @@ EOF
 
 ### What to Verify (After ~20s)
 
-1. **No PVC created:**
+1. **No metadata ConfigMap created:**
    ```bash
-   kubectl get pvc -n lab -l ignition-sync.io/cr-name=paused-test
+   kubectl get configmap ignition-sync-metadata-paused-test -n lab 2>&1
    ```
-   Expected: Empty list.
+   Expected: `NotFound`
 
-2. **Ready=False with reason Paused:**
+2. **refResolutionStatus is not Resolved:**
+   ```bash
+   kubectl get ignitionsync paused-test -n lab -o jsonpath='{.status.refResolutionStatus}'
+   ```
+   Expected: Empty or not `Resolved`.
+
+3. **Ready=False with reason Paused:**
    ```bash
    kubectl get ignitionsync paused-test -n lab \
      -o jsonpath='{.status.conditions[?(@.type=="Ready")].reason}'
    ```
    Expected: `Paused`
 
-3. **Unpause and verify it starts working:**
+4. **Unpause and verify it starts working:**
    ```bash
    kubectl patch ignitionsync paused-test -n lab --type=merge \
      -p '{"spec":{"paused":false}}'
    sleep 30
-   kubectl get ignitionsync paused-test -n lab -o jsonpath='{.status.repoCloneStatus}'
+   kubectl get ignitionsync paused-test -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
-   Expected: `Cloned`
+   Expected: `Resolved`
+
+5. **Metadata ConfigMap now exists:**
+   ```bash
+   kubectl get configmap ignition-sync-metadata-paused-test -n lab -o jsonpath='{.data.commit}'
+   ```
+   Expected: A valid 40-char hex SHA.
 
 ### Cleanup
 ```bash
@@ -503,7 +524,7 @@ kubectl delete ignitionsync paused-test -n lab
 ## Lab 2.8: Finalizer and Cleanup on Deletion
 
 ### Purpose
-Verify the full cleanup chain when a CR is deleted: finalizer runs, metadata ConfigMap is deleted, PVC is garbage collected.
+Verify the full cleanup chain when a CR is deleted: finalizer runs, metadata ConfigMap is deleted.
 
 ### Steps
 
@@ -516,8 +537,13 @@ metadata:
   name: cleanup-test
 spec:
   git:
-    repo: "git://test-git-server.lab.svc.cluster.local/test-repo.git"
+    repo: "https://github.com/ia-eknorr/test-ignition-project.git"
     ref: "main"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
@@ -526,14 +552,13 @@ EOF
 
 # Wait for full reconciliation
 sleep 30
-kubectl get ignitionsync cleanup-test -n lab -o jsonpath='{.status.repoCloneStatus}'
-# Should be: Cloned
+kubectl get ignitionsync cleanup-test -n lab -o jsonpath='{.status.refResolutionStatus}'
+# Should be: Resolved
 ```
 
 ### Record resources before deletion:
 ```bash
 echo "=== Before Deletion ==="
-kubectl get pvc ignition-sync-repo-cleanup-test -n lab 2>&1
 kubectl get configmap ignition-sync-metadata-cleanup-test -n lab 2>&1
 kubectl get ignitionsync cleanup-test -n lab -o jsonpath='{.metadata.finalizers}'
 ```
@@ -542,7 +567,7 @@ kubectl get ignitionsync cleanup-test -n lab -o jsonpath='{.metadata.finalizers}
 ```bash
 kubectl delete ignitionsync cleanup-test -n lab &
 # Watch in real-time
-kubectl get ignitionsync,pvc,configmap -n lab -w
+kubectl get ignitionsync,configmap -n lab -w
 ```
 
 ### What to Verify
@@ -559,14 +584,7 @@ kubectl get ignitionsync,pvc,configmap -n lab -w
    ```
    Expected: `NotFound`
 
-3. **PVC deleted** (owner reference garbage collection):
-   ```bash
-   # May take up to 60s for GC controller
-   kubectl get pvc ignition-sync-repo-cleanup-test -n lab 2>&1
-   ```
-   Expected: `NotFound` (eventually)
-
-4. **Operator logs show cleanup:**
+3. **Operator logs show cleanup:**
    ```bash
    kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manager --tail=20 | grep -i "cleanup\|finalizer\|deleting"
    ```
@@ -576,7 +594,7 @@ kubectl get ignitionsync,pvc,configmap -n lab -w
 ## Lab 2.9: Multiple CRs — Isolation
 
 ### Purpose
-Verify two CRs in the same namespace don't interfere with each other. Each should have independent PVCs, ConfigMaps, and status.
+Verify two CRs in the same namespace don't interfere with each other. Each should have independent metadata ConfigMaps and status.
 
 ### Steps
 
@@ -589,8 +607,13 @@ metadata:
   name: multi-a
 spec:
   git:
-    repo: "git://test-git-server.lab.svc.cluster.local/test-repo.git"
-    ref: "v1.0.0"
+    repo: "https://github.com/ia-eknorr/test-ignition-project.git"
+    ref: "0.1.0"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
@@ -602,8 +625,13 @@ metadata:
   name: multi-b
 spec:
   git:
-    repo: "git://test-git-server.lab.svc.cluster.local/test-repo.git"
-    ref: "v2.0.0"
+    repo: "https://github.com/ia-eknorr/test-ignition-project.git"
+    ref: "0.2.0"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
@@ -616,17 +644,17 @@ sleep 45
 
 ### What to Verify
 
-1. **Both CRs cloned successfully:**
+1. **Both CRs resolved successfully:**
    ```bash
    kubectl get ignitionsyncs -n lab
    ```
-   Expected: Both show `REF` (v1.0.0 / v2.0.0) and status fields populated.
+   Expected: Both show `REF` (0.1.0 / 0.2.0) and status fields populated.
 
-2. **Separate PVCs:**
+2. **Separate metadata ConfigMaps:**
    ```bash
-   kubectl get pvc -n lab -l ignition-sync.io/cr-name
+   kubectl get configmap -n lab -l ignition-sync.io/cr-name
    ```
-   Expected: `ignition-sync-repo-multi-a` and `ignition-sync-repo-multi-b`
+   Expected: `ignition-sync-metadata-multi-a` and `ignition-sync-metadata-multi-b`
 
 3. **Different commits:**
    ```bash
@@ -641,9 +669,16 @@ sleep 45
    ```bash
    kubectl delete ignitionsync multi-a -n lab
    sleep 10
-   kubectl get ignitionsync multi-b -n lab -o jsonpath='{.status.repoCloneStatus}'
+   kubectl get ignitionsync multi-b -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
-   Expected: Still `Cloned`
+   Expected: Still `Resolved`
+
+5. **Deleted CR's ConfigMap cleaned up, other still exists:**
+   ```bash
+   kubectl get configmap ignition-sync-metadata-multi-a -n lab 2>&1
+   kubectl get configmap ignition-sync-metadata-multi-b -n lab 2>&1
+   ```
+   Expected: multi-a `NotFound`, multi-b still exists.
 
 ### Cleanup
 ```bash
@@ -660,11 +695,11 @@ Verify the controller handles rapid spec changes without getting confused or lea
 ### Steps
 
 ```bash
-# Ensure lab-sync exists and is cloned
-kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.repoCloneStatus}'
+# Ensure lab-sync exists and is resolved
+kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.refResolutionStatus}'
 
 # Flip refs rapidly
-for ref in v1.0.0 v2.0.0 main v1.0.0 v2.0.0 main; do
+for ref in 0.1.0 0.2.0 main 0.1.0 0.2.0 main; do
   kubectl patch ignitionsync lab-sync -n lab --type=merge \
     -p "{\"spec\":{\"git\":{\"ref\":\"$ref\"}}}"
   sleep 2
@@ -681,11 +716,11 @@ sleep 30
    kubectl get ignitionsync lab-sync -n lab -o json | jq '{
      ref: .spec.git.ref,
      lastSyncRef: .status.lastSyncRef,
-     repoCloneStatus: .status.repoCloneStatus,
+     refResolutionStatus: .status.refResolutionStatus,
      lastSyncCommit: .status.lastSyncCommit
    }'
    ```
-   Expected: `lastSyncRef` matches `spec.git.ref` (which should be `main`), status is `Cloned`.
+   Expected: `lastSyncRef` matches `spec.git.ref` (which should be `main`), status is `Resolved`.
 
 2. **Controller pod healthy** (no restarts, no OOM):
    ```bash
@@ -736,15 +771,16 @@ kubectl logs ignition-0 -n lab --tail=200 | grep -i "sync\|error\|exception" | h
 |-------|--------|
 | CRD installed with short names and print columns | |
 | Invalid CR handled (rejected or error condition) | |
-| Valid CR triggers full reconciliation (PVC, clone, ConfigMap) | |
-| PVC has correct owner reference, labels, access mode | |
-| Git clone puts real files on PVC | |
-| Ref switching updates PVC contents and status | |
-| Bad repo URL → RepoCloned=False, controller survives | |
+| Valid CR triggers full reconciliation (ref resolution, metadata ConfigMap) | |
+| Ref resolution produces valid 40-char hex commit SHA | |
+| Metadata ConfigMap has correct keys: commit, ref, trigger | |
+| Resolved SHA matches `git ls-remote` output for the same ref | |
+| Ref switching updates CR status and metadata ConfigMap | |
+| Bad repo URL → RefResolved=False, controller survives | |
 | Missing secret → Ready=False, controller recovers when secret created | |
-| Paused CR → no PVC, Ready=False/Paused, unpause works | |
-| CR deletion → finalizer runs, ConfigMap deleted, PVC GC'd | |
-| Multiple CRs isolated from each other | |
+| Paused CR → no metadata ConfigMap, Ready=False/Paused, unpause works | |
+| CR deletion → finalizer runs, metadata ConfigMap deleted | |
+| Multiple CRs isolated with separate metadata ConfigMaps | |
 | Rapid ref changes → consistent final state | |
 | Ignition gateway unaffected throughout all operations | |
 | Operator pod has 0 restarts and no ERROR logs | |

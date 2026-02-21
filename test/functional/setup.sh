@@ -71,33 +71,36 @@ fi
 echo "→ Creating test namespace '${TEST_NAMESPACE}'..."
 setup_namespace "${TEST_NAMESPACE}"
 
-# 8. Deploy in-cluster git server
-echo "→ Deploying in-cluster git server..."
-apply_fixture "git-server.yaml"
+# 8. Create git auth secrets from local secrets/ directory
+echo "→ Creating git auth secrets..."
+SECRETS_DIR="${PROJECT_ROOT}/secrets"
 
-# 9. Wait for git server to be Running
-echo "→ Waiting for git server pod..."
-deadline=$((SECONDS + 90))
-while [[ $SECONDS -lt $deadline ]]; do
-    phase=$(kubectl get pod test-git-server -n "${TEST_NAMESPACE}" \
-        -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
-    ready=$(kubectl get pod test-git-server -n "${TEST_NAMESPACE}" \
-        -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
-    if [[ "$phase" == "Running" && "$ready" == "True" ]]; then
-        echo "  Git server is Running and Ready."
-        break
-    fi
-    sleep 3
-done
-if [[ "$phase" != "Running" || "$ready" != "True" ]]; then
-    echo "ERROR: Git server did not become ready within 90s"
-    kubectl describe pod test-git-server -n "${TEST_NAMESPACE}" 2>/dev/null || true
+if [[ ! -f "${SECRETS_DIR}/github-token" ]]; then
+    echo "ERROR: ${SECRETS_DIR}/github-token not found"
     exit 1
 fi
+if [[ ! -f "${SECRETS_DIR}/deploy-key" ]]; then
+    echo "ERROR: ${SECRETS_DIR}/deploy-key not found"
+    exit 1
+fi
+
+# Token auth secret (for HTTPS cloning)
+kubectl create secret generic git-token-secret \
+    --from-file=token="${SECRETS_DIR}/github-token" \
+    -n "${TEST_NAMESPACE}" \
+    --dry-run=client -o yaml | kubectl apply -n "${TEST_NAMESPACE}" -f -
+
+# SSH auth secret (for SSH cloning)
+kubectl create secret generic git-ssh-secret \
+    --from-file=ssh-privatekey="${SECRETS_DIR}/deploy-key" \
+    -n "${TEST_NAMESPACE}" \
+    --dry-run=client -o yaml | kubectl apply -n "${TEST_NAMESPACE}" -f -
+
+echo "  Created git-token-secret and git-ssh-secret"
 
 echo ""
 echo "=== Setup Complete ==="
 echo "  Cluster:    ${KIND_CLUSTER}"
 echo "  Namespace:  ${TEST_NAMESPACE}"
 echo "  Image:      ${IMG}"
-echo "  Git server: git://test-git-server.${TEST_NAMESPACE}.svc.cluster.local/test-repo.git"
+echo "  Git repo:   ${GIT_REPO_URL}"

@@ -2,7 +2,7 @@
 
 ## Objective
 
-Create a kind cluster with the Ignition helm chart, operator, and in-cluster git server. This environment persists across all subsequent phase labs.
+Create a kind cluster with the Ignition helm chart and operator. Git content is served from the real GitHub repo `ia-eknorr/test-ignition-project`. This environment persists across all subsequent phase labs.
 
 ## Step 1: Create Kind Cluster
 
@@ -173,27 +173,26 @@ kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manage
 
 Expected: Should see "starting webhook receiver" and no ERROR lines.
 
-## Step 8: Deploy In-Cluster Git Server
+## Step 8: Create Git Auth Secrets
 
-The git server provides a deterministic test repository with realistic Ignition project structure:
+The labs use the real GitHub repo `ia-eknorr/test-ignition-project`. Create secrets so the operator can authenticate:
 
 ```bash
-kubectl apply -n lab -f test/functional/fixtures/git-server.yaml
+# Create git auth secrets
+kubectl create secret generic git-token-secret \
+  --from-file=token=secrets/github-token -n lab
+kubectl create secret generic git-ssh-secret \
+  --from-file=ssh-privatekey=secrets/deploy-key -n lab
 ```
 
-**Wait for git server:**
+> **Note:** The `secrets/github-token` file should contain a GitHub personal access token (or fine-grained token) with read access to the `ia-eknorr/test-ignition-project` repo. The `secrets/deploy-key` file should contain an SSH deploy key for the same repo.
+
+**Verify the repo is accessible** (from your local machine):
 ```bash
-kubectl wait --for=condition=Ready pod/test-git-server -n lab --timeout=120s
+git ls-remote https://github.com/ia-eknorr/test-ignition-project.git
 ```
 
-**Verify git server serves the repo:**
-```bash
-kubectl run git-test --rm -i --restart=Never -n lab \
-  --image=alpine/git:latest -- \
-  git ls-remote git://test-git-server.lab.svc.cluster.local/test-repo.git
-```
-
-Expected: Should list refs including `refs/tags/v1.0.0`, `refs/tags/v2.0.0`, and `refs/heads/main`.
+Expected: Should list refs including `refs/tags/0.1.0`, `refs/tags/0.2.0`, and `refs/heads/main`.
 
 ## Step 9: Verify Complete Environment
 
@@ -220,9 +219,8 @@ kubectl get pods -n ignition-sync-operator-system -l control-plane=controller-ma
   -o jsonpath='{.items[0].status.phase}' 2>/dev/null
 echo ""
 
-echo -n "Git server: "
-kubectl get pod test-git-server -n lab -o jsonpath='{.status.phase}' 2>/dev/null
-echo ""
+echo -n "Git token secret: "
+kubectl get secret git-token-secret -n lab >/dev/null 2>&1 && echo "OK" || echo "MISSING"
 
 echo -n "API key secret: "
 kubectl get secret ignition-api-key -n lab >/dev/null 2>&1 && echo "OK" || echo "MISSING"

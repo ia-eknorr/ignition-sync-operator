@@ -584,7 +584,9 @@ spec:
                     type: object
                 type: object
               storage:
-                description: storage configures the shared PVC for the cloned repository.
+                description: |-
+                  storage is deprecated — agent clones locally, no shared PVC needed.
+                  Retained for backward compatibility; has no effect.
                 properties:
                   accessMode:
                     default: ReadWriteMany
@@ -842,13 +844,12 @@ spec:
                   by the controller.
                 format: int64
                 type: integer
-              repoCloneStatus:
-                description: repoCloneStatus indicates the state of the git repository
-                  clone.
+              refResolutionStatus:
+                description: refResolutionStatus indicates the state of git ref resolution.
                 enum:
-                - NotCloned
-                - Cloning
-                - Cloned
+                - NotResolved
+                - Resolving
+                - Resolved
                 - Error
                 type: string
             type: object

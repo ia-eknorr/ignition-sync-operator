@@ -118,7 +118,7 @@ log_test "3A.5: Pod with sync-profile Annotation"
 # Setup: create API key secret and IgnitionSync CR
 apply_fixture "api-key-secret.yaml"
 apply_fixture "test-cr.yaml"
-wait_for_typed_condition "ignitionsync/test-sync" "RepoCloned" "True" 90
+wait_for_typed_condition "ignitionsync/test-sync" "RefResolved" "True" 90
 
 # Create a pod referencing the SyncProfile
 cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f -
@@ -356,8 +356,8 @@ ctrl_phase=$($KUBECTL get pods -n "$controller_ns" -l control-plane=controller-m
 assert_eq "Running" "$ctrl_phase" "Controller survives profile deletion"
 
 # IgnitionSync CR should still be healthy
-clone_status=$(kubectl_json "ignitionsync/test-sync" '{.status.repoCloneStatus}')
-assert_eq "Cloned" "$clone_status" "IgnitionSync CR still Cloned after profile deletion"
+clone_status=$(kubectl_json "ignitionsync/test-sync" '{.status.refResolutionStatus}')
+assert_eq "Resolved" "$clone_status" "IgnitionSync CR still Resolved after profile deletion"
 
 # Clean up the temp pod
 $KUBECTL delete pod gateway-temp -n "$TEST_NAMESPACE" --ignore-not-found 2>/dev/null || true

@@ -100,10 +100,12 @@ type TokenAuth struct {
 }
 
 // ============================================================
-// Storage
+// Storage (DEPRECATED — agent clones locally, no shared PVC)
 // ============================================================
 
-// StorageSpec configures the shared PVC for the cloned repository.
+// StorageSpec is deprecated. The agent now clones the git repository
+// independently to a local emptyDir. No shared PVC is needed.
+// This type is retained for backward compatibility but has no effect.
 type StorageSpec struct {
 	// storageClassName selects the StorageClass. Empty string uses the cluster default.
 	// +optional
@@ -541,7 +543,8 @@ type IgnitionSyncSpec struct {
 	// +kubebuilder:validation:Required
 	Git GitSpec `json:"git"`
 
-	// storage configures the shared PVC for the cloned repository.
+	// storage is deprecated — agent clones locally, no shared PVC needed.
+	// Retained for backward compatibility; has no effect.
 	// +optional
 	Storage StorageSpec `json:"storage,omitempty"`
 
@@ -726,10 +729,10 @@ type IgnitionSyncStatus struct {
 	// +optional
 	LastSyncCommit string `json:"lastSyncCommit,omitempty"`
 
-	// repoCloneStatus indicates the state of the git repository clone.
-	// +kubebuilder:validation:Enum=NotCloned;Cloning;Cloned;Error
+	// refResolutionStatus indicates the state of git ref resolution.
+	// +kubebuilder:validation:Enum=NotResolved;Resolving;Resolved;Error
 	// +optional
-	RepoCloneStatus string `json:"repoCloneStatus,omitempty"`
+	RefResolutionStatus string `json:"refResolutionStatus,omitempty"`
 
 	// discoveredGateways lists all gateways discovered by the controller in this namespace.
 	// +optional

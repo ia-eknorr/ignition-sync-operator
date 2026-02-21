@@ -4,6 +4,12 @@
 
 Validate the mutating webhook that automatically injects the sync agent sidecar into Ignition gateway pods. After this phase, users no longer need to manually patch StatefulSets — they just add `ignition-sync.io/inject: "true"` to their pod template and the agent appears automatically.
 
+The webhook injects:
+- A `sync-agent` sidecar container
+- An `emptyDir` volume (`sync-repo`) mounted at `/repo` for the agent to clone into
+- A projected secret volume (`git-credentials`) from the git token secret referenced in the IgnitionSync CR
+- Agent configuration via environment variables derived from pod annotations and CR spec
+
 **Prerequisite:** Complete [05 — Sync Agent](05-sync-agent.md). The agent binary must be proven to work. Remove any manual sidecar patches from the Ignition StatefulSet before starting.
 
 ---
@@ -16,7 +22,7 @@ Remove the manually-added agent container from Lab 05:
 # Revert to clean Ignition StatefulSet (re-install via helm)
 helm upgrade --install ignition inductiveautomation/ignition \
   -n lab \
-  --set image.tag=8.3.6 \
+  --set image.tag=8.3.3 \
   --set commissioning.edition=standard \
   --set commissioning.acceptIgnitionEULA=true \
   --set gateway.replicas=1 \
@@ -74,7 +80,7 @@ kubectl get mutatingwebhookconfiguration -o json | jq '.items[] | {
 ## Lab 6.2: Injection — Pod With Annotation Gets Agent Sidecar
 
 ### Purpose
-Add `ignition-sync.io/inject: "true"` to the Ignition StatefulSet and verify the agent container is automatically injected.
+Add `ignition-sync.io/inject: "true"` to the Ignition StatefulSet and verify the agent container is automatically injected with an emptyDir volume for repo clone and a projected git auth secret.
 
 ### Steps
 
@@ -97,35 +103,84 @@ kubectl rollout status statefulset/ignition -n lab --timeout=300s
    ```
    Expected: `ignition sync-agent` (or similar)
 
-2. **Agent container has correct mounts:**
+2. **Injected volumes are emptyDir + secret** (NOT a PVC):
    ```bash
-   kubectl get pod ignition-0 -n lab -o json | jq '[.spec.containers[] | select(.name != "ignition") | {
+   kubectl get pod ignition-0 -n lab -o json | jq '[.spec.volumes[] | select(.name == "sync-repo" or .name == "git-credentials") | {
      name,
-     image,
-     volumeMounts: [.volumeMounts[] | .mountPath]
+     type: (if .emptyDir then "emptyDir" elif .secret then "secret" else "unknown" end),
+     detail: (.emptyDir // .secret)
    }]'
    ```
-   Expected: `/repo` (read-only, from PVC) and `/usr/local/bin/ignition/data` (read-write, shared)
+   Expected:
+   - `sync-repo` — type `emptyDir`
+   - `git-credentials` — type `secret` (projected from the git token secret in the IgnitionSync CR)
 
-3. **Agent container has env vars from annotations:**
+3. **Agent container has correct volume mounts:**
    ```bash
-   kubectl get pod ignition-0 -n lab -o json | jq '[.spec.containers[] | select(.name != "ignition") | .env[] | {(.name): .value}] | add'
+   kubectl get pod ignition-0 -n lab -o json | jq '[.spec.containers[] | select(.name == "sync-agent") | {
+     name,
+     image,
+     volumeMounts: [.volumeMounts[] | {mountPath, name, readOnly}]
+   }]'
    ```
-   Expected: `GATEWAY_NAME`, `CR_NAME`, `CR_NAMESPACE`, etc. populated from annotations + CR spec
+   Expected mounts:
+   - `/repo` — from `sync-repo` emptyDir (agent clones the git repo here)
+   - `/etc/git-credentials` — from `git-credentials` secret (readOnly)
 
-4. **Shared volume mount** — agent and ignition container share the data volume:
+4. **Agent container has env vars from annotations:**
    ```bash
-   kubectl get pod ignition-0 -n lab -o json | jq '[.spec.containers[] | {name, mounts: [.volumeMounts[] | select(.mountPath | contains("ignition"))]}]'
+   kubectl get pod ignition-0 -n lab -o json | jq '[.spec.containers[] | select(.name == "sync-agent") | .env[] | {(.name): .value}] | add'
    ```
+   Expected: `GATEWAY_NAME`, `CR_NAME`, `CR_NAMESPACE`, `GIT_AUTH_TOKEN_FILE`, etc. populated from annotations + CR spec
 
-5. **Agent is running and syncing:**
+5. **Agent is running and cloning to /repo:**
    ```bash
    kubectl logs ignition-0 -n lab -c sync-agent --tail=20
    ```
 
 ---
 
-## Lab 6.3: No Injection — Pod Without Annotation
+## Lab 6.3: Verify Injected Volumes
+
+### Purpose
+Confirm the webhook injected an emptyDir (not a PVC) for repo storage, and that the git auth secret is correctly mounted.
+
+### Steps
+
+1. **Verify emptyDir volume exists on the pod:**
+   ```bash
+   kubectl get pod ignition-0 -n lab -o json | jq '.spec.volumes[] | select(.name == "sync-repo")'
+   ```
+   Expected: `{"name": "sync-repo", "emptyDir": {}}`
+
+2. **Verify git-credentials secret volume exists:**
+   ```bash
+   kubectl get pod ignition-0 -n lab -o json | jq '.spec.volumes[] | select(.name == "git-credentials")'
+   ```
+   Expected: A secret volume projected from the git token secret referenced in the IgnitionSync CR.
+
+3. **Verify the agent cloned the repo into the emptyDir:**
+   ```bash
+   kubectl exec ignition-0 -n lab -c sync-agent -- ls /repo/
+   ```
+   Expected: The contents of the git repository (project directories, etc.)
+
+4. **Verify git credentials are mounted read-only:**
+   ```bash
+   kubectl exec ignition-0 -n lab -c sync-agent -- ls -la /etc/git-credentials/
+   ```
+   Expected: Token file(s) present, mounted read-only.
+
+5. **No PVC was created by the webhook:**
+   ```bash
+   # Confirm no PVC named sync-repo exists — the volume is an emptyDir
+   kubectl get pvc -n lab | grep sync-repo
+   ```
+   Expected: No results. The webhook injects emptyDir volumes, not PVCs.
+
+---
+
+## Lab 6.4: No Injection — Pod Without Annotation
 
 ### Purpose
 Verify pods without the inject annotation are NOT modified by the webhook.
@@ -165,7 +220,7 @@ kubectl delete pod no-inject-test -n lab
 
 ---
 
-## Lab 6.4: Annotation Values Propagated to Agent Env Vars
+## Lab 6.5: Annotation Values Propagated to Agent Env Vars
 
 ### Purpose
 Verify all supported pod annotations are correctly translated into agent environment variables.
@@ -189,7 +244,7 @@ kubectl rollout status statefulset/ignition -n lab --timeout=300s
 ### What to Verify
 
 ```bash
-kubectl get pod ignition-0 -n lab -o json | jq '[.spec.containers[] | select(.name != "ignition") | .env[] | {(.name): .value}] | add'
+kubectl get pod ignition-0 -n lab -o json | jq '[.spec.containers[] | select(.name == "sync-agent") | .env[] | {(.name): .value}] | add'
 ```
 
 Expected env vars include:
@@ -216,7 +271,7 @@ kubectl rollout status statefulset/ignition -n lab --timeout=300s
 
 ---
 
-## Lab 6.5: Injected Container Meets Pod Security Standards
+## Lab 6.6: Injected Container Meets Pod Security Standards
 
 ### Purpose
 Verify the injected sidecar container follows Kubernetes pod security standards (non-root, read-only root filesystem, no privilege escalation).
@@ -224,7 +279,7 @@ Verify the injected sidecar container follows Kubernetes pod security standards 
 ### Steps
 
 ```bash
-kubectl get pod ignition-0 -n lab -o json | jq '.spec.containers[] | select(.name != "ignition") | .securityContext'
+kubectl get pod ignition-0 -n lab -o json | jq '.spec.containers[] | select(.name == "sync-agent") | .securityContext'
 ```
 
 ### Expected
@@ -240,7 +295,7 @@ kubectl get pod ignition-0 -n lab -o json | jq '.spec.containers[] | select(.nam
 
 ---
 
-## Lab 6.6: Injection with auto-derived CR Name
+## Lab 6.7: Injection with auto-derived CR Name
 
 ### Purpose
 When only one IgnitionSync CR exists in the namespace, `ignition-sync.io/cr-name` annotation should be optional — the webhook auto-derives it.
@@ -263,7 +318,7 @@ kubectl rollout status statefulset/ignition -n lab --timeout=300s
 
 ```bash
 # Agent container should still have CR_NAME set (auto-derived)
-kubectl get pod ignition-0 -n lab -o json | jq '[.spec.containers[] | select(.name != "ignition") | .env[] | select(.name=="CR_NAME")]'
+kubectl get pod ignition-0 -n lab -o json | jq '[.spec.containers[] | select(.name == "sync-agent") | .env[] | select(.name=="CR_NAME")]'
 ```
 
 Expected: `CR_NAME: "lab-sync"` (auto-derived from the only CR in namespace).
@@ -278,10 +333,21 @@ kubectl rollout status statefulset/ignition -n lab --timeout=300s
 
 ---
 
-## Lab 6.7: Full Round Trip — Injection + Sync + Scan + Ignition UI
+## Lab 6.8: Full Round Trip — Injection + Sync + Scan + Ignition UI
 
 ### Purpose
-The ultimate integration test. With injection enabled, change the git ref and verify projects update in the Ignition web UI without any manual intervention.
+The ultimate integration test. With injection enabled, change the git ref and verify:
+1. The agent resolves the new ref
+2. The agent clones/updates the repo in the local emptyDir at `/repo`
+3. Projects update in the Ignition web UI without any manual intervention
+
+### How It Works
+
+When you update the IgnitionSync CR with a new git ref:
+1. **Controller resolves new ref** via `git ls-remote` -> updates the metadata ConfigMap with commit hash
+2. **Agent detects ConfigMap change** via K8s watch -> clones/fetches the new commit to local emptyDir at `/repo`
+3. **Agent syncs updated files** to `/usr/local/bin/ignition/data/projects/` -> triggers Ignition scan API call
+4. **Ignition reloads projects** and displays updated resources in the web UI
 
 ### Steps
 
@@ -290,6 +356,14 @@ The ultimate integration test. With injection enabled, change the git ref and ve
 kubectl patch ignitionsync lab-sync -n lab --type=merge \
   -p '{"spec":{"git":{"ref":"v1.0.0"}}}'
 sleep 60
+
+# Verify ref was resolved
+kubectl get ignitionsync lab-sync -n lab -o json | jq '.status.conditions[] | select(.type=="RefResolved")'
+# Expected: status "True", reason "Resolved"
+
+# Check repo contents on the agent's local emptyDir
+kubectl exec ignition-0 -n lab -c sync-agent -- ls /repo/
+echo "^ Repo should be cloned at the v1.0.0 ref"
 
 # Check what views exist in Ignition
 kubectl exec ignition-0 -n lab -c sync-agent -- \
@@ -300,6 +374,10 @@ echo "^ Should only have MainView"
 kubectl patch ignitionsync lab-sync -n lab --type=merge \
   -p '{"spec":{"git":{"ref":"v2.0.0"}}}'
 sleep 60
+
+# Verify ref resolved again
+kubectl get ignitionsync lab-sync -n lab -o json | jq '.status.conditions[] | select(.type=="RefResolved")'
+# Expected: status "True", reason "Resolved"
 
 # Check again
 kubectl exec ignition-0 -n lab -c sync-agent -- \
@@ -325,11 +403,15 @@ kubectl patch ignitionsync lab-sync -n lab --type=merge \
 | Failure policy is Ignore | |
 | Pod with inject annotation gets agent sidecar | |
 | Pod without inject annotation is untouched | |
-| Agent container has correct volume mounts (repo RO, data RW) | |
+| emptyDir volume (`sync-repo`) mounted at `/repo` for agent repo clone | |
+| git auth secret (`git-credentials`) injected and mounted read-only | |
+| Agent clones repo to local emptyDir at `/repo` | |
+| No PVC created by the webhook — only emptyDir volumes | |
 | All annotation values propagated to agent env vars | |
 | Injected container meets pod security standards | |
 | Auto-derived CR name when only one CR in namespace | |
-| Full round trip: injection → sync → scan → Ignition UI shows projects | |
+| RefResolved condition shows status "True", reason "Resolved" after ref change | |
+| Full round trip: injection -> sync -> scan -> Ignition UI shows projects | |
 | Ref change propagates through injected agent to Ignition | |
 | Ignition gateway healthy with injected sidecar | |
 | Operator pod 0 restarts | |

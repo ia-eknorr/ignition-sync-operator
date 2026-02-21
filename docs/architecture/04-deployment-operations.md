@@ -69,9 +69,6 @@ agent:
 
 # Global defaults applied to all IgnitionSync CRs (overridable per CR)
 defaults:
-  storage:
-    storageClassName: ""
-    size: "1Gi"
   polling:
     interval: 60s
 ```
@@ -238,7 +235,7 @@ status:
 
 **Sync Diff Report**
 - Agent records which files changed between syncs
-- Report stored in `/repo/.sync-status/{gatewayName}-diff-{timestamp}.json`:
+- Report stored locally on the agent's emptyDir at `/repo/.sync-status/{gatewayName}-diff-{timestamp}.json`:
   ```json
   {
     "fromCommit": "previous-abc",
@@ -303,7 +300,8 @@ The controller exposes `/metrics` on port 8080:
 |---|---|---|
 | `ignition_sync_reconcile_total` | Counter | Total reconciliations by CR and result |
 | `ignition_sync_reconcile_duration_seconds` | Histogram | Time per reconciliation |
-| `ignition_sync_git_fetch_duration_seconds` | Histogram | Time for git fetch operations |
+| `ignition_sync_ref_resolve_duration_seconds` | Histogram | Time for git ls-remote ref resolution |
+| `ignition_sync_agent_clone_duration_seconds` | Histogram | Time for agent git clone/fetch operations |
 | `ignition_sync_webhook_received_total` | Counter | Webhooks received by source type |
 | `ignition_sync_gateways_discovered` | Gauge | Number of gateways per CR |
 | `ignition_sync_gateways_synced` | Gauge | Number of synced gateways per CR |
@@ -319,7 +317,7 @@ The controller exposes `/metrics` on port 8080:
 The controller emits Kubernetes Events on the IgnitionSync CR:
 
 ```
-Normal   RepoCloned      IgnitionSync/proveit-sync   Cloned git@github.com:.../conf-proveit26-app.git at ref 2.0.0
+Normal   RefResolved      IgnitionSync/proveit-sync   Resolved ref 2.0.0 to abc123f
 Normal   RefUpdated       IgnitionSync/proveit-sync   Updated ref from 1.9.0 to 2.0.0 (via webhook)
 Normal   SyncCompleted    IgnitionSync/proveit-sync   All 5 gateways synced successfully
 Warning  SyncFailed       IgnitionSync/proveit-sync   Gateway area2 failed to sync: rsync error code 23
@@ -408,7 +406,7 @@ kubectl get igs proveit-sync -n site1 -o json | \
 # - Files changed count
 # - Projects affected
 # - Last diff report timestamp
-# - Can fetch detailed diff from /repo/.sync-status/{gatewayName}-diff-{timestamp}.json
+# - Detailed diff stored locally on the agent's emptyDir at /repo/.sync-status/{gatewayName}-diff-{timestamp}.json
 ```
 
 The CRD includes `additionalPrinterColumns` for the kubectl table output:
@@ -451,11 +449,12 @@ additionalPrinterColumns:
 
 ### go-git Memory
 
-go-git (pure Go git library) loads objects into memory. For repos under 500MB, this is fine. For large repos (50+ gateways with frequent changes), memory usage can spike to 2-4x repo size during fetch operations. Mitigations:
+With the agent-based architecture, go-git memory is an agent concern, not a controller concern. The controller only runs `ls-remote` to resolve refs, which has negligible memory overhead. Each agent sidecar clones its repo independently into a local emptyDir, so memory usage is per-pod rather than centralized on the controller. This means:
 
-- Set `resources.limits.memory` on the controller appropriately (512Mi for small repos, 2Gi+ for large)
-- v1.1 will add optional native `git` CLI backend for memory-constrained environments
-- v1.1 will add shared git clone cache for CRs referencing the same repo
+- Controller memory stays flat regardless of repo size or count
+- Agent memory scales with the size of the individual repo it clones (set `resources.limits.memory` on the agent container accordingly)
+- No single point of memory pressure — large repos only affect the specific gateway pod running that agent
+- v1.1 will add optional native `git` CLI backend for memory-constrained agent environments
 
 ### Extension Points (v1)
 

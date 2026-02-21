@@ -17,7 +17,7 @@ WEBHOOK_REMOTE_PORT=9443
 # Setup: create API key secret and base CR
 apply_fixture "api-key-secret.yaml"
 apply_fixture "test-cr.yaml"
-wait_for_typed_condition "ignitionsync/test-sync" "RepoCloned" "True" 90
+wait_for_typed_condition "ignitionsync/test-sync" "RefResolved" "True" 90
 
 # Start port-forward to controller manager pod for webhook access
 CTRL_POD=$($KUBECTL get pods -n "$CONTROLLER_NS" -l control-plane=controller-manager \
@@ -244,7 +244,7 @@ log_test "4.12: Webhook Triggers Reconcile"
 current_commit=$(kubectl_json "ignitionsync/test-sync" '{.status.lastSyncCommit}')
 assert_not_empty "$current_commit" "Current commit recorded"
 
-# Clear annotations and send webhook for v1.0.0 (different tag = different commit)
+# Clear annotations and send webhook for 0.1.0 (different tag = different commit)
 $KUBECTL annotate ignitionsync test-sync -n "$TEST_NAMESPACE" \
     ignition-sync.io/requested-ref- \
     ignition-sync.io/requested-at- \
@@ -254,7 +254,7 @@ $KUBECTL annotate ignitionsync test-sync -n "$TEST_NAMESPACE" \
 # reads spec.git.ref). The webhook annotation triggers a reconcile that may update
 # spec.git.ref depending on controller logic. Let's test by patching ref directly.
 $KUBECTL patch ignitionsync test-sync -n "$TEST_NAMESPACE" \
-    --type=merge -p '{"spec":{"git":{"ref":"v1.0.0"}}}'
+    --type=merge -p '{"spec":{"git":{"ref":"0.1.0"}}}'
 
 # Wait for commit to change
 new_commit=$(wait_for_change "ignitionsync/test-sync" '{.status.lastSyncCommit}' "$current_commit" 90)

@@ -4,7 +4,7 @@
 
 Validate gateway discovery against real Ignition gateway pods deployed via the official helm chart. Verify the controller correctly reads annotations, resolves gateway names, collects status from ConfigMaps, computes aggregate conditions (AllGatewaysSynced, Ready), and emits events. Test multi-gateway scenarios including redundancy (primary/backup) patterns.
 
-**Prerequisite:** Complete [02 — Controller Core](02-controller-core.md). The `lab-sync` CR should exist and be in `Cloned` state.
+**Prerequisite:** Complete [02 — Controller Core](02-controller-core.md). The `lab-sync` CR should exist and be in `Resolved` state.
 
 ---
 
@@ -265,7 +265,7 @@ kubectl get configmap ignition-sync-status-lab-sync -n lab -o json | \
 ## Lab 3.6: Ready Condition — Full Stack
 
 ### Purpose
-Ready=True requires BOTH RepoCloned=True AND AllGatewaysSynced=True.
+Ready=True requires BOTH RefResolved=True AND AllGatewaysSynced=True.
 
 ### Steps
 
@@ -279,7 +279,7 @@ kubectl get ignitionsync lab-sync -n lab -o json | jq '[.status.conditions[] | {
 
 | Condition | Status | Reason |
 |-----------|--------|--------|
-| RepoCloned | True | CloneSucceeded |
+| RefResolved | True | RefResolved |
 | AllGatewaysSynced | True | SyncSucceeded |
 | Ready | True | SyncSucceeded |
 
@@ -308,8 +308,13 @@ metadata:
   name: orphan-sync
 spec:
   git:
-    repo: "git://test-git-server.lab.svc.cluster.local/test-repo.git"
+    repo: "https://github.com/ia-eknorr/test-ignition-project.git"
     ref: "main"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
@@ -411,8 +416,13 @@ metadata:
   name: isolated-sync
 spec:
   git:
-    repo: "git://test-git-server.lab.svc.cluster.local/test-repo.git"
-    ref: "v1.0.0"
+    repo: "https://github.com/ia-eknorr/test-ignition-project.git"
+    ref: "0.1.0"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
@@ -507,7 +517,7 @@ kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manage
 | Second Ignition gateway discovered (2-gateway scenario) | |
 | Status ConfigMap enriches gateway with sync details | |
 | AllGatewaysSynced transitions: True → False (on error) → True (on recovery) | |
-| Ready=True when both RepoCloned and AllGatewaysSynced are True | |
+| Ready=True when both RefResolved and AllGatewaysSynced are True | |
 | No gateways → AllGatewaysSynced=False, reason=NoGatewaysDiscovered | |
 | Pod deletion removes gateway from discoveredGateways | |
 | Pod recreation re-adds gateway | |

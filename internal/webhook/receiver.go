@@ -33,7 +33,12 @@ import (
 	synctypes "github.com/inductiveautomation/ignition-sync-operator/pkg/types"
 )
 
-const maxPayloadBytes = 1 << 20 // 1 MiB
+const (
+	maxPayloadBytes = 1 << 20 // 1 MiB
+
+	// SourceGeneric is the source identifier for generic webhook payloads.
+	SourceGeneric = "generic"
+)
 
 // Receiver is an HTTP server that receives webhook payloads and annotates
 // IgnitionSync CRs with the requested ref. It implements manager.Runnable.
@@ -181,7 +186,7 @@ func parsePayload(body []byte) (string, string) {
 
 	// 4. Generic: { "ref": "2.0.0" }
 	if ref, ok := raw["ref"].(string); ok && ref != "" {
-		return ref, "generic"
+		return ref, SourceGeneric
 	}
 
 	return "", ""

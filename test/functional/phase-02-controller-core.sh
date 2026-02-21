@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 02: Controller Core — CRD, PVC, Git Clone, Finalizer, ConfigMap
+# Phase 02: Controller Core — CRD, Ref Resolution, Finalizer, ConfigMap
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -94,6 +94,11 @@ spec:
   git:
     repo: "${GIT_REPO_URL}"
     ref: "main"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: missing-secret
@@ -130,42 +135,42 @@ wait_for_deletion ignitionsync test-sync-nosecret 30 2>/dev/null || true
 sleep 2
 
 # ────────────────────────────────────────────────────────────────────
-# Test 2.4: PVC Creation
+# Test 2.4: Metadata ConfigMap Creation
 # ────────────────────────────────────────────────────────────────────
-log_test "2.4: PVC Creation"
+log_test "2.4: Metadata ConfigMap Creation"
 
 apply_fixture "api-key-secret.yaml"
 apply_fixture "test-cr.yaml"
 
-# Wait for PVC to exist
-pvc_name="ignition-sync-repo-test-sync"
-wait_for_resource pvc "$pvc_name" 30
-log_pass "PVC created: $pvc_name"
+# Wait for metadata ConfigMap to exist
+cm_name="ignition-sync-metadata-test-sync"
+wait_for_resource configmap "$cm_name" 30
+log_pass "Metadata ConfigMap created: $cm_name"
 
-# Verify PVC labels
-pvc_label=$(kubectl_json "pvc/$pvc_name" '{.metadata.labels.ignition-sync\.io/cr-name}')
-assert_eq "test-sync" "$pvc_label" "PVC has cr-name label"
+# Verify ConfigMap labels
+cm_label=$(kubectl_json "configmap/$cm_name" '{.metadata.labels.ignition-sync\.io/cr-name}')
+assert_eq "test-sync" "$cm_label" "Metadata ConfigMap has cr-name label"
 
 # Verify owner reference
-owner_kind=$(kubectl_json "pvc/$pvc_name" '{.metadata.ownerReferences[0].kind}')
-assert_eq "IgnitionSync" "$owner_kind" "PVC has IgnitionSync owner reference"
+owner_kind=$(kubectl_json "configmap/$cm_name" '{.metadata.ownerReferences[0].kind}')
+assert_eq "IgnitionSync" "$owner_kind" "Metadata ConfigMap has IgnitionSync owner reference"
 
-# Verify access mode
-access_mode=$(kubectl_json "pvc/$pvc_name" '{.spec.accessModes[0]}')
-assert_eq "ReadWriteMany" "$access_mode" "PVC access mode is ReadWriteMany"
+# Verify commitHash key exists and is a valid SHA
+commit_hash=$(kubectl_json "configmap/$cm_name" '{.data.commitHash}')
+assert_not_empty "$commit_hash" "Metadata ConfigMap has commitHash key"
 
 # ────────────────────────────────────────────────────────────────────
-# Test 2.5: Git Clone (Happy Path)
+# Test 2.5: Ref Resolution (Happy Path)
 # ────────────────────────────────────────────────────────────────────
-log_test "2.5: Git Clone (Happy Path)"
+log_test "2.5: Ref Resolution (Happy Path)"
 
-# CR from 2.4 is still active — wait for clone
-wait_for_typed_condition "ignitionsync/test-sync" "RepoCloned" "True" 90
-log_pass "RepoCloned=True"
+# CR from 2.4 is still active — wait for ref resolution
+wait_for_typed_condition "ignitionsync/test-sync" "RefResolved" "True" 90
+log_pass "RefResolved=True"
 
 # Verify status fields
-clone_status=$(kubectl_json "ignitionsync/test-sync" '{.status.repoCloneStatus}')
-assert_eq "Cloned" "$clone_status" "repoCloneStatus is Cloned"
+ref_status=$(kubectl_json "ignitionsync/test-sync" '{.status.refResolutionStatus}')
+assert_eq "Resolved" "$ref_status" "refResolutionStatus is Resolved"
 
 commit=$(kubectl_json "ignitionsync/test-sync" '{.status.lastSyncCommit}')
 assert_not_empty "$commit" "lastSyncCommit is set"
@@ -191,9 +196,9 @@ wait_for_deletion ignitionsync test-sync 30 2>/dev/null || true
 sleep 3
 
 # ────────────────────────────────────────────────────────────────────
-# Test 2.6: Git Clone Error Handling
+# Test 2.6: Ref Resolution Error Handling
 # ────────────────────────────────────────────────────────────────────
-log_test "2.6: Git Clone Error Handling"
+log_test "2.6: Ref Resolution Error Handling"
 
 cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f -
 apiVersion: sync.ignition.io/v1alpha1
@@ -202,25 +207,31 @@ metadata:
   name: test-sync-badrepo
 spec:
   git:
-    repo: "git://test-git-server.${TEST_NAMESPACE}.svc.cluster.local/nonexistent.git"
+    repo: "https://github.com/ia-eknorr/nonexistent-repo-does-not-exist.git"
     ref: "main"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
       key: apiKey
 EOF
 
-# Wait for RepoCloned=False
-wait_for_typed_condition "ignitionsync/test-sync-badrepo" "RepoCloned" "False" 60
-log_pass "RepoCloned=False for bad repo"
+# Wait for refResolutionStatus=Error (ls-remote to nonexistent repo takes time over network)
+wait_for_condition "ignitionsync/test-sync-badrepo" '{.status.refResolutionStatus}' "Error" 90
+log_pass "refResolutionStatus is Error for bad repo"
 
-clone_status=$(kubectl_json "ignitionsync/test-sync-badrepo" '{.status.repoCloneStatus}')
-assert_eq "Error" "$clone_status" "repoCloneStatus is Error"
+ref_resolved=$(kubectl_json "ignitionsync/test-sync-badrepo" \
+    '{.status.conditions[?(@.type=="RefResolved")].status}')
+assert_eq "False" "$ref_resolved" "RefResolved=False for bad repo"
 
 # Verify controller still running
 ctrl_phase=$($KUBECTL get pods -n "$controller_ns" -l control-plane=controller-manager \
     -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
-assert_eq "Running" "$ctrl_phase" "Controller still running after clone error"
+assert_eq "Running" "$ctrl_phase" "Controller still running after ref resolution error"
 
 # Clean up
 $KUBECTL delete ignitionsync test-sync-badrepo -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
@@ -235,9 +246,9 @@ log_test "2.7: Paused CR"
 apply_fixture "test-cr-paused.yaml"
 sleep 15
 
-# Verify no PVC was created
-pvc_exists=$($KUBECTL get pvc "ignition-sync-repo-test-sync-paused" -n "$TEST_NAMESPACE" 2>/dev/null && echo "yes" || echo "no")
-assert_eq "no" "$pvc_exists" "No PVC created for paused CR"
+# Verify no metadata ConfigMap was created
+cm_exists=$($KUBECTL get configmap "ignition-sync-metadata-test-sync-paused" -n "$TEST_NAMESPACE" 2>/dev/null && echo "yes" || echo "no")
+assert_eq "no" "$cm_exists" "No metadata ConfigMap created for paused CR"
 
 # Check Ready=False with Paused reason
 ready_status=$(kubectl_json "ignitionsync/test-sync-paused" \
@@ -248,7 +259,7 @@ if [[ "$ready_status" == "False" ]]; then
     assert_eq "Paused" "$ready_reason" "Ready reason is Paused"
 else
     log_info "Ready condition not set to False yet (status: $ready_status)"
-    log_pass "Paused CR did not create PVC (main assertion)"
+    log_pass "Paused CR did not create metadata ConfigMap (main assertion)"
 fi
 
 # Clean up
@@ -269,22 +280,27 @@ metadata:
 spec:
   git:
     repo: "${GIT_REPO_URL}"
-    ref: "v1.0.0"
+    ref: "0.1.0"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
       key: apiKey
 EOF
 
-# Wait for clone at v1
-wait_for_typed_condition "ignitionsync/test-sync-ref" "RepoCloned" "True" 90
+# Wait for ref resolution at 0.1.0
+wait_for_typed_condition "ignitionsync/test-sync-ref" "RefResolved" "True" 90
 commit_v1=$(kubectl_json "ignitionsync/test-sync-ref" '{.status.lastSyncCommit}')
-assert_not_empty "$commit_v1" "v1 commit recorded"
-log_info "v1 commit: $commit_v1"
+assert_not_empty "$commit_v1" "0.1.0 commit recorded"
+log_info "0.1.0 commit: $commit_v1"
 
-# Patch to v2
+# Patch to 0.2.0
 $KUBECTL patch ignitionsync test-sync-ref -n "$TEST_NAMESPACE" \
-    --type=merge -p '{"spec":{"git":{"ref":"v2.0.0"}}}'
+    --type=merge -p '{"spec":{"git":{"ref":"0.2.0"}}}'
 
 # Wait for commit to change
 commit_v2=$(wait_for_change "ignitionsync/test-sync-ref" '{.status.lastSyncCommit}' "$commit_v1" 90)
@@ -305,7 +321,7 @@ sleep 2
 log_test "2.9: Cleanup on Deletion"
 
 apply_fixture "test-cr.yaml"
-wait_for_typed_condition "ignitionsync/test-sync" "RepoCloned" "True" 90
+wait_for_typed_condition "ignitionsync/test-sync" "RefResolved" "True" 90
 
 # Verify metadata ConfigMap exists before deletion
 cm_name="ignition-sync-metadata-test-sync"
@@ -318,11 +334,6 @@ $KUBECTL delete ignitionsync test-sync -n "$TEST_NAMESPACE" --wait=true --timeou
 # Verify metadata ConfigMap is deleted (controller cleanup or GC)
 wait_for_deletion configmap "$cm_name" 30
 log_pass "Metadata ConfigMap deleted after CR deletion"
-
-# PVC should be garbage collected (owner reference)
-pvc_name="ignition-sync-repo-test-sync"
-wait_for_deletion pvc "$pvc_name" 60
-log_pass "PVC garbage collected after CR deletion"
 
 sleep 2
 
@@ -339,7 +350,12 @@ metadata:
 spec:
   git:
     repo: "${GIT_REPO_URL}"
-    ref: "v1.0.0"
+    ref: "0.1.0"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
@@ -352,22 +368,22 @@ metadata:
 spec:
   git:
     repo: "${GIT_REPO_URL}"
-    ref: "v2.0.0"
+    ref: "0.2.0"
+    auth:
+      token:
+        secretRef:
+          name: git-token-secret
+          key: token
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
       key: apiKey
 EOF
 
-# Wait for both to clone
-wait_for_typed_condition "ignitionsync/test-multi-a" "RepoCloned" "True" 90
-wait_for_typed_condition "ignitionsync/test-multi-b" "RepoCloned" "True" 90
-log_pass "Both CRs reached RepoCloned=True"
-
-# Verify separate PVCs
-wait_for_resource pvc "ignition-sync-repo-test-multi-a" 10
-wait_for_resource pvc "ignition-sync-repo-test-multi-b" 10
-log_pass "Each CR has its own PVC"
+# Wait for both to resolve
+wait_for_typed_condition "ignitionsync/test-multi-a" "RefResolved" "True" 90
+wait_for_typed_condition "ignitionsync/test-multi-b" "RefResolved" "True" 90
+log_pass "Both CRs reached RefResolved=True"
 
 # Verify separate metadata ConfigMaps
 wait_for_resource configmap "ignition-sync-metadata-test-multi-a" 10
@@ -379,12 +395,33 @@ $KUBECTL delete ignitionsync test-multi-a -n "$TEST_NAMESPACE" --wait=false
 wait_for_deletion ignitionsync test-multi-a 30
 
 # Verify test-multi-b is still good
-b_status=$(kubectl_json "ignitionsync/test-multi-b" '{.status.repoCloneStatus}')
-assert_eq "Cloned" "$b_status" "test-multi-b unaffected by test-multi-a deletion"
+b_status=$(kubectl_json "ignitionsync/test-multi-b" '{.status.refResolutionStatus}')
+assert_eq "Resolved" "$b_status" "test-multi-b unaffected by test-multi-a deletion"
 
 # Clean up
 $KUBECTL delete ignitionsync test-multi-b -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
 wait_for_deletion ignitionsync test-multi-b 30 2>/dev/null || true
+
+# ────────────────────────────────────────────────────────────────────
+# Test 2.11: SSH Auth Ref Resolution
+# ────────────────────────────────────────────────────────────────────
+log_test "2.11: SSH Auth Ref Resolution"
+
+apply_fixture "test-cr-ssh.yaml"
+
+wait_for_typed_condition "ignitionsync/test-sync-ssh" "RefResolved" "True" 90
+log_pass "RefResolved=True via SSH auth"
+
+ssh_commit=$(kubectl_json "ignitionsync/test-sync-ssh" '{.status.lastSyncCommit}')
+assert_not_empty "$ssh_commit" "SSH ref resolution has lastSyncCommit"
+
+ssh_ref=$(kubectl_json "ignitionsync/test-sync-ssh" '{.status.lastSyncRef}')
+assert_eq "main" "$ssh_ref" "SSH ref resolution ref is main"
+
+# Clean up
+$KUBECTL delete ignitionsync test-sync-ssh -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
+wait_for_deletion ignitionsync test-sync-ssh 30 2>/dev/null || true
+sleep 2
 
 # ────────────────────────────────────────────────────────────────────
 # Phase cleanup & summary

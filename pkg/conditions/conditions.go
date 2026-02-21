@@ -21,8 +21,8 @@ const (
 	// TypeReady indicates overall readiness — all gateways synced and healthy.
 	TypeReady = "Ready"
 
-	// TypeRepoCloned indicates whether the git repository has been successfully cloned.
-	TypeRepoCloned = "RepoCloned"
+	// TypeRefResolved indicates whether the git ref has been resolved to a commit SHA.
+	TypeRefResolved = "RefResolved"
 
 	// TypeWebhookReady indicates whether the webhook listener is active.
 	TypeWebhookReady = "WebhookReady"
@@ -36,12 +36,12 @@ const (
 
 // Condition reasons for IgnitionSync status.conditions[].reason
 const (
-	ReasonReconciling    = "Reconciling"
-	ReasonCloneSucceeded = "CloneSucceeded"
-	ReasonCloneFailed    = "CloneFailed"
-	ReasonSyncSucceeded  = "SyncSucceeded"
-	ReasonSyncFailed     = "SyncFailed"
-	ReasonSyncInProgress = "SyncInProgress"
-	ReasonPaused         = "Paused"
-	ReasonNoGateways     = "NoGatewaysDiscovered"
+	ReasonReconciling         = "Reconciling"
+	ReasonRefResolved         = "RefResolved"
+	ReasonRefResolutionFailed = "RefResolutionFailed"
+	ReasonSyncSucceeded       = "SyncSucceeded"
+	ReasonSyncFailed          = "SyncFailed"
+	ReasonSyncInProgress      = "SyncInProgress"
+	ReasonPaused              = "Paused"
+	ReasonNoGateways          = "NoGatewaysDiscovered"
 )

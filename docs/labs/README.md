@@ -23,7 +23,7 @@ The automated functional tests assert pass/fail on specific conditions. These la
 | `jq` | 1.7+ | `brew install jq` |
 | `curl` | any | pre-installed |
 
-**Resource requirements:** Docker Desktop should have at least 6 GB memory and 4 CPUs allocated. Ignition + operator + git server together need ~3 GB.
+**Resource requirements:** Docker Desktop should have at least 6 GB memory and 4 CPUs allocated. Ignition + operator together need ~3 GB.
 
 ## Lab Structure
 
@@ -44,12 +44,12 @@ Each phase doc follows this structure:
 | Lab | Phase | Status |
 |-----|-------|--------|
 | [00 — Environment Setup](00-environment-setup.md) | Pre | Required first |
-| [02 — Controller Core](02-controller-core.md) | 2 | CRD, PVC, git clone, finalizer |
+| [02 — Controller Core](02-controller-core.md) | 2 | CRD, ref resolution, metadata ConfigMap, finalizer |
 | [03 — Gateway Discovery](03-gateway-discovery.md) | 3 | Pod annotation discovery, status, conditions |
 | [03A — SyncProfile](03a-sync-profile.md) | 3A | SyncProfile CRD, 3-tier config, backward compat |
 | [04 — Webhook Receiver](04-webhook-receiver.md) | 4 | HTTP handler, HMAC, payload formats |
-| [05 — Sync Agent](05-sync-agent.md) | 5 | File sync, scan API, status reporting |
-| [06 — Sidecar Injection](06-sidecar-injection.md) | 6 | Mutating webhook, pod injection |
+| [05 — Sync Agent](05-sync-agent.md) | 5 | Git clone, file sync, scan API, status reporting |
+| [06 — Sidecar Injection](06-sidecar-injection.md) | 6 | Mutating webhook, pod injection, git secret injection |
 | [07 — Helm Chart](07-helm-chart.md) | 7 | Operator helm install, values, upgrades |
 | [08 — Observability](08-observability.md) | 8 | Metrics, structured logging, events |
 
@@ -72,6 +72,5 @@ export KIND_CLUSTER=ignition-sync-lab
 export OPERATOR_IMG=ignition-sync-operator:lab
 export OPERATOR_NS=ignition-sync-operator-system
 export LAB_NS=lab
-export GIT_SERVER_HOST=test-git-server.${LAB_NS}.svc.cluster.local
-export GIT_REPO_URL=git://${GIT_SERVER_HOST}/test-repo.git
+export GIT_REPO_URL=https://github.com/ia-eknorr/test-ignition-project.git
 ```

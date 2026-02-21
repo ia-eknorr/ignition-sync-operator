@@ -35,6 +35,7 @@ import (
 
 	syncv1alpha1 "github.com/inductiveautomation/ignition-sync-operator/api/v1alpha1"
 	"github.com/inductiveautomation/ignition-sync-operator/internal/git"
+	"github.com/inductiveautomation/ignition-sync-operator/pkg/conditions"
 	synctypes "github.com/inductiveautomation/ignition-sync-operator/pkg/types"
 )
 
@@ -42,15 +43,16 @@ import (
 type fakeGitClient struct {
 	result git.Result
 	err    error
-	delay  time.Duration
 	calls  int
+}
+
+func (f *fakeGitClient) LsRemote(_ context.Context, _, _ string, _ transport.AuthMethod) (git.Result, error) {
+	f.calls++
+	return f.result, f.err
 }
 
 func (f *fakeGitClient) CloneOrFetch(_ context.Context, _, _, _ string, _ transport.AuthMethod) (git.Result, error) {
 	f.calls++
-	if f.delay > 0 {
-		time.Sleep(f.delay)
-	}
 	return f.result, f.err
 }
 
@@ -65,11 +67,11 @@ func newReconciler(gitClient git.Client) *IgnitionSyncReconciler {
 }
 
 // helper to create the required gateway API key secret
-func createAPIKeySecret(ctx context.Context, namespace, name string) {
+func createAPIKeySecret(ctx context.Context, name string) {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: "default",
 		},
 		Data: map[string][]byte{
 			"apiKey": []byte("test-api-key"),
@@ -82,11 +84,11 @@ func createAPIKeySecret(ctx context.Context, namespace, name string) {
 }
 
 // helper to create an IgnitionSync CR
-func createCR(ctx context.Context, name, namespace, secretName string) *syncv1alpha1.IgnitionSync {
+func createCR(ctx context.Context, name, secretName string) {
 	cr := &syncv1alpha1.IgnitionSync{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: "default",
 		},
 		Spec: syncv1alpha1.IgnitionSyncSpec{
 			Git: syncv1alpha1.GitSpec{
@@ -102,15 +104,14 @@ func createCR(ctx context.Context, name, namespace, secretName string) *syncv1al
 		},
 	}
 	Expect(k8sClient.Create(ctx, cr)).To(Succeed())
-	return cr
 }
 
 // helper to create a pod annotated for gateway discovery and set it to Running
-func createAnnotatedPod(ctx context.Context, name, namespace, crName string, annotations map[string]string) {
+func createAnnotatedPod(ctx context.Context, name string, annotations map[string]string) {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
-			Namespace:   namespace,
+			Namespace:   "default",
 			Annotations: annotations,
 		},
 		Spec: corev1.PodSpec{
@@ -126,20 +127,13 @@ func createAnnotatedPod(ctx context.Context, name, namespace, crName string, ann
 	Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
 }
 
-// helper to run through the full reconcile cycle (finalizer + PVC + git) and return the reconciler
+// helper to run through the full reconcile cycle (finalizer + ref resolution) and return
 func reconcileToSteadyState(ctx context.Context, nn types.NamespacedName, r *IgnitionSyncReconciler) {
 	// Reconcile 1: add finalizer
 	_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 	Expect(err).NotTo(HaveOccurred())
 
-	// Reconcile 2: PVC + launch async git
-	_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
-	Expect(err).NotTo(HaveOccurred())
-
-	// Wait for the goroutine to finish
-	time.Sleep(100 * time.Millisecond)
-
-	// Reconcile 3: consume git result + discover gateways
+	// Reconcile 2: resolve ref + discover gateways + update conditions
 	_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 	Expect(err).NotTo(HaveOccurred())
 }
@@ -153,8 +147,8 @@ var _ = Describe("IgnitionSync Controller", func() {
 		nn := types.NamespacedName{Name: resourceName, Namespace: "default"}
 
 		BeforeEach(func() {
-			createAPIKeySecret(ctx, "default", secretName)
-			createCR(ctx, resourceName, "default", secretName)
+			createAPIKeySecret(ctx, secretName)
+			createCR(ctx, resourceName, secretName)
 		})
 
 		AfterEach(func() {
@@ -178,17 +172,7 @@ var _ = Describe("IgnitionSync Controller", func() {
 
 		It("should remove finalizer and clean up on deletion", func() {
 			r := newReconciler(&fakeGitClient{result: git.Result{Commit: "abc123", Ref: "main"}})
-
-			// Reconcile 1: add finalizer
-			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
-			Expect(err).NotTo(HaveOccurred())
-
-			// Reconcile 2+3: PVC + git (need 2 reconciles for async git)
-			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
-			Expect(err).NotTo(HaveOccurred())
-			time.Sleep(50 * time.Millisecond) // let goroutine finish
-			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
-			Expect(err).NotTo(HaveOccurred())
+			reconcileToSteadyState(ctx, nn, r)
 
 			// Create a ConfigMap that should be cleaned up
 			cm := &corev1.ConfigMap{
@@ -200,7 +184,7 @@ var _ = Describe("IgnitionSync Controller", func() {
 			}
 			// The reconciler should have created this, but ensure it exists
 			existing := &corev1.ConfigMap{}
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: cm.Name, Namespace: cm.Namespace}, existing)
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: cm.Name, Namespace: cm.Namespace}, existing)
 			if errors.IsNotFound(err) {
 				Expect(k8sClient.Create(ctx, cm)).To(Succeed())
 			}
@@ -226,15 +210,15 @@ var _ = Describe("IgnitionSync Controller", func() {
 		})
 	})
 
-	Context("PVC creation", func() {
-		const resourceName = "test-pvc"
-		const secretName = "test-secret-pvc"
+	Context("Ref resolution lifecycle", func() {
+		const resourceName = "test-ref"
+		const secretName = "test-secret-ref"
 		ctx := context.Background()
 		nn := types.NamespacedName{Name: resourceName, Namespace: "default"}
 
 		BeforeEach(func() {
-			createAPIKeySecret(ctx, "default", secretName)
-			createCR(ctx, resourceName, "default", secretName)
+			createAPIKeySecret(ctx, secretName)
+			createCR(ctx, resourceName, secretName)
 		})
 
 		AfterEach(func() {
@@ -243,61 +227,6 @@ var _ = Describe("IgnitionSync Controller", func() {
 				controllerutil.RemoveFinalizer(cr, synctypes.Finalizer)
 				_ = k8sClient.Update(ctx, cr)
 				_ = k8sClient.Delete(ctx, cr)
-			}
-			// Clean up PVC
-			pvc := &corev1.PersistentVolumeClaim{}
-			pvcNN := types.NamespacedName{Name: fmt.Sprintf("ignition-sync-repo-%s", resourceName), Namespace: "default"}
-			if err := k8sClient.Get(ctx, pvcNN, pvc); err == nil {
-				_ = k8sClient.Delete(ctx, pvc)
-			}
-		})
-
-		It("should create PVC with correct spec on second reconcile", func() {
-			r := newReconciler(&fakeGitClient{result: git.Result{Commit: "abc123", Ref: "main"}})
-
-			// Reconcile 1: add finalizer
-			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
-			Expect(err).NotTo(HaveOccurred())
-
-			// Reconcile 2: creates PVC + launches git
-			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
-			Expect(err).NotTo(HaveOccurred())
-
-			pvc := &corev1.PersistentVolumeClaim{}
-			pvcNN := types.NamespacedName{
-				Name:      fmt.Sprintf("ignition-sync-repo-%s", resourceName),
-				Namespace: "default",
-			}
-			Expect(k8sClient.Get(ctx, pvcNN, pvc)).To(Succeed())
-			Expect(pvc.Spec.AccessModes).To(ContainElement(corev1.ReadWriteMany))
-			Expect(pvc.Labels[synctypes.LabelCRName]).To(Equal(resourceName))
-			Expect(pvc.OwnerReferences).To(HaveLen(1))
-			Expect(pvc.OwnerReferences[0].Kind).To(Equal("IgnitionSync"))
-		})
-	})
-
-	Context("Git clone lifecycle", func() {
-		const resourceName = "test-git"
-		const secretName = "test-secret-git"
-		ctx := context.Background()
-		nn := types.NamespacedName{Name: resourceName, Namespace: "default"}
-
-		BeforeEach(func() {
-			createAPIKeySecret(ctx, "default", secretName)
-			createCR(ctx, resourceName, "default", secretName)
-		})
-
-		AfterEach(func() {
-			cr := &syncv1alpha1.IgnitionSync{}
-			if err := k8sClient.Get(ctx, nn, cr); err == nil {
-				controllerutil.RemoveFinalizer(cr, synctypes.Finalizer)
-				_ = k8sClient.Update(ctx, cr)
-				_ = k8sClient.Delete(ctx, cr)
-			}
-			pvc := &corev1.PersistentVolumeClaim{}
-			pvcNN := types.NamespacedName{Name: fmt.Sprintf("ignition-sync-repo-%s", resourceName), Namespace: "default"}
-			if err := k8sClient.Get(ctx, pvcNN, pvc); err == nil {
-				_ = k8sClient.Delete(ctx, pvc)
 			}
 			cm := &corev1.ConfigMap{}
 			cmNN := types.NamespacedName{Name: fmt.Sprintf("ignition-sync-metadata-%s", resourceName), Namespace: "default"}
@@ -306,7 +235,7 @@ var _ = Describe("IgnitionSync Controller", func() {
 			}
 		})
 
-		It("should set RepoCloned condition and create metadata ConfigMap after git completes", func() {
+		It("should set RefResolved condition and create metadata ConfigMap after ref resolution", func() {
 			gitClient := &fakeGitClient{result: git.Result{Commit: "abc123def", Ref: "main"}}
 			r := newReconciler(gitClient)
 
@@ -314,16 +243,8 @@ var _ = Describe("IgnitionSync Controller", func() {
 			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 
-			// Reconcile 2: PVC + launch async git
+			// Reconcile 2: resolve ref via ls-remote
 			result, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(gitPollInterval))
-
-			// Wait for the goroutine to finish
-			time.Sleep(100 * time.Millisecond)
-
-			// Reconcile 3: consume git result
-			result, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(60 * time.Second)) // default polling interval
 
@@ -332,20 +253,20 @@ var _ = Describe("IgnitionSync Controller", func() {
 			Expect(k8sClient.Get(ctx, nn, cr)).To(Succeed())
 			Expect(cr.Status.LastSyncCommit).To(Equal("abc123def"))
 			Expect(cr.Status.LastSyncRef).To(Equal("main"))
-			Expect(cr.Status.RepoCloneStatus).To(Equal("Cloned"))
+			Expect(cr.Status.RefResolutionStatus).To(Equal("Resolved"))
 			Expect(cr.Status.LastSyncTime).NotTo(BeNil())
 
-			// Verify RepoCloned condition
-			var repoClonedCond *metav1.Condition
+			// Verify RefResolved condition
+			var refResolvedCond *metav1.Condition
 			for i := range cr.Status.Conditions {
-				if cr.Status.Conditions[i].Type == "RepoCloned" {
-					repoClonedCond = &cr.Status.Conditions[i]
+				if cr.Status.Conditions[i].Type == "RefResolved" {
+					refResolvedCond = &cr.Status.Conditions[i]
 					break
 				}
 			}
-			Expect(repoClonedCond).NotTo(BeNil())
-			Expect(repoClonedCond.Status).To(Equal(metav1.ConditionTrue))
-			Expect(repoClonedCond.Message).To(Equal("abc123def"))
+			Expect(refResolvedCond).NotTo(BeNil())
+			Expect(refResolvedCond.Status).To(Equal(metav1.ConditionTrue))
+			Expect(refResolvedCond.Message).To(Equal("abc123def"))
 
 			// Verify metadata ConfigMap
 			cm := &corev1.ConfigMap{}
@@ -362,7 +283,7 @@ var _ = Describe("IgnitionSync Controller", func() {
 			Expect(gitClient.calls).To(Equal(1))
 		})
 
-		It("should set error condition when git fails", func() {
+		It("should set error condition when ref resolution fails", func() {
 			gitClient := &fakeGitClient{err: fmt.Errorf("authentication failed")}
 			r := newReconciler(gitClient)
 
@@ -370,62 +291,26 @@ var _ = Describe("IgnitionSync Controller", func() {
 			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 
-			// Reconcile 2: PVC + launch async git
-			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
-			Expect(err).NotTo(HaveOccurred())
-
-			time.Sleep(100 * time.Millisecond)
-
-			// Reconcile 3: consume git error
+			// Reconcile 2: ref resolution fails
 			result, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
-			Expect(err).NotTo(HaveOccurred()) // controller handles git errors gracefully
+			Expect(err).NotTo(HaveOccurred()) // controller handles errors gracefully
 			Expect(result.RequeueAfter).To(Equal(30 * time.Second))
 
 			// Verify error condition
 			cr := &syncv1alpha1.IgnitionSync{}
 			Expect(k8sClient.Get(ctx, nn, cr)).To(Succeed())
-			Expect(cr.Status.RepoCloneStatus).To(Equal("Error"))
+			Expect(cr.Status.RefResolutionStatus).To(Equal("Error"))
 
-			var repoClonedCond *metav1.Condition
+			var refResolvedCond *metav1.Condition
 			for i := range cr.Status.Conditions {
-				if cr.Status.Conditions[i].Type == "RepoCloned" {
-					repoClonedCond = &cr.Status.Conditions[i]
+				if cr.Status.Conditions[i].Type == "RefResolved" {
+					refResolvedCond = &cr.Status.Conditions[i]
 					break
 				}
 			}
-			Expect(repoClonedCond).NotTo(BeNil())
-			Expect(repoClonedCond.Status).To(Equal(metav1.ConditionFalse))
-			Expect(repoClonedCond.Reason).To(Equal("CloneFailed"))
-		})
-
-		It("should requeue while git is in progress", func() {
-			gitClient := &fakeGitClient{
-				result: git.Result{Commit: "abc123", Ref: "main"},
-				delay:  500 * time.Millisecond, // slow clone
-			}
-			r := newReconciler(gitClient)
-
-			// Reconcile 1: add finalizer
-			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
-			Expect(err).NotTo(HaveOccurred())
-
-			// Reconcile 2: PVC + launch async git
-			result, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(gitPollInterval))
-
-			// Reconcile 3: git still in progress (no sleep — goroutine still running)
-			result, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(gitPollInterval))
-
-			// Wait for goroutine to finish
-			time.Sleep(600 * time.Millisecond)
-
-			// Reconcile 4: now it's done
-			result, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(60 * time.Second))
+			Expect(refResolvedCond).NotTo(BeNil())
+			Expect(refResolvedCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(refResolvedCond.Reason).To(Equal("RefResolutionFailed"))
 		})
 	})
 
@@ -485,7 +370,7 @@ var _ = Describe("IgnitionSync Controller", func() {
 		nn := types.NamespacedName{Name: resourceName, Namespace: "default"}
 
 		BeforeEach(func() {
-			createAPIKeySecret(ctx, "default", secretName)
+			createAPIKeySecret(ctx, secretName)
 		})
 
 		AfterEach(func() {
@@ -541,8 +426,8 @@ var _ = Describe("IgnitionSync Controller", func() {
 		nn := types.NamespacedName{Name: resourceName, Namespace: "default"}
 
 		BeforeEach(func() {
-			createAPIKeySecret(ctx, "default", secretName)
-			createCR(ctx, resourceName, "default", secretName)
+			createAPIKeySecret(ctx, secretName)
+			createCR(ctx, resourceName, secretName)
 		})
 
 		AfterEach(func() {
@@ -559,11 +444,7 @@ var _ = Describe("IgnitionSync Controller", func() {
 					_ = k8sClient.Delete(ctx, pod)
 				}
 			}
-			// Clean up PVC + ConfigMaps
-			pvc := &corev1.PersistentVolumeClaim{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Name: fmt.Sprintf("ignition-sync-repo-%s", resourceName), Namespace: "default"}, pvc); err == nil {
-				_ = k8sClient.Delete(ctx, pvc)
-			}
+			// Clean up ConfigMaps
 			for _, prefix := range []string{"ignition-sync-metadata-", "ignition-sync-status-"} {
 				cm := &corev1.ConfigMap{}
 				if err := k8sClient.Get(ctx, types.NamespacedName{Name: prefix + resourceName, Namespace: "default"}, cm); err == nil {
@@ -574,12 +455,12 @@ var _ = Describe("IgnitionSync Controller", func() {
 
 		It("should discover annotated Running pods as gateways", func() {
 			// Create two annotated pods for this CR
-			createAnnotatedPod(ctx, "gw-pod-1", "default", resourceName, map[string]string{
+			createAnnotatedPod(ctx, "gw-pod-1", map[string]string{
 				synctypes.AnnotationCRName:      resourceName,
 				synctypes.AnnotationGatewayName: "gateway-alpha",
 				synctypes.AnnotationServicePath: "http://gw-pod-1:8088",
 			})
-			createAnnotatedPod(ctx, "gw-pod-2", "default", resourceName, map[string]string{
+			createAnnotatedPod(ctx, "gw-pod-2", map[string]string{
 				synctypes.AnnotationCRName:      resourceName,
 				synctypes.AnnotationGatewayName: "gateway-beta",
 				synctypes.AnnotationServicePath: "http://gw-pod-2:8088",
@@ -599,11 +480,11 @@ var _ = Describe("IgnitionSync Controller", func() {
 
 		It("should not discover pods for a different CR", func() {
 			// Pod for this CR
-			createAnnotatedPod(ctx, "gw-pod-1", "default", resourceName, map[string]string{
+			createAnnotatedPod(ctx, "gw-pod-1", map[string]string{
 				synctypes.AnnotationCRName: resourceName,
 			})
 			// Pod for a different CR
-			createAnnotatedPod(ctx, "gw-pod-other", "default", resourceName, map[string]string{
+			createAnnotatedPod(ctx, "gw-pod-other", map[string]string{
 				synctypes.AnnotationCRName: "some-other-cr",
 			})
 
@@ -617,7 +498,7 @@ var _ = Describe("IgnitionSync Controller", func() {
 		})
 
 		It("should fall back to pod name when gateway name annotation is missing", func() {
-			createAnnotatedPod(ctx, "gw-pod-1", "default", resourceName, map[string]string{
+			createAnnotatedPod(ctx, "gw-pod-1", map[string]string{
 				synctypes.AnnotationCRName: resourceName,
 				// No AnnotationGatewayName — should fall back
 			})
@@ -639,8 +520,8 @@ var _ = Describe("IgnitionSync Controller", func() {
 		nn := types.NamespacedName{Name: resourceName, Namespace: "default"}
 
 		BeforeEach(func() {
-			createAPIKeySecret(ctx, "default", secretName)
-			createCR(ctx, resourceName, "default", secretName)
+			createAPIKeySecret(ctx, secretName)
+			createCR(ctx, resourceName, secretName)
 		})
 
 		AfterEach(func() {
@@ -654,10 +535,6 @@ var _ = Describe("IgnitionSync Controller", func() {
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: "gw-status-pod", Namespace: "default"}, pod); err == nil {
 				_ = k8sClient.Delete(ctx, pod)
 			}
-			pvc := &corev1.PersistentVolumeClaim{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Name: fmt.Sprintf("ignition-sync-repo-%s", resourceName), Namespace: "default"}, pvc); err == nil {
-				_ = k8sClient.Delete(ctx, pvc)
-			}
 			for _, prefix := range []string{"ignition-sync-metadata-", "ignition-sync-status-"} {
 				cm := &corev1.ConfigMap{}
 				if err := k8sClient.Get(ctx, types.NamespacedName{Name: prefix + resourceName, Namespace: "default"}, cm); err == nil {
@@ -667,7 +544,7 @@ var _ = Describe("IgnitionSync Controller", func() {
 		})
 
 		It("should enrich gateways with status from ConfigMap", func() {
-			createAnnotatedPod(ctx, "gw-status-pod", "default", resourceName, map[string]string{
+			createAnnotatedPod(ctx, "gw-status-pod", map[string]string{
 				synctypes.AnnotationCRName:      resourceName,
 				synctypes.AnnotationGatewayName: "my-gateway",
 			})
@@ -721,8 +598,8 @@ var _ = Describe("IgnitionSync Controller", func() {
 		nn := types.NamespacedName{Name: resourceName, Namespace: "default"}
 
 		BeforeEach(func() {
-			createAPIKeySecret(ctx, "default", secretName)
-			createCR(ctx, resourceName, "default", secretName)
+			createAPIKeySecret(ctx, secretName)
+			createCR(ctx, resourceName, secretName)
 		})
 
 		AfterEach(func() {
@@ -738,10 +615,6 @@ var _ = Describe("IgnitionSync Controller", func() {
 					_ = k8sClient.Delete(ctx, pod)
 				}
 			}
-			pvc := &corev1.PersistentVolumeClaim{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Name: fmt.Sprintf("ignition-sync-repo-%s", resourceName), Namespace: "default"}, pvc); err == nil {
-				_ = k8sClient.Delete(ctx, pvc)
-			}
 			for _, prefix := range []string{"ignition-sync-metadata-", "ignition-sync-status-"} {
 				cm := &corev1.ConfigMap{}
 				if err := k8sClient.Get(ctx, types.NamespacedName{Name: prefix + resourceName, Namespace: "default"}, cm); err == nil {
@@ -750,8 +623,8 @@ var _ = Describe("IgnitionSync Controller", func() {
 			}
 		})
 
-		It("should set Ready=True when repo is cloned and all gateways synced", func() {
-			createAnnotatedPod(ctx, "gw-cond-1", "default", resourceName, map[string]string{
+		It("should set Ready=True when ref is resolved and all gateways synced", func() {
+			createAnnotatedPod(ctx, "gw-cond-1", map[string]string{
 				synctypes.AnnotationCRName:      resourceName,
 				synctypes.AnnotationGatewayName: "gw1",
 			})
@@ -790,7 +663,7 @@ var _ = Describe("IgnitionSync Controller", func() {
 			// Check AllGatewaysSynced
 			var allSyncedCond *metav1.Condition
 			for i := range cr.Status.Conditions {
-				if cr.Status.Conditions[i].Type == "AllGatewaysSynced" {
+				if cr.Status.Conditions[i].Type == conditions.TypeAllGatewaysSynced {
 					allSyncedCond = &cr.Status.Conditions[i]
 					break
 				}
@@ -801,11 +674,11 @@ var _ = Describe("IgnitionSync Controller", func() {
 		})
 
 		It("should set Ready=False when gateways are not all synced", func() {
-			createAnnotatedPod(ctx, "gw-cond-1", "default", resourceName, map[string]string{
+			createAnnotatedPod(ctx, "gw-cond-1", map[string]string{
 				synctypes.AnnotationCRName:      resourceName,
 				synctypes.AnnotationGatewayName: "gw1",
 			})
-			createAnnotatedPod(ctx, "gw-cond-2", "default", resourceName, map[string]string{
+			createAnnotatedPod(ctx, "gw-cond-2", map[string]string{
 				synctypes.AnnotationCRName:      resourceName,
 				synctypes.AnnotationGatewayName: "gw2",
 			})
@@ -845,7 +718,7 @@ var _ = Describe("IgnitionSync Controller", func() {
 			// AllGatewaysSynced should show 1/2
 			var allSyncedCond *metav1.Condition
 			for i := range cr.Status.Conditions {
-				if cr.Status.Conditions[i].Type == "AllGatewaysSynced" {
+				if cr.Status.Conditions[i].Type == conditions.TypeAllGatewaysSynced {
 					allSyncedCond = &cr.Status.Conditions[i]
 					break
 				}
@@ -865,7 +738,7 @@ var _ = Describe("IgnitionSync Controller", func() {
 
 			var allSyncedCond *metav1.Condition
 			for i := range cr.Status.Conditions {
-				if cr.Status.Conditions[i].Type == "AllGatewaysSynced" {
+				if cr.Status.Conditions[i].Type == conditions.TypeAllGatewaysSynced {
 					allSyncedCond = &cr.Status.Conditions[i]
 					break
 				}

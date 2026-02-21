@@ -32,15 +32,17 @@ import (
 	synctypes "github.com/inductiveautomation/ignition-sync-operator/pkg/types"
 )
 
+const testRef = "v2.0.0"
+
 // --- Payload parsing tests ---
 
 func TestParsePayload_Generic(t *testing.T) {
 	body := []byte(`{"ref":"v2.0.0"}`)
 	ref, source := parsePayload(body)
-	if ref != "v2.0.0" {
+	if ref != testRef {
 		t.Fatalf("expected ref=v2.0.0, got %q", ref)
 	}
-	if source != "generic" {
+	if source != SourceGeneric {
 		t.Fatalf("expected source=generic, got %q", source)
 	}
 }
@@ -149,7 +151,7 @@ func TestHandler_AcceptsValidRequest(t *testing.T) {
 
 	var resp map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp["ref"] != "v2.0.0" {
+	if resp["ref"] != testRef {
 		t.Fatalf("expected ref=v2.0.0 in response, got %v", resp["ref"])
 	}
 }
@@ -215,10 +217,10 @@ func TestHandler_AnnotatesCR(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get CR: %v", err)
 	}
-	if cr.Annotations[synctypes.AnnotationRequestedRef] != "v2.0.0" {
+	if cr.Annotations[synctypes.AnnotationRequestedRef] != testRef {
 		t.Fatalf("expected requested-ref=v2.0.0, got %q", cr.Annotations[synctypes.AnnotationRequestedRef])
 	}
-	if cr.Annotations[synctypes.AnnotationRequestedBy] != "generic" {
+	if cr.Annotations[synctypes.AnnotationRequestedBy] != SourceGeneric {
 		t.Fatalf("expected requested-by=generic, got %q", cr.Annotations[synctypes.AnnotationRequestedBy])
 	}
 	if cr.Annotations[synctypes.AnnotationRequestedAt] == "" {
@@ -229,7 +231,7 @@ func TestHandler_AnnotatesCR(t *testing.T) {
 func TestHandler_DuplicateRefReturns200(t *testing.T) {
 	cr := testCR()
 	cr.Annotations = map[string]string{
-		synctypes.AnnotationRequestedRef: "v2.0.0",
+		synctypes.AnnotationRequestedRef: testRef,
 	}
 	_, mux := newTestReceiver("", cr)
 
