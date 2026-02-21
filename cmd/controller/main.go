@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	syncv1alpha1 "github.com/inductiveautomation/ignition-sync-operator/api/v1alpha1"
 	"github.com/inductiveautomation/ignition-sync-operator/internal/controller"
@@ -201,6 +202,14 @@ func main() {
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
+
+	// Register mutating webhook for pod injection
+	mgr.GetWebhookServer().Register("/mutate-v1-pod", &webhook.Admission{
+		Handler: &iswebhook.PodInjector{
+			Client:  mgr.GetClient(),
+			Decoder: admission.NewDecoder(mgr.GetScheme()),
+		},
+	})
 
 	// Register webhook receiver if port is set
 	if webhookReceiverPort > 0 {

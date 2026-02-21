@@ -1,0 +1,11 @@
+{{- if and .Values.webhook.enabled .Values.certManager.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "ignition-sync-operator.fullname" . }}-selfsigned-issuer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ignition-sync-operator.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+{{- end }}

@@ -37,6 +37,7 @@ rules:
       - sync.ignition.io
     resources:
       - ignitionsyncs
+      - syncprofiles
     verbs:
       - get
       - list
@@ -53,6 +54,7 @@ rules:
       - sync.ignition.io
     resources:
       - ignitionsyncs/status
+      - syncprofiles/status
     verbs:
       - get
       - patch
