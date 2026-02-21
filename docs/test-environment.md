@@ -9,9 +9,10 @@ This document covers the Ignition test environment used for validating the ignit
 - **GitHub:** `ia-eknorr/test-ignition-project` (private)
 - **Local clone:** `/Users/eknorr/IA/code/personal/test-ignition-project/`
 - **Structure:** 2 services (`ignition-blue`, `ignition-red`), shared config, PostgreSQL
-- **Commit history:** 6 commits, 4 PRs merged
 
 ## 2. Gateway Access
+
+### Docker Compose (local development)
 
 | Gateway | URL | Cobranding Color |
 |---------|-----|-----------------|
@@ -21,6 +22,19 @@ This document covers the Ignition test environment used for validating the ignit
 - Both run **Ignition 8.3.3** in `dev` deployment mode
 - Docker Compose with Traefik proxy on external `proxy` network
 - `localtest.me` resolves to `127.0.0.1` — no `/etc/hosts` changes needed
+
+### kind Cluster (operator testing)
+
+| Gateway | Helm Release | Port-Forward | NodePort |
+|---------|-------------|-------------|----------|
+| Blue | `ignition-blue` | `kubectl port-forward pod/ignition-blue-gateway-0 8088:8088` | 30088 |
+| Red | `ignition-red` | `kubectl port-forward pod/ignition-red-gateway-0 8089:8088` | 30089 |
+
+- **Cluster:** `kind-dev`, namespace `ignition-test`
+- Both run **Ignition 8.3.3**, deployed via `inductiveautomation/ignition` helm chart
+- Each gateway has a **native sidecar** (`sync-agent`) that syncs config before gateway startup
+- Each gateway uses its own **SyncProfile** (`blue-profile`, `red-profile`)
+- Single **IgnitionSync CR** (`test-sync`) manages both gateways
 
 ## 3. API Authentication
 
@@ -72,7 +86,278 @@ The test project uses Ignition's config collection system with three layers:
 - API token: `ignition-api-key`
 - Project: `red` (Perspective project)
 
-## 6. API Verification Plan
+## 6. kind Cluster Setup
+
+Complete setup for deploying both gateways with the sync operator in the kind cluster.
+
+### Prerequisites
+
+- `kind-dev` cluster running (3 nodes)
+- Operator image built and loaded: `docker build -t ignition-sync-operator:dev . && kind load docker-image ignition-sync-operator:dev --name dev`
+- Controller deployed to `ignition-sync-operator-system`
+
+### Step 1: Create namespace and secrets
+
+```bash
+kubectl create namespace ignition-test
+
+# API token config (shared between gateways)
+kubectl create configmap ignition-api-token-config -n ignition-test \
+  --from-file=config.json=<(cat <<'JSONEOF'
+{
+  "profile": {
+    "secureChannelRequired": false,
+    "securityLevels": [
+      {"children": [], "description": "Represents a user who has been authenticated by the system.", "name": "Authenticated"},
+      {"children": [], "name": "ApiToken"}
+    ],
+    "timestamp": 1769044485311,
+    "type": "basic-token"
+  },
+  "settings": {
+    "tokenHash": "PnEG_dp5qpV20att_1x2wr7OWIsLZGzuMUggzjl4BOY"
+  }
+}
+JSONEOF
+) \
+  --from-file=resource.json=<(cat <<'JSONEOF'
+{
+  "scope": "A",
+  "description": "",
+  "version": 1,
+  "restricted": false,
+  "overridable": true,
+  "files": ["config.json"],
+  "attributes": {
+    "uuid": "371e6af8-d275-4923-af95-74362eb6662f",
+    "enabled": true
+  }
+}
+JSONEOF
+)
+
+# API key secret (for agent → gateway API calls)
+kubectl create secret generic ignition-api-key -n ignition-test \
+  --from-literal=apiKey="ignition-api-key:CYCSdRgW6MHYkeIXhH-BMqo1oaqfTdFi8tXvHJeCKmY"
+
+# Git token (for cloning the test repo)
+kubectl create secret generic git-token-secret -n ignition-test \
+  --from-file=token=secrets/github-token
+```
+
+### Step 2: Deploy gateways via helm
+
+```bash
+# Common helm args
+HELM_COMMON=(
+  --set commissioning.acceptIgnitionEULA=true
+  --set commissioning.edition=standard
+  --set certManager.enabled=false
+  --set ingress.enabled=false
+  --set gateway.replicas=1
+  --set gateway.dataVolumeStorageSize=5Gi
+  --set gateway.persistentVolumeClaimRetentionPolicy=Delete
+  --set gateway.resourcesEnabled=true
+  --set gateway.resources.requests.cpu=500m
+  --set gateway.resources.requests.memory=1Gi
+  --set gateway.resources.limits.cpu=1
+  --set gateway.resources.limits.memory=2Gi
+  --set 'gateway.volumes[0].name=api-token-config'
+  --set 'gateway.volumes[0].configMap.name=ignition-api-token-config'
+  --set 'gateway.preconfigureVolumeMounts[0].name=api-token-config'
+  --set 'gateway.preconfigureVolumeMounts[0].mountPath=/api-token-config'
+  --set 'gateway.preconfigureVolumeMounts[0].readOnly=true'
+  --set 'gateway.preconfigure.additionalCmds[0]=mkdir -p /data/local/resources/core/ignition/api-token/ignition-api-key && cp /api-token-config/config.json /data/local/resources/core/ignition/api-token/ignition-api-key/config.json && cp /api-token-config/resource.json /data/local/resources/core/ignition/api-token/ignition-api-key/resource.json && echo "API token seeded"'
+)
+
+helm install ignition-blue inductiveautomation/ignition -n ignition-test \
+  "${HELM_COMMON[@]}" \
+  --set service.type=NodePort \
+  --set service.nodePorts.http=30088 \
+  --set service.nodePorts.https=30043
+
+helm install ignition-red inductiveautomation/ignition -n ignition-test \
+  "${HELM_COMMON[@]}" \
+  --set service.type=NodePort \
+  --set service.nodePorts.http=30089 \
+  --set service.nodePorts.https=30044
+```
+
+### Step 3: Create IgnitionSync CR and SyncProfiles
+
+```bash
+cat <<'EOF' | kubectl apply -f -
+apiVersion: sync.ignition.io/v1alpha1
+kind: IgnitionSync
+metadata:
+  name: test-sync
+  namespace: ignition-test
+spec:
+  git:
+    repo: https://github.com/ia-eknorr/test-ignition-project.git
+    ref: main
+    auth:
+      token:
+        secretRef:
+          key: token
+          name: git-token-secret
+  gateway:
+    apiKeySecretRef:
+      key: apiKey
+      name: ignition-api-key
+    port: 8088
+    tls: false
+---
+apiVersion: sync.ignition.io/v1alpha1
+kind: SyncProfile
+metadata:
+  name: blue-profile
+  namespace: ignition-test
+spec:
+  mappings:
+    - source: "shared/config/resources/external"
+      destination: "config/resources/external"
+      type: dir
+    - source: "services/ignition-blue/config/resources/core"
+      destination: "config/resources/core"
+      type: dir
+      required: true
+    - source: "services/ignition-blue/projects"
+      destination: "projects"
+      type: dir
+      required: true
+  deploymentMode:
+    name: dev
+    source: "services/ignition-blue/config/resources/dev"
+  vars:
+    environment: "test"
+    gateway: "blue"
+---
+apiVersion: sync.ignition.io/v1alpha1
+kind: SyncProfile
+metadata:
+  name: red-profile
+  namespace: ignition-test
+spec:
+  mappings:
+    - source: "shared/config/resources/external"
+      destination: "config/resources/external"
+      type: dir
+    - source: "services/ignition-red/config/resources/core"
+      destination: "config/resources/core"
+      type: dir
+      required: true
+    - source: "services/ignition-red/projects"
+      destination: "projects"
+      type: dir
+      required: true
+  deploymentMode:
+    name: dev
+    source: "services/ignition-red/config/resources/dev"
+  vars:
+    environment: "test"
+    gateway: "red"
+EOF
+```
+
+### Step 4: Annotate StatefulSets and add native sidecar
+
+The sync-agent is deployed as a **native sidecar** — a K8s init container with `restartPolicy: Always`. It starts before the gateway, syncs config files, then its startup probe passes which unblocks the gateway container. It continues running alongside the gateway to watch for changes.
+
+```bash
+# Function to patch a gateway with annotations and native sidecar
+patch_gateway() {
+  local GW_NAME=$1 PROFILE=$2
+
+  # Add pod template annotations for gateway discovery
+  kubectl -n ignition-test patch sts ${GW_NAME}-gateway --type=json -p="[
+    {\"op\": \"add\", \"path\": \"/spec/template/metadata/annotations/ignition-sync.io~1cr-name\", \"value\": \"test-sync\"},
+    {\"op\": \"add\", \"path\": \"/spec/template/metadata/annotations/ignition-sync.io~1gateway-name\", \"value\": \"${GW_NAME}\"},
+    {\"op\": \"add\", \"path\": \"/spec/template/metadata/annotations/ignition-sync.io~1sync-profile\", \"value\": \"${PROFILE}\"}
+  ]"
+
+  # Add volumes and native sidecar
+  kubectl -n ignition-test patch sts ${GW_NAME}-gateway --type=json -p="[
+    {\"op\": \"add\", \"path\": \"/spec/template/spec/volumes/-\", \"value\": {\"name\": \"repo\", \"emptyDir\": {}}},
+    {\"op\": \"add\", \"path\": \"/spec/template/spec/volumes/-\", \"value\": {\"name\": \"api-key\", \"secret\": {\"secretName\": \"ignition-api-key\"}}},
+    {\"op\": \"add\", \"path\": \"/spec/template/spec/volumes/-\", \"value\": {\"name\": \"git-auth\", \"secret\": {\"secretName\": \"git-token-secret\"}}},
+    {\"op\": \"add\", \"path\": \"/spec/template/spec/initContainers/-\", \"value\": {
+      \"name\": \"sync-agent\",
+      \"image\": \"ignition-sync-operator:dev\",
+      \"imagePullPolicy\": \"IfNotPresent\",
+      \"restartPolicy\": \"Always\",
+      \"command\": [\"/agent\"],
+      \"env\": [
+        {\"name\": \"POD_NAME\", \"valueFrom\": {\"fieldRef\": {\"fieldPath\": \"metadata.name\"}}},
+        {\"name\": \"POD_NAMESPACE\", \"valueFrom\": {\"fieldRef\": {\"fieldPath\": \"metadata.namespace\"}}},
+        {\"name\": \"GATEWAY_NAME\", \"value\": \"${GW_NAME}\"},
+        {\"name\": \"CR_NAME\", \"value\": \"test-sync\"},
+        {\"name\": \"CR_NAMESPACE\", \"value\": \"ignition-test\"},
+        {\"name\": \"REPO_PATH\", \"value\": \"/repo\"},
+        {\"name\": \"DATA_PATH\", \"value\": \"/usr/local/bin/ignition/data\"},
+        {\"name\": \"SYNC_PROFILE\", \"value\": \"${PROFILE}\"},
+        {\"name\": \"GATEWAY_PORT\", \"value\": \"8088\"},
+        {\"name\": \"GATEWAY_TLS\", \"value\": \"false\"},
+        {\"name\": \"API_KEY_FILE\", \"value\": \"/secrets/apiKey\"},
+        {\"name\": \"SYNC_PERIOD\", \"value\": \"30\"},
+        {\"name\": \"GIT_TOKEN_FILE\", \"value\": \"/git-auth/token\"}
+      ],
+      \"startupProbe\": {
+        \"httpGet\": {\"path\": \"/startupz\", \"port\": 8082},
+        \"periodSeconds\": 2,
+        \"failureThreshold\": 30
+      },
+      \"resources\": {
+        \"requests\": {\"cpu\": \"50m\", \"memory\": \"64Mi\"},
+        \"limits\": {\"cpu\": \"200m\", \"memory\": \"128Mi\"}
+      },
+      \"volumeMounts\": [
+        {\"name\": \"repo\", \"mountPath\": \"/repo\"},
+        {\"name\": \"data\", \"mountPath\": \"/usr/local/bin/ignition/data\"},
+        {\"name\": \"api-key\", \"mountPath\": \"/secrets\", \"readOnly\": true},
+        {\"name\": \"git-auth\", \"mountPath\": \"/git-auth\", \"readOnly\": true}
+      ]
+    }}
+  ]"
+}
+
+patch_gateway "ignition-blue" "blue-profile"
+patch_gateway "ignition-red" "red-profile"
+
+# Restart pods to pick up changes
+kubectl -n ignition-test delete pod ignition-blue-gateway-0 ignition-red-gateway-0
+kubectl -n ignition-test wait --for=condition=Ready pod/ignition-blue-gateway-0 --timeout=180s
+kubectl -n ignition-test wait --for=condition=Ready pod/ignition-red-gateway-0 --timeout=180s
+```
+
+### Step 5: Verify
+
+```bash
+# Both gateways should be 2/2 Running (gateway + native sidecar)
+kubectl -n ignition-test get pods
+
+# IgnitionSync should show 2/2 gateways synced
+kubectl -n ignition-test get ignitionsync test-sync
+
+# Port-forward for API verification
+kubectl -n ignition-test port-forward pod/ignition-blue-gateway-0 8088:8088 &
+kubectl -n ignition-test port-forward pod/ignition-red-gateway-0 8089:8088 &
+sleep 5
+
+# Quick checks
+export API_TOKEN="ignition-api-key:CYCSdRgW6MHYkeIXhH-BMqo1oaqfTdFi8tXvHJeCKmY"
+curl -s -H "X-Ignition-API-Token: $API_TOKEN" http://localhost:8088/data/api/v1/gateway-info | jq .name
+curl -s -H "X-Ignition-API-Token: $API_TOKEN" http://localhost:8089/data/api/v1/gateway-info | jq .name
+```
+
+### Teardown
+
+```bash
+helm uninstall ignition-blue ignition-red -n ignition-test
+kubectl delete namespace ignition-test
+```
+
+## 7. API Verification Plan
 
 Use these API calls to confirm that file sync is working correctly. Each phase validates a different aspect of the configuration.
 
@@ -213,7 +498,7 @@ curl -s -H "X-Ignition-API-Token: $API_TOKEN" "$BLUE_URL/data/api/v1/scan/projec
 
 **Expected:** POST triggers scan (`scanActive: true`), completes within a few seconds (`scanActive: false`), `lastScanTimestamp` advances. This is the endpoint the operator calls after syncing files to tell the gateway to reload config.
 
-## 7. Key API Endpoints Reference
+## 8. Key API Endpoints Reference
 
 | Endpoint | Purpose |
 |----------|---------|
@@ -235,7 +520,7 @@ curl -s -H "X-Ignition-API-Token: $API_TOKEN" "$BLUE_URL/data/api/v1/scan/projec
 - Singleton endpoints (`resources/singleton`) return flat resource objects
 - `names` endpoints (e.g., `resources/names`) may return 404 for singleton types like `system-properties`
 
-## 8. Verification Script
+## 9. Verification Script
 
 A parameterized script that asserts expected outcomes against any gateway URL.
 
@@ -338,7 +623,7 @@ echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ] || exit 1
 ```
 
-## 9. Git Auth Setup (TODO)
+## 10. Git Auth Setup
 
 When ready, the following auth methods will be configured for the operator to clone from `ia-eknorr/test-ignition-project`.
 

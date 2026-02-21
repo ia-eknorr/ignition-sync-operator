@@ -129,6 +129,6 @@ func (c *Client) HealthCheck() error {
 // setAuth adds the Ignition API key header to a request.
 func (c *Client) setAuth(req *http.Request) {
 	if c.APIKey != "" {
-		req.Header.Set("X-Ignition-Token", strings.TrimSpace(c.APIKey))
+		req.Header.Set("X-Ignition-API-Token", strings.TrimSpace(c.APIKey))
 	}
 }

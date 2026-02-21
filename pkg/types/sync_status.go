@@ -65,4 +65,19 @@ type GatewayStatus struct {
 
 	// ErrorMessage contains error details if SyncStatus is Error.
 	ErrorMessage string `json:"errorMessage,omitempty"`
+
+	// SyncProfileName is the name of the SyncProfile used for this sync.
+	SyncProfileName string `json:"syncProfileName,omitempty"`
+
+	// DryRun indicates the sync was a dry-run (no files written to live dir).
+	DryRun bool `json:"dryRun,omitempty"`
+
+	// DryRunDiffAdded is the count of files that would be created.
+	DryRunDiffAdded int32 `json:"dryRunDiffAdded,omitempty"`
+
+	// DryRunDiffModified is the count of files that would be changed.
+	DryRunDiffModified int32 `json:"dryRunDiffModified,omitempty"`
+
+	// DryRunDiffDeleted is the count of files that would be removed.
+	DryRunDiffDeleted int32 `json:"dryRunDiffDeleted,omitempty"`
 }

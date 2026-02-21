@@ -15,6 +15,7 @@ type SyncResult struct {
 	FilesDeleted   int
 	ProjectsSynced []string
 	Duration       time.Duration
+	DryRunDiff     *DryRunDiff
 }
 
 // Engine handles syncing files from a source directory to a destination directory.
@@ -73,16 +74,20 @@ func (e *Engine) Sync(srcRoot, dstRoot string) (*SyncResult, error) {
 		srcFiles[relPath] = true
 		dstPath := filepath.Join(dstRoot, relPath)
 
+		// Check existence before copy so we can distinguish added vs modified.
+		_, existErr := os.Stat(dstPath)
+		existed := existErr == nil
+
 		written, err := copyFile(srcPath, dstPath)
 		if err != nil {
 			return fmt.Errorf("syncing %s: %w", relPath, err)
 		}
 
 		if written {
-			if _, statErr := os.Stat(dstPath); statErr != nil {
-				result.FilesAdded++
-			} else {
+			if existed {
 				result.FilesModified++
+			} else {
+				result.FilesAdded++
 			}
 		}
 

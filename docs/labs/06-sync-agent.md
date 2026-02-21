@@ -2,689 +2,406 @@
 
 ## Objective
 
-Validate the sync agent binary end-to-end with a real Ignition gateway. The agent clones the git repository to a local emptyDir volume (`/repo`), syncs project files to the Ignition data directory, triggers the scan API, and reports status via ConfigMap. This is the first phase where we see **projects actually appear in the Ignition web UI**.
+Validate the sync agent binary end-to-end with real Ignition gateways. The agent clones the git repository to a local emptyDir volume (`/repo`), syncs project files to the Ignition data directory using SyncProfile-driven ordered mappings, and reports status via ConfigMap. This lab covers **SyncProfile mode** (ordered mappings with deployment mode overlay, dry-run, paused) and **legacy mode** (SERVICE_PATH flat sync).
 
-**Prerequisite:** Complete [05 — Webhook Receiver](05-webhook-receiver.md). The `lab-sync` CR should be `Ready` with `RefResolved=True` and 2 gateways discovered.
+**Prerequisite:** Complete [05 — Webhook Receiver](05-webhook-receiver.md). The operator controller should be deployed to `ignition-sync-operator-system`.
 
 ---
 
-## Lab 6.1: Agent Binary Smoke Test
+## Build & Deploy
+
+Before running any lab, build the image and load into kind:
+
+```bash
+docker build -t ignition-sync-operator:dev .
+kind load docker-image ignition-sync-operator:dev --name dev
+
+# Update the controller
+kubectl set image deployment/ignition-sync-operator-controller-manager \
+  manager=ignition-sync-operator:dev -n ignition-sync-operator-system
+kubectl rollout status deployment/ignition-sync-operator-controller-manager \
+  -n ignition-sync-operator-system --timeout=60s
+```
+
+---
+
+## Lab 6.1: Environment Setup
 
 ### Purpose
-Verify the agent container image starts, clones the git repo to its local emptyDir, and enters its watch loop without crashing.
+Deploy two Ignition gateways (blue and red) in the `ignition-test` namespace with the sync operator managing both via a single IgnitionSync CR and per-gateway SyncProfiles.
 
 ### Steps
 
-Deploy the agent as a standalone pod (not yet injected as a sidecar) with the same mounts and env vars it would receive from the mutating webhook:
+Follow the complete setup in [Test Environment — kind Cluster Setup](../test-environment.md#6-kind-cluster-setup). This creates:
+
+- Namespace `ignition-test` with secrets and API token config
+- Two Ignition gateways via helm (`ignition-blue`, `ignition-red`)
+- IgnitionSync CR `test-sync` and SyncProfile CRs (`blue-profile`, `red-profile`)
+- Native sidecar on each gateway with startup probe gating
+
+### What to Verify
+
+1. **Both pods are running with 2/2 containers:**
+   ```bash
+   kubectl -n ignition-test get pods
+   ```
+   Expected: `ignition-blue-gateway-0` and `ignition-red-gateway-0` both `2/2 Running`.
+
+2. **IgnitionSync CR shows both gateways synced:**
+   ```bash
+   kubectl -n ignition-test get ignitionsync test-sync
+   ```
+   Expected: `GATEWAYS: 2/2 gateways synced`, `READY: True`.
+
+3. **Both SyncProfiles accepted:**
+   ```bash
+   kubectl -n ignition-test get syncprofile
+   ```
+   Expected: Both `blue-profile` and `red-profile` with `ACCEPTED=True`, `MODE=dev`.
+
+---
+
+## Lab 6.2: SyncProfile — Verify Ordered Mappings
+
+### Purpose
+Verify that the agent syncs files using SyncProfile-driven ordered mappings, with correct per-gateway config and deployment mode overlay.
+
+### Steps
 
 ```bash
-cat <<EOF | kubectl apply -n lab -f -
-apiVersion: v1
-kind: Pod
-metadata:
-  name: agent-test
-  labels:
-    app: agent-test
-spec:
-  serviceAccountName: default
-  containers:
-    - name: agent
-      image: ignition-sync-operator:lab
-      command: ["/agent"]
-      env:
-        - name: POD_NAME
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.name
-        - name: POD_NAMESPACE
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.namespace
-        - name: GATEWAY_NAME
-          value: "lab-gateway"
-        - name: CR_NAME
-          value: "lab-sync"
-        - name: CR_NAMESPACE
-          value: "lab"
-        - name: REPO_PATH
-          value: "/repo"
-        - name: DATA_PATH
-          value: "/ignition-data"
-        - name: GATEWAY_PORT
-          value: "8088"
-        - name: GATEWAY_TLS
-          value: "false"
-        - name: API_KEY_FILE
-          value: "/secrets/apiKey"
-        - name: SYNC_PERIOD
-          value: "30"
-        - name: GIT_TOKEN_FILE
-          value: "/git-auth/token"
-      volumeMounts:
-        - name: repo
-          mountPath: /repo
-        - name: data
-          mountPath: /ignition-data
-        - name: api-key
-          mountPath: /secrets
-          readOnly: true
-        - name: git-auth
-          mountPath: /git-auth
-          readOnly: true
-      resources:
-        requests:
-          cpu: 50m
-          memory: 64Mi
-        limits:
-          cpu: 200m
-          memory: 128Mi
-  volumes:
-    - name: repo
-      emptyDir: {}
-    - name: data
-      emptyDir: {}
-    - name: api-key
-      secret:
-        secretName: ignition-api-key
-    - name: git-auth
-      secret:
-        secretName: git-token-secret
-EOF
+# Port-forward both gateways
+kubectl -n ignition-test port-forward pod/ignition-blue-gateway-0 8088:8088 &
+kubectl -n ignition-test port-forward pod/ignition-red-gateway-0 8089:8088 &
+sleep 5
+
+export API_TOKEN="ignition-api-key:CYCSdRgW6MHYkeIXhH-BMqo1oaqfTdFi8tXvHJeCKmY"
 ```
 
 ### What to Verify
 
-1. **Pod starts without crashing:**
+1. **Native sidecar synced files before gateway started:**
    ```bash
-   kubectl wait --for=condition=Ready pod/agent-test -n lab --timeout=120s
-   kubectl get pod agent-test -n lab
+   kubectl -n ignition-test logs ignition-blue-gateway-0 -c sync-agent | head -15
    ```
+   Expected:
+   - `starting agent`
+   - `fetching SyncProfile  name=blue-profile`
+   - `executing sync plan  mappings=4, dryRun=false`
+   - `initial sync complete, startup probe now passing`
+   - `gateway health check failed (expected on initial sync)` — gateway hadn't started yet
 
-2. **Agent logs show initialization and clone:**
+2. **Gateway started after startup probe passed:**
    ```bash
-   kubectl logs agent-test -n lab --tail=30
+   kubectl -n ignition-test get pod ignition-blue-gateway-0 -o json | \
+     jq '{initContainers: [.status.initContainerStatuses[] | {name, started, ready}],
+          containers: [.status.containerStatuses[] | {name, ready}]}'
    ```
-   Expected: Startup messages showing it loaded env vars, read the metadata ConfigMap, cloned the repo to `/repo`, and entered watch/poll mode.
+   Expected: `sync-agent` has `started: true, ready: true`; `gateway` has `ready: true`.
 
-3. **Agent cloned the repo to its local emptyDir:**
+3. **Ignition API accessible with token (config loaded before boot):**
    ```bash
-   kubectl exec agent-test -n lab -- ls /repo/com.inductiveautomation.ignition/projects/
+   curl -s -o /dev/null -w "%{http_code}" \
+     -H "X-Ignition-API-Token: $API_TOKEN" \
+     http://localhost:8088/data/api/v1/projects/list
    ```
-   Expected: `MyProject` and `SharedScripts` directories.
+   Expected: `200`
 
-### Cleanup (after testing)
+4. **Projects synced — each gateway has its own project:**
+   ```bash
+   curl -s -H "X-Ignition-API-Token: $API_TOKEN" \
+     http://localhost:8088/data/api/v1/projects/list | jq '[.items[].name]'
+   curl -s -H "X-Ignition-API-Token: $API_TOKEN" \
+     http://localhost:8089/data/api/v1/projects/list | jq '[.items[].name]'
+   ```
+   Expected: Blue has `["blue"]`, Red has `["red"]`.
+
+5. **Cobranding per-gateway (core mapping):**
+   ```bash
+   curl -s -H "X-Ignition-API-Token: $API_TOKEN" \
+     http://localhost:8088/data/api/v1/resources/singleton/ignition/cobranding | jq .config.backgroundColor
+   curl -s -H "X-Ignition-API-Token: $API_TOKEN" \
+     http://localhost:8089/data/api/v1/resources/singleton/ignition/cobranding | jq .config.backgroundColor
+   ```
+   Expected: Blue = `"#00a3d7"`, Red = `"#ff4013"`.
+
+6. **Dev overlay merged into core (deployment mode mapping):**
+   ```bash
+   curl -s -H "X-Ignition-API-Token: $API_TOKEN" \
+     http://localhost:8088/data/api/v1/resources/singleton/ignition/system-properties | \
+     jq '{systemName: .config.systemName, homepageNotes: .config.homepageNotes}'
+   curl -s -H "X-Ignition-API-Token: $API_TOKEN" \
+     http://localhost:8089/data/api/v1/resources/singleton/ignition/system-properties | \
+     jq '{systemName: .config.systemName, homepageNotes: .config.homepageNotes}'
+   ```
+   Expected: Blue = `ignition-blue` / `Ignition Blue - Dev`, Red = `ignition-red` / `Ignition Red - Dev`.
+
+7. **Status ConfigMap includes both gateways with profile names:**
+   ```bash
+   kubectl -n ignition-test get cm ignition-sync-status-test-sync -o json | jq '.data | keys'
+   kubectl -n ignition-test get cm ignition-sync-status-test-sync -o json | \
+     jq -r '.data["ignition-blue"]' | jq '{syncStatus, syncProfileName, projectsSynced}'
+   kubectl -n ignition-test get cm ignition-sync-status-test-sync -o json | \
+     jq -r '.data["ignition-red"]' | jq '{syncStatus, syncProfileName, projectsSynced}'
+   ```
+   Expected: Both have `syncStatus: "Synced"`, correct `syncProfileName`, and different `projectsSynced`.
+
+### Cleanup
+
 ```bash
-kubectl delete pod agent-test -n lab
+# Kill port-forwards
+lsof -ti:8088 -ti:8089 | xargs kill 2>/dev/null
 ```
 
 ---
 
-## Lab 6.2: File Sync to Ignition Data Directory
+## Lab 6.3: SyncProfile Dry-Run Mode
 
 ### Purpose
-Verify the agent correctly syncs project files from its local `/repo` clone to `/ignition-data/projects/`, respecting the `.resources/` protection.
+Verify that dry-run mode computes a diff without writing files to the live directory, and reports the diff in the status ConfigMap.
 
 ### Steps
 
-Deploy agent with a shared volume that simulates the Ignition data directory:
-
 ```bash
-cat <<EOF | kubectl apply -n lab -f -
-apiVersion: v1
-kind: Pod
-metadata:
-  name: agent-sync-test
-  labels:
-    app: agent-test
-spec:
-  containers:
-    - name: agent
-      image: ignition-sync-operator:lab
-      command: ["/agent"]
-      env:
-        - name: POD_NAME
-          value: "agent-sync-test"
-        - name: POD_NAMESPACE
-          value: "lab"
-        - name: GATEWAY_NAME
-          value: "test-sync-gateway"
-        - name: CR_NAME
-          value: "lab-sync"
-        - name: CR_NAMESPACE
-          value: "lab"
-        - name: REPO_PATH
-          value: "/repo"
-        - name: DATA_PATH
-          value: "/ignition-data"
-        - name: GATEWAY_PORT
-          value: "8088"
-        - name: GATEWAY_TLS
-          value: "false"
-        - name: API_KEY_FILE
-          value: "/secrets/apiKey"
-        - name: SYNC_PERIOD
-          value: "10"
-        - name: GIT_TOKEN_FILE
-          value: "/git-auth/token"
-      volumeMounts:
-        - name: repo
-          mountPath: /repo
-        - name: data
-          mountPath: /ignition-data
-        - name: api-key
-          mountPath: /secrets
-          readOnly: true
-        - name: git-auth
-          mountPath: /git-auth
-          readOnly: true
-    - name: inspector
-      image: alpine:latest
-      command: ["sleep", "3600"]
-      volumeMounts:
-        - name: data
-          mountPath: /ignition-data
-  volumes:
-    - name: repo
-      emptyDir: {}
-    - name: data
-      emptyDir: {}
-    - name: api-key
-      secret:
-        secretName: ignition-api-key
-    - name: git-auth
-      secret:
-        secretName: git-token-secret
-EOF
+# Enable dry-run on blue profile
+kubectl -n ignition-test patch syncprofile blue-profile --type=merge \
+  -p '{"spec":{"dryRun":true}}'
 
-kubectl wait --for=condition=Ready pod/agent-sync-test -n lab --timeout=120s
+# Restart the blue pod to get a fresh sync
+kubectl -n ignition-test delete cm ignition-sync-status-test-sync
+kubectl -n ignition-test delete pod ignition-blue-gateway-0
+kubectl -n ignition-test wait --for=condition=Ready pod/ignition-blue-gateway-0 --timeout=180s
 sleep 15
 ```
 
 ### What to Verify
 
-1. **Projects synced to /ignition-data:**
+1. **Agent logs show dry-run execution:**
    ```bash
-   kubectl exec agent-sync-test -c inspector -n lab -- ls -la /ignition-data/projects/ 2>/dev/null || \
-   kubectl exec agent-sync-test -c inspector -n lab -- find /ignition-data -type f | head -30
+   kubectl -n ignition-test logs ignition-blue-gateway-0 -c sync-agent --tail=20
    ```
-   Expected: Project directories and files from the repo appear under `/ignition-data/`.
+   Expected:
+   - `executing sync plan  mappings=4, dryRun=true`
+   - `dry-run mode, skipping scan API`
 
-2. **project.json files have valid content:**
+2. **Status ConfigMap includes dry-run diff:**
    ```bash
-   kubectl exec agent-sync-test -c inspector -n lab -- \
-     cat /ignition-data/projects/MyProject/project.json 2>/dev/null || echo "path may differ"
+   kubectl -n ignition-test get cm ignition-sync-status-test-sync -o json | \
+     jq -r '.data["ignition-blue"]' | jq '{dryRun, dryRunDiffAdded, dryRunDiffModified, dryRunDiffDeleted}'
    ```
+   Expected: `dryRun: true` and one or more of `dryRunDiffAdded`, `dryRunDiffModified`, `dryRunDiffDeleted`.
 
-3. **.resources/ NOT synced** — this is critical:
+3. **Disable dry-run:**
    ```bash
-   kubectl exec agent-sync-test -c inspector -n lab -- \
-     ls /ignition-data/.resources/ 2>&1
+   kubectl -n ignition-test patch syncprofile blue-profile --type=merge \
+     -p '{"spec":{"dryRun":false}}'
    ```
-   Expected: `No such file or directory` — the agent must never copy `.resources/`.
-
-4. **Exclude patterns respected** (no `.git/` directory):
-   ```bash
-   kubectl exec agent-sync-test -c inspector -n lab -- \
-     find /ignition-data -name ".git" -type d 2>/dev/null
-   ```
-   Expected: Empty output.
-
-### Cleanup
-```bash
-kubectl delete pod agent-sync-test -n lab
-```
 
 ---
 
-## Lab 6.3: Agent Status Reporting via ConfigMap
+## Lab 6.4: SyncProfile Paused
 
 ### Purpose
-Verify the agent writes its sync status to the `ignition-sync-status-{crName}` ConfigMap with the correct JSON structure.
+Verify that pausing the SyncProfile causes the agent to skip sync entirely, returning zero changes.
 
 ### Steps
 
-After lab 5.2 (or with a fresh agent pod), check the status ConfigMap:
-
 ```bash
-kubectl get configmap ignition-sync-status-lab-sync -n lab -o json | jq '.data'
+# Pause the blue profile
+kubectl -n ignition-test patch syncprofile blue-profile --type=merge \
+  -p '{"spec":{"paused":true}}'
+
+# Restart the blue pod
+kubectl -n ignition-test delete cm ignition-sync-status-test-sync
+kubectl -n ignition-test delete pod ignition-blue-gateway-0
+kubectl -n ignition-test wait --for=condition=Ready pod/ignition-blue-gateway-0 --timeout=180s
+sleep 15
 ```
 
 ### What to Verify
 
-The ConfigMap should have a key matching the gateway name with JSON containing:
+1. **Agent logs show paused state:**
+   ```bash
+   kubectl -n ignition-test logs ignition-blue-gateway-0 -c sync-agent --tail=20
+   ```
+   Expected: `SyncProfile is paused, returning zero-change result`
 
+2. **Zero files changed:**
+   ```bash
+   kubectl -n ignition-test get cm ignition-sync-status-test-sync -o json | \
+     jq -r '.data["ignition-blue"]' | jq .filesChanged
+   ```
+   Expected: `0`
+
+3. **Unpause:**
+   ```bash
+   kubectl -n ignition-test patch syncprofile blue-profile --type=merge \
+     -p '{"spec":{"paused":false}}'
+   ```
+
+---
+
+## Lab 6.5: Agent Status Reporting via ConfigMap
+
+### Purpose
+Verify the agent writes its sync status to the `ignition-sync-status-{crName}` ConfigMap with the correct JSON structure for both gateways.
+
+### Steps
+
+Restart both pods for a fresh sync:
 ```bash
-kubectl get configmap ignition-sync-status-lab-sync -n lab -o json | \
-  jq -r '.data["test-sync-gateway"] // .data["lab-gateway"]' | jq .
+kubectl -n ignition-test delete cm ignition-sync-status-test-sync 2>/dev/null
+kubectl -n ignition-test delete pod ignition-blue-gateway-0 ignition-red-gateway-0
+kubectl -n ignition-test wait --for=condition=Ready pod/ignition-blue-gateway-0 --timeout=180s
+kubectl -n ignition-test wait --for=condition=Ready pod/ignition-red-gateway-0 --timeout=180s
+sleep 15
 ```
 
-Expected fields:
-- `syncStatus: "Synced"` (or `"Error"` with `errorMessage`)
-- `syncedCommit:` matching the current CR commit
+### What to Verify
+
+```bash
+# Both gateways present in status ConfigMap
+kubectl -n ignition-test get cm ignition-sync-status-test-sync -o json | \
+  jq -r '.data["ignition-blue"]' | jq .
+
+kubectl -n ignition-test get cm ignition-sync-status-test-sync -o json | \
+  jq -r '.data["ignition-red"]' | jq .
+```
+
+Expected fields (per gateway):
+- `syncStatus: "Synced"`
+- `syncedCommit:` matching the current metadata commit
 - `syncedRef:` matching `"main"`
 - `lastSyncTime:` valid RFC3339 timestamp
-- `lastSyncDuration:` e.g., `"1.2s"`
-- `agentVersion:` non-empty
+- `lastSyncDuration:` e.g., `"500ms"`
+- `agentVersion:` `"0.1.0"`
 - `filesChanged:` integer
-- `projectsSynced:` array of project names like `["MyProject", "SharedScripts"]`
+- `projectsSynced:` array (blue: `[".resources", "blue"]`, red: `[".resources", "red"]`)
+- `syncProfileName:` `"blue-profile"` or `"red-profile"`
 
 ---
 
-## Lab 6.4: Re-Sync on Metadata ConfigMap Change
+## Lab 6.6: Re-Sync on Metadata ConfigMap Change
 
 ### Purpose
-Verify the agent detects changes to the metadata ConfigMap (new commit SHA or trigger timestamp) and triggers a re-sync (git fetch + checkout).
+Verify the agent detects changes to the metadata ConfigMap and triggers a re-sync.
 
 ### Steps
 
 ```bash
-# Deploy a fresh agent pod
-cat <<EOF | kubectl apply -n lab -f -
-apiVersion: v1
-kind: Pod
-metadata:
-  name: agent-resync-test
-  labels:
-    app: agent-test
-spec:
-  serviceAccountName: default
-  containers:
-    - name: agent
-      image: ignition-sync-operator:lab
-      command: ["/agent"]
-      env:
-        - name: POD_NAME
-          value: "agent-resync-test"
-        - name: POD_NAMESPACE
-          value: "lab"
-        - name: GATEWAY_NAME
-          value: "resync-gw"
-        - name: CR_NAME
-          value: "lab-sync"
-        - name: CR_NAMESPACE
-          value: "lab"
-        - name: REPO_PATH
-          value: "/repo"
-        - name: DATA_PATH
-          value: "/ignition-data"
-        - name: GATEWAY_PORT
-          value: "8088"
-        - name: GATEWAY_TLS
-          value: "false"
-        - name: API_KEY_FILE
-          value: "/secrets/apiKey"
-        - name: SYNC_PERIOD
-          value: "30"
-        - name: GIT_TOKEN_FILE
-          value: "/git-auth/token"
-      volumeMounts:
-        - name: repo
-          mountPath: /repo
-        - name: data
-          mountPath: /ignition-data
-        - name: api-key
-          mountPath: /secrets
-          readOnly: true
-        - name: git-auth
-          mountPath: /git-auth
-          readOnly: true
-  volumes:
-    - name: repo
-      emptyDir: {}
-    - name: data
-      emptyDir: {}
-    - name: api-key
-      secret:
-        secretName: ignition-api-key
-    - name: git-auth
-      secret:
-        secretName: git-token-secret
-EOF
-
-kubectl wait --for=condition=Ready pod/agent-resync-test -n lab --timeout=120s
-sleep 15
-
-# Record current agent logs
-kubectl logs agent-resync-test -n lab --tail=5
+# Record current logs
+kubectl -n ignition-test logs ignition-blue-gateway-0 -c sync-agent --tail=5
 
 # Update the metadata ConfigMap trigger timestamp
-kubectl patch configmap ignition-sync-metadata-lab-sync -n lab --type=merge \
+kubectl -n ignition-test patch configmap ignition-sync-metadata-test-sync --type=merge \
   -p "{\"data\":{\"trigger\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}}"
 
-# Wait and check for re-sync in logs
+# Wait and check logs
 sleep 15
-kubectl logs agent-resync-test -n lab --tail=20 | grep -i "sync\|trigger\|changed\|fetch"
+kubectl -n ignition-test logs ignition-blue-gateway-0 -c sync-agent --tail=20
 ```
 
-Expected: Log entries showing the agent detected the ConfigMap change and initiated a fetch + sync cycle.
-
-### Cleanup
-```bash
-kubectl delete pod agent-resync-test -n lab
-```
+Expected: `metadata ConfigMap changed` → `sync triggered`. Since the commit hasn't changed, the agent logs `commit unchanged, skipping sync` (which is correct — no work needed).
 
 ---
 
-## Lab 6.5: Scan API Graceful Failure
+## Lab 6.7: Scan API Graceful Failure
 
 ### Purpose
-When no real Ignition gateway API is reachable (wrong port, bad API key), the agent should report Error status but not crash. File sync should still succeed.
+When the Ignition gateway API is unreachable, the agent should report the health check failure but not crash. File sync should still succeed.
 
 ### Steps
 
-Deploy an agent with a wrong gateway port:
+The initial sync always attempts a health check. Since the native sidecar syncs before the gateway starts, the health check fails (connection refused). Check the agent logs after a fresh pod start:
 
 ```bash
-cat <<EOF | kubectl apply -n lab -f -
-apiVersion: v1
-kind: Pod
-metadata:
-  name: agent-bad-port
-  labels:
-    app: agent-test
-spec:
-  containers:
-    - name: agent
-      image: ignition-sync-operator:lab
-      command: ["/agent"]
-      env:
-        - name: POD_NAME
-          value: "agent-bad-port"
-        - name: POD_NAMESPACE
-          value: "lab"
-        - name: GATEWAY_NAME
-          value: "bad-port-gw"
-        - name: CR_NAME
-          value: "lab-sync"
-        - name: CR_NAMESPACE
-          value: "lab"
-        - name: REPO_PATH
-          value: "/repo"
-        - name: DATA_PATH
-          value: "/data"
-        - name: GATEWAY_PORT
-          value: "9999"
-        - name: GATEWAY_TLS
-          value: "false"
-        - name: API_KEY_FILE
-          value: "/secrets/apiKey"
-        - name: SYNC_PERIOD
-          value: "10"
-        - name: GIT_TOKEN_FILE
-          value: "/git-auth/token"
-      volumeMounts:
-        - name: repo
-          mountPath: /repo
-        - name: data
-          mountPath: /data
-        - name: api-key
-          mountPath: /secrets
-          readOnly: true
-        - name: git-auth
-          mountPath: /git-auth
-          readOnly: true
-  volumes:
-    - name: repo
-      emptyDir: {}
-    - name: data
-      emptyDir: {}
-    - name: api-key
-      secret:
-        secretName: ignition-api-key
-    - name: git-auth
-      secret:
-        secretName: git-token-secret
-EOF
+kubectl -n ignition-test logs ignition-blue-gateway-0 -c sync-agent | head -15
+```
 
-sleep 30
+Expected: `gateway health check failed (expected on initial sync)` with `error: ...connection refused`, followed by `status written to ConfigMap  status=Synced`.
+
+The pod should remain running and ready:
+```bash
+kubectl -n ignition-test get pod ignition-blue-gateway-0 \
+  -o jsonpath='{.status.initContainerStatuses[?(@.name=="sync-agent")].ready}'
+```
+Expected: `true`
+
+---
+
+## Lab 6.8: Backward Compatibility — Legacy Mode
+
+### Purpose
+Verify that removing the `SYNC_PROFILE` env var causes the agent to fall back to the legacy `SERVICE_PATH` flat sync, confirming backward compatibility.
+
+### Steps
+
+Switch from `SYNC_PROFILE` to `SERVICE_PATH` on the blue sync-agent init container:
+
+```bash
+# Find the SYNC_PROFILE env var index on the sync-agent init container (index 1)
+kubectl -n ignition-test get statefulset ignition-blue-gateway -o json | \
+  jq '.spec.template.spec.initContainers[1].env | to_entries[] | select(.value.name == "SYNC_PROFILE") | .key'
+
+# Replace SYNC_PROFILE with SERVICE_PATH (env index 7)
+kubectl -n ignition-test patch statefulset ignition-blue-gateway --type=json -p='[
+  {"op": "replace", "path": "/spec/template/spec/initContainers/1/env/7",
+   "value": {"name": "SERVICE_PATH", "value": "services/ignition-blue"}}
+]'
+
+kubectl -n ignition-test delete cm ignition-sync-status-test-sync
+kubectl -n ignition-test rollout status statefulset/ignition-blue-gateway --timeout=180s
+sleep 15
 ```
 
 ### What to Verify
 
-1. **Agent still running** (not crashed):
+1. **Agent logs show legacy mode (no profile):**
    ```bash
-   kubectl get pod agent-bad-port -n lab -o jsonpath='{.status.phase}'
+   kubectl -n ignition-test logs ignition-blue-gateway-0 -c sync-agent --tail=20
    ```
-   Expected: `Running`
+   Expected: `files synced` with `profile: ""` (empty string — no profile fetch, no plan execution).
 
-2. **Status reports Error:**
+2. **Status ConfigMap has no profile fields:**
    ```bash
-   kubectl get configmap ignition-sync-status-lab-sync -n lab -o json | \
-     jq -r '.data["bad-port-gw"]' | jq .
+   kubectl -n ignition-test get cm ignition-sync-status-test-sync -o json | \
+     jq -r '.data["ignition-blue"]' | jq .
    ```
-   Expected: `syncStatus: "Error"` with an `errorMessage` about connection failure.
+   Expected: No `syncProfileName` or `dryRun` fields in JSON.
 
-3. **Files still synced** (scan API failure shouldn't prevent file sync):
+3. **Restore profile mode:**
    ```bash
-   kubectl exec agent-bad-port -n lab -- ls /data/projects/ 2>/dev/null || echo "check path"
+   kubectl -n ignition-test patch statefulset ignition-blue-gateway --type=json -p='[
+     {"op": "replace", "path": "/spec/template/spec/initContainers/1/env/7",
+      "value": {"name": "SYNC_PROFILE", "value": "blue-profile"}}
+   ]'
+   kubectl -n ignition-test delete cm ignition-sync-status-test-sync
+   kubectl -n ignition-test rollout status statefulset/ignition-blue-gateway --timeout=180s
    ```
 
-### Cleanup
-```bash
-kubectl delete pod agent-bad-port -n lab
-```
-
 ---
 
-## Lab 6.6: Config Normalization
-
-### Purpose
-Verify `systemName` normalization rewrites `config.json` files with gateway-specific values.
-
-### Steps
-
-If the CR has normalization enabled:
-```bash
-kubectl patch ignitionsync lab-sync -n lab --type=merge \
-  -p '{"spec":{"normalize":{"systemName":true}}}'
-sleep 30
-```
-
-Deploy an agent and check if config.json files in the synced output contain the gateway name:
-```bash
-# Use a fresh agent pod or the sidecar from Lab 6.7
-kubectl exec ignition-0 -n lab -c sync-agent -- \
-  find /usr/local/bin/ignition/data/projects -name "config.json" -exec cat {} \; 2>/dev/null || echo "Run after Lab 6.7"
-```
-
-Look for `systemName` field values matching the gateway name.
-
----
-
-## Lab 6.7: Agent with Real Ignition Gateway — End-to-End
-
-### Purpose
-This is the critical test: deploy the agent as a sidecar alongside a real Ignition gateway and verify that projects appear in the Ignition web UI after sync + scan.
-
-### Steps
-
-**Step 1: Create a real Ignition API key.**
-
-First, access the Ignition web UI:
-```bash
-kubectl port-forward svc/ignition -n lab 8088:8088 &
-```
-
-Navigate to `http://localhost:8088` and:
-1. Go to **Config > System > Gateway Settings** (or complete commissioning if first time)
-2. Go to **Config > Security > API Keys**
-3. Create a new API key with appropriate permissions
-4. Copy the key value
-
-Update the secret:
-```bash
-kubectl delete secret ignition-api-key -n lab
-kubectl create secret generic ignition-api-key -n lab \
-  --from-literal=apiKey=YOUR_ACTUAL_API_KEY_HERE
-kubectl label secret ignition-api-key -n lab app=lab-test
-```
-
-**Step 2: Deploy agent as sidecar with real Ignition data volume.**
-
-The Ignition gateway stores data at `/usr/local/bin/ignition/data`. The agent clones the repo to a local emptyDir and syncs files to this path. This requires modifying the Ignition StatefulSet to add the agent container with the git auth secret:
-
-```bash
-# Patch the Ignition StatefulSet to add the agent sidecar
-# This manually does what the mutating webhook (phase 6) will automate
-kubectl patch statefulset ignition -n lab --type=json -p='[
-  {
-    "op": "add",
-    "path": "/spec/template/spec/containers/-",
-    "value": {
-      "name": "sync-agent",
-      "image": "ignition-sync-operator:lab",
-      "command": ["/agent"],
-      "env": [
-        {"name": "POD_NAME", "valueFrom": {"fieldRef": {"fieldPath": "metadata.name"}}},
-        {"name": "POD_NAMESPACE", "valueFrom": {"fieldRef": {"fieldPath": "metadata.namespace"}}},
-        {"name": "GATEWAY_NAME", "value": "lab-gateway"},
-        {"name": "CR_NAME", "value": "lab-sync"},
-        {"name": "CR_NAMESPACE", "value": "lab"},
-        {"name": "REPO_PATH", "value": "/repo"},
-        {"name": "DATA_PATH", "value": "/usr/local/bin/ignition/data"},
-        {"name": "GATEWAY_PORT", "value": "8088"},
-        {"name": "GATEWAY_TLS", "value": "false"},
-        {"name": "API_KEY_FILE", "value": "/secrets/apiKey"},
-        {"name": "SYNC_PERIOD", "value": "30"},
-        {"name": "GIT_TOKEN_FILE", "value": "/git-auth/token"}
-      ],
-      "volumeMounts": [
-        {"name": "repo", "mountPath": "/repo"},
-        {"name": "data", "mountPath": "/usr/local/bin/ignition/data"},
-        {"name": "api-key", "mountPath": "/secrets", "readOnly": true},
-        {"name": "git-auth", "mountPath": "/git-auth", "readOnly": true}
-      ],
-      "resources": {
-        "requests": {"cpu": "50m", "memory": "64Mi"},
-        "limits": {"cpu": "200m", "memory": "128Mi"}
-      }
-    }
-  },
-  {
-    "op": "add",
-    "path": "/spec/template/spec/volumes/-",
-    "value": {
-      "name": "repo",
-      "emptyDir": {}
-    }
-  },
-  {
-    "op": "add",
-    "path": "/spec/template/spec/volumes/-",
-    "value": {
-      "name": "api-key",
-      "secret": {
-        "secretName": "ignition-api-key"
-      }
-    }
-  },
-  {
-    "op": "add",
-    "path": "/spec/template/spec/volumes/-",
-    "value": {
-      "name": "git-auth",
-      "secret": {
-        "secretName": "git-token-secret"
-      }
-    }
-  }
-]'
-
-kubectl rollout status statefulset/ignition -n lab --timeout=300s
-```
-
-**Step 3: Verify the agent cloned and synced files.**
-
-```bash
-# Check agent container logs
-kubectl logs ignition-0 -n lab -c sync-agent --tail=30
-
-# Verify projects exist on the Ignition data volume
-kubectl exec ignition-0 -n lab -c sync-agent -- \
-  ls /usr/local/bin/ignition/data/projects/
-```
-
-Expected: `MyProject` and `SharedScripts` directories should appear.
-
-**Step 4: Verify projects appear in Ignition.**
-
-```bash
-# Check the Ignition web UI
-curl -s http://localhost:8088/data/api/v1/projects 2>/dev/null | jq . || \
-  echo "API may require authentication — check web UI manually"
-```
-
-**Observation:** Open `http://localhost:8088` and navigate to **Config > System > Projects**. You should see `MyProject` and `SharedScripts` listed.
-
-If projects don't appear automatically, the scan API needs to be triggered:
-```bash
-# Trigger project scan manually (agent should do this automatically)
-curl -X POST http://localhost:8088/data/project-scan-endpoint/scan 2>/dev/null || \
-curl -X POST http://localhost:8088/data/api/v1/scan/project 2>/dev/null || \
-  echo "Scan API may need API key authentication"
-```
-
----
-
-## Lab 6.8: Ref Change End-to-End — Projects Update in Ignition
-
-### Purpose
-The crown jewel test: change the git ref and verify the agent fetches the new commit, syncs updated files, and the changes appear in the Ignition web UI.
-
-### Steps
-
-```bash
-# Switch to 0.1.0 (only MainView exists)
-kubectl patch ignitionsync lab-sync -n lab --type=merge \
-  -p '{"spec":{"git":{"ref":"0.1.0"}}}'
-
-echo "Waiting for controller ref resolution + agent fetch..."
-sleep 45
-
-# Verify only MainView exists in Ignition
-kubectl exec ignition-0 -n lab -c sync-agent -- \
-  ls /usr/local/bin/ignition/data/projects/MyProject/com.inductiveautomation.perspective/views/ 2>/dev/null
-# Expected: MainView only
-
-# Now switch to 0.2.0 (adds SecondView)
-kubectl patch ignitionsync lab-sync -n lab --type=merge \
-  -p '{"spec":{"git":{"ref":"0.2.0"}}}'
-
-echo "Waiting for controller ref resolution + agent fetch..."
-sleep 45
-
-# Verify SecondView now exists
-kubectl exec ignition-0 -n lab -c sync-agent -- \
-  ls /usr/local/bin/ignition/data/projects/MyProject/com.inductiveautomation.perspective/views/ 2>/dev/null
-# Expected: MainView AND SecondView
-```
-
-**Observation:** Open the Ignition web UI and navigate to the Perspective views. You should see SecondView appear after the 0.2.0 sync.
-
-### Restore
-```bash
-kubectl patch ignitionsync lab-sync -n lab --type=merge \
-  -p '{"spec":{"git":{"ref":"main"}}}'
-```
-
----
-
-## Phase 5 Completion Checklist
+## Phase 6 Completion Checklist
 
 | Check | Status |
 |-------|--------|
 | Agent binary starts and clones repo to local emptyDir | |
-| Agent reads project files from local /repo clone | |
-| Agent syncs files to /ignition-data (or equivalent) | |
-| .resources/ never synced (critical protection) | |
-| Exclude patterns respected (.git/, .gitkeep) | |
-| Agent writes status JSON to ConfigMap | |
-| Status includes syncedCommit, filesChanged, projectsSynced | |
+| Native sidecar: syncs files before gateway starts (startup probe gates) | |
+| Native sidecar: Ignition API token accessible at gateway startup | |
+| Native sidecar: continues watching after initial sync | |
+| Two gateways (blue + red): each uses its own SyncProfile | |
+| Blue project synced to blue gateway, red project to red gateway | |
+| Cobranding per-gateway: blue=#00a3d7, red=#ff4013 | |
+| SyncProfile: agent fetches profile CR | |
+| SyncProfile: ordered mappings applied (external → core → projects) | |
+| SyncProfile: deployment mode overlay merged into core | |
+| SyncProfile: status includes syncProfileName | |
+| SyncProfile: dry-run mode produces diff without writing | |
+| SyncProfile: dry-run status includes dryRunDiff* fields | |
+| SyncProfile: paused profile returns zero changes | |
+| SyncProfile: scan API skipped in dry-run mode | |
+| Exclude patterns respected (.git/, .gitkeep, .resources/) | |
+| Agent writes status JSON to ConfigMap (both gateways) | |
 | Agent detects metadata ConfigMap change and re-syncs | |
-| Agent as sidecar with real Ignition gateway — files appear on data volume | |
-| Projects visible in Ignition web UI after scan | |
-| Config normalization rewrites systemName | |
-| Scan API failure → Error status, agent doesn't crash | |
-| Ref change → agent fetches new commit → updated files in Ignition | |
-| Ignition gateway healthy with agent sidecar | |
-| Operator pod 0 restarts | |
+| Scan API failure → non-fatal warning, agent stays running | |
+| Backward compat: removing SYNC_PROFILE falls back to legacy mode | |
+| IgnitionSync CR shows 2/2 gateways synced, Ready=True | |

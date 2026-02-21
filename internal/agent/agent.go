@@ -54,7 +54,9 @@ func New(cfg *Config, k8sClient client.Client) *Agent {
 	}
 }
 
-// Run starts the agent main loop. Blocks until ctx is cancelled.
+// Run starts the agent. It clones the repo, performs the initial sync, marks
+// the startup probe as ready (which gates the gateway container start when
+// deployed as a native sidecar), then watches for changes until ctx is cancelled.
 func (a *Agent) Run(ctx context.Context) error {
 	log := logf.FromContext(ctx).WithName("agent")
 
@@ -67,7 +69,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		"syncPeriod", a.Config.SyncPeriod,
 	)
 
-	// Start health server in background.
+	// Start health server immediately so startup probe has an endpoint.
 	go a.HealthServer.Start(ctx)
 
 	// Read metadata ConfigMap to get git URL and commit.
@@ -96,7 +98,8 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 	log.Info("clone complete", "commit", result.Commit)
 
-	// Initial sync (blocking).
+	// Initial sync (blocking). Files land on disk before startup probe passes,
+	// so the gateway container won't start until config is ready.
 	log.Info("performing initial sync")
 	syncErr := a.syncOnce(ctx, result.Commit, result.Ref, true)
 	if syncErr != nil {
@@ -104,8 +107,12 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 
 	a.initialSyncDone = true
+
+	// Mark startup/readiness probes as passing. When deployed as a native
+	// sidecar (initContainer with restartPolicy: Always), this signals K8s
+	// to proceed with starting the gateway container.
 	a.HealthServer.MarkReady()
-	log.Info("initial sync complete, agent ready")
+	log.Info("initial sync complete, startup probe now passing")
 
 	// Start watcher in background.
 	go a.Watcher.Run(ctx)
@@ -186,11 +193,19 @@ func (a *Agent) handleSyncTrigger(ctx context.Context, gitURL string, auth trans
 func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool) error {
 	log := logf.FromContext(ctx).WithName("sync")
 
-	srcRoot := a.Config.SourceRoot()
-	dstRoot := a.Config.DataPath
+	var syncResult *syncengine.SyncResult
+	var profileName string
+	var isDryRun bool
+	var err error
 
-	// Run sync engine.
-	syncResult, err := a.SyncEngine.Sync(srcRoot, dstRoot)
+	if a.Config.HasSyncProfile() {
+		syncResult, profileName, isDryRun, err = a.syncWithProfile(ctx, commit, ref)
+	} else {
+		srcRoot := a.Config.SourceRoot()
+		dstRoot := a.Config.DataPath
+		syncResult, err = a.SyncEngine.Sync(srcRoot, dstRoot)
+	}
+
 	if err != nil {
 		a.reportError(ctx, commit, ref, fmt.Sprintf("sync engine: %v", err))
 		return fmt.Errorf("sync engine: %w", err)
@@ -202,11 +217,15 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 		"deleted", syncResult.FilesDeleted,
 		"projects", syncResult.ProjectsSynced,
 		"duration", syncResult.Duration,
+		"profile", profileName,
+		"dryRun", isDryRun,
 	)
 
-	// Trigger Ignition scan API (skip on initial sync — Ignition auto-scans on first boot).
+	// Trigger Ignition scan API (skip on initial sync and dry-run).
 	var scanResultStr string
-	if !isInitial {
+	if isDryRun {
+		log.Info("dry-run mode, skipping scan API")
+	} else if !isInitial {
 		filesChanged := int32(syncResult.FilesAdded + syncResult.FilesModified + syncResult.FilesDeleted)
 		if filesChanged > 0 {
 			log.Info("triggering Ignition scan API")
@@ -247,6 +266,14 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 		FilesChanged:     filesChanged,
 		ProjectsSynced:   syncResult.ProjectsSynced,
 		ErrorMessage:     errorMsg,
+		SyncProfileName:  profileName,
+		DryRun:           isDryRun,
+	}
+
+	if isDryRun && syncResult.DryRunDiff != nil {
+		status.DryRunDiffAdded = int32(len(syncResult.DryRunDiff.Added))
+		status.DryRunDiffModified = int32(len(syncResult.DryRunDiff.Modified))
+		status.DryRunDiffDeleted = int32(len(syncResult.DryRunDiff.Deleted))
 	}
 
 	if err := WriteStatusConfigMap(ctx, a.K8sClient, a.Config.CRNamespace, a.Config.CRName, a.Config.GatewayName, status); err != nil {
@@ -257,6 +284,59 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 
 	a.lastSyncedCommit = commit
 	return nil
+}
+
+// syncWithProfile fetches the SyncProfile, builds a plan, and executes it.
+// Returns the sync result, profile name, dry-run flag, and any error.
+func (a *Agent) syncWithProfile(ctx context.Context, commit, ref string) (*syncengine.SyncResult, string, bool, error) {
+	log := logf.FromContext(ctx).WithName("profile-sync")
+	profileName := a.Config.SyncProfileName
+
+	// Fetch SyncProfile CR.
+	log.Info("fetching SyncProfile", "name", profileName)
+	profile, err := fetchSyncProfile(ctx, a.K8sClient, a.Config.CRNamespace, profileName)
+	if err != nil {
+		return nil, profileName, false, fmt.Errorf("fetching profile: %w", err)
+	}
+
+	// Check if profile is paused.
+	if profile.Paused {
+		log.Info("SyncProfile is paused, returning zero-change result")
+		return &syncengine.SyncResult{}, profileName, profile.DryRun, nil
+	}
+
+	// Read metadata for CR-level excludes.
+	meta, err := ReadMetadataConfigMap(ctx, a.K8sClient, a.Config.CRNamespace, a.Config.CRName)
+	if err != nil {
+		return nil, profileName, profile.DryRun, fmt.Errorf("reading metadata for excludes: %w", err)
+	}
+
+	// Build template context.
+	tmplCtx := buildTemplateContext(a.Config, meta, profile.Vars)
+
+	// Build sync plan.
+	crExcludes := parseCRExcludes(meta.ExcludePatterns)
+	plan, err := buildSyncPlan(profile, tmplCtx, a.Config.RepoPath, a.Config.DataPath, crExcludes)
+	if err != nil {
+		return nil, profileName, profile.DryRun, fmt.Errorf("building sync plan: %w", err)
+	}
+
+	// Add engine-level excludes to the plan.
+	plan.ExcludePatterns = append(plan.ExcludePatterns, a.SyncEngine.ExcludePatterns...)
+
+	log.Info("executing sync plan",
+		"mappings", len(plan.Mappings),
+		"dryRun", plan.DryRun,
+		"excludes", len(plan.ExcludePatterns),
+	)
+
+	// Execute the plan.
+	result, err := a.SyncEngine.ExecutePlan(plan)
+	if err != nil {
+		return nil, profileName, profile.DryRun, fmt.Errorf("executing plan: %w", err)
+	}
+
+	return result, profileName, profile.DryRun, nil
 }
 
 // reportError writes an error status to the status ConfigMap.

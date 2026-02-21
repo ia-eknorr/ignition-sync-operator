@@ -22,8 +22,9 @@ type Config struct {
 	SyncPeriod    int // seconds
 	GitTokenFile  string
 	GitSSHKeyFile string
-	ServicePath   string // optional: repo subdirectory to sync
-	SystemName    string // optional: systemName for config normalization
+	ServicePath     string // optional: repo subdirectory to sync
+	SystemName      string // optional: systemName for config normalization
+	SyncProfileName string // optional: SyncProfile CR name
 }
 
 // LoadConfig reads agent configuration from environment variables.
@@ -40,8 +41,9 @@ func LoadConfig() (*Config, error) {
 		APIKeyFile:    os.Getenv("API_KEY_FILE"),
 		GitTokenFile:  os.Getenv("GIT_TOKEN_FILE"),
 		GitSSHKeyFile: os.Getenv("GIT_SSH_KEY_FILE"),
-		ServicePath:   os.Getenv("SERVICE_PATH"),
-		SystemName:    os.Getenv("SYSTEM_NAME"),
+		ServicePath:     os.Getenv("SERVICE_PATH"),
+		SystemName:      os.Getenv("SYSTEM_NAME"),
+		SyncProfileName: os.Getenv("SYNC_PROFILE"),
 	}
 
 	// Defaults
@@ -138,4 +140,9 @@ func (c *Config) SourceRoot() string {
 		return c.RepoPath + "/" + c.ServicePath
 	}
 	return c.RepoPath
+}
+
+// HasSyncProfile returns true if a SyncProfile name is configured.
+func (c *Config) HasSyncProfile() bool {
+	return c.SyncProfileName != ""
 }
