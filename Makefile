@@ -45,6 +45,17 @@ help: ## Display this help.
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
+HELM_CHART_DIR ?= charts/ignition-sync-operator
+
+.PHONY: helm-sync
+helm-sync: manifests ## Sync CRD and verify RBAC between kustomize config and Helm chart.
+	@cp config/crd/bases/sync.ignition.io_ignitionsyncs.yaml $(HELM_CHART_DIR)/crds/
+	@echo "CRD copied to $(HELM_CHART_DIR)/crds/"
+	@diff <(sed -n '/^rules:/,$$p' config/rbac/role.yaml | sed 's/^[[:space:]]*//' | grep -v '^$$') \
+	      <(sed -n '/^rules:/,$$p' $(HELM_CHART_DIR)/templates/clusterrole.yaml | sed 's/^[[:space:]]*//' | grep -v '^$$') \
+	  && echo "RBAC rules in sync" \
+	  || { echo "WARNING: RBAC rules have drifted — update $(HELM_CHART_DIR)/templates/clusterrole.yaml"; exit 1; }
+
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./..."
