@@ -155,9 +155,9 @@ assert_eq "test-sync" "$cm_label" "Metadata ConfigMap has cr-name label"
 owner_kind=$(kubectl_json "configmap/$cm_name" '{.metadata.ownerReferences[0].kind}')
 assert_eq "IgnitionSync" "$owner_kind" "Metadata ConfigMap has IgnitionSync owner reference"
 
-# Verify commitHash key exists and is a valid SHA
-commit_hash=$(kubectl_json "configmap/$cm_name" '{.data.commitHash}')
-assert_not_empty "$commit_hash" "Metadata ConfigMap has commitHash key"
+# Verify commit key exists and is a valid SHA
+commit_hash=$(kubectl_json "configmap/$cm_name" '{.data.commit}')
+assert_not_empty "$commit_hash" "Metadata ConfigMap has commit key"
 
 # ────────────────────────────────────────────────────────────────────
 # Test 2.5: Ref Resolution (Happy Path)

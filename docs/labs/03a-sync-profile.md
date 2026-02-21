@@ -544,7 +544,256 @@ kubectl delete syncprofile paused-profile -n lab
 
 ---
 
-## Lab 3A.11: Ignition Gateway Health Check
+## Lab 3A.12: Profile with `dependsOn`
+
+### Purpose
+Verify the CRD accepts the `dependsOn` field for profile dependency ordering (e.g., area profile depends on site profile being synced first).
+
+### Steps
+
+```bash
+cat <<EOF | kubectl apply -n lab -f -
+apiVersion: sync.ignition.io/v1alpha1
+kind: SyncProfile
+metadata:
+  name: lab-depends-on
+spec:
+  dependsOn:
+    - profileName: "lab-site-profile"
+  mappings:
+    - source: "services/area/projects"
+      destination: "projects"
+    - source: "services/area/config/resources/core"
+      destination: "config/resources/core"
+EOF
+```
+
+### What to Verify
+
+1. **CRD accepts the field** (no validation error on apply)
+
+2. **Field roundtrips**:
+   ```bash
+   kubectl get syncprofile lab-depends-on -n lab \
+     -o jsonpath='{.spec.dependsOn[0].profileName}'
+   ```
+   Expected: `lab-site-profile`
+
+3. **Accepted=True** (dependency declaration doesn't invalidate spec):
+   ```bash
+   kubectl get syncprofile lab-depends-on -n lab \
+     -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}'
+   ```
+   Expected: `True`
+
+> **Note:** Behavioral testing (agent waits for dependency to be Synced before proceeding) is covered in Phase 5 agent tests.
+
+### Cleanup
+```bash
+kubectl delete syncprofile lab-depends-on -n lab
+```
+
+---
+
+## Lab 3A.13: Profile with `vars`
+
+### Purpose
+Verify the CRD accepts the `vars` map for template variables resolved by the agent at sync time. This replaces the removed `siteNumber` and `normalize` fields.
+
+### Steps
+
+```bash
+cat <<EOF | kubectl apply -n lab -f -
+apiVersion: sync.ignition.io/v1alpha1
+kind: SyncProfile
+metadata:
+  name: lab-with-vars
+spec:
+  vars:
+    siteNumber: "1"
+    region: "us-east"
+  mappings:
+    - source: "services/site/projects"
+      destination: "projects"
+EOF
+```
+
+### What to Verify
+
+1. **Vars roundtrip**:
+   ```bash
+   kubectl get syncprofile lab-with-vars -n lab -o json | jq '.spec.vars'
+   ```
+   Expected: `{"siteNumber": "1", "region": "us-east"}`
+
+2. **Accepted=True**:
+   ```bash
+   kubectl get syncprofile lab-with-vars -n lab \
+     -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}'
+   ```
+   Expected: `True`
+
+> **Note:** Template variable resolution (`{{.Vars.siteNumber}}` in destination paths) is tested in Phase 5 agent tests.
+
+### Cleanup
+```bash
+kubectl delete syncprofile lab-with-vars -n lab
+```
+
+---
+
+## Lab 3A.14: Profile with `dryRun`
+
+### Purpose
+Verify the CRD accepts the `dryRun` boolean field. When true, the agent syncs to a staging directory but doesn't copy to `/ignition-data/`.
+
+### Steps
+
+```bash
+cat <<EOF | kubectl apply -n lab -f -
+apiVersion: sync.ignition.io/v1alpha1
+kind: SyncProfile
+metadata:
+  name: lab-dryrun
+spec:
+  dryRun: true
+  mappings:
+    - source: "services/site/projects"
+      destination: "projects"
+EOF
+```
+
+### What to Verify
+
+1. **Field roundtrips**:
+   ```bash
+   kubectl get syncprofile lab-dryrun -n lab \
+     -o jsonpath='{.spec.dryRun}'
+   ```
+   Expected: `true`
+
+2. **Accepted=True** (dryRun doesn't invalidate spec):
+   ```bash
+   kubectl get syncprofile lab-dryrun -n lab \
+     -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}'
+   ```
+   Expected: `True`
+
+> **Note:** Behavioral testing (agent produces diff without applying) is covered in Phase 5 agent tests.
+
+### Cleanup
+```bash
+kubectl delete syncprofile lab-dryrun -n lab
+```
+
+---
+
+## Lab 3A.15: Mapping with `required` Field
+
+### Purpose
+Verify the CRD accepts the `required` boolean on individual mappings. When `required: true`, the agent fails sync if the source path doesn't exist in the repo.
+
+### Steps
+
+```bash
+cat <<EOF | kubectl apply -n lab -f -
+apiVersion: sync.ignition.io/v1alpha1
+kind: SyncProfile
+metadata:
+  name: lab-required
+spec:
+  mappings:
+    - source: "services/site/projects"
+      destination: "projects"
+      required: true
+    - source: "shared/optional-extras"
+      destination: "extras"
+      required: false
+EOF
+```
+
+### What to Verify
+
+1. **Required field roundtrips**:
+   ```bash
+   kubectl get syncprofile lab-required -n lab -o json | \
+     jq '[.spec.mappings[] | {source, required}]'
+   ```
+   Expected: First mapping `required: true`, second `required: false`
+
+2. **Accepted=True**:
+   ```bash
+   kubectl get syncprofile lab-required -n lab \
+     -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}'
+   ```
+   Expected: `True`
+
+> **Note:** Behavioral testing (agent fails on missing required source) is covered in Phase 5 agent tests.
+
+### Cleanup
+```bash
+kubectl delete syncprofile lab-required -n lab
+```
+
+---
+
+## Lab 3A.16: Pod with `ref-override` Annotation
+
+### Purpose
+Verify that a pod with the `ignition-sync.io/ref-override` annotation is still discovered by the controller and the annotation is preserved. The actual ref override behavior (agent-side) is tested in Phase 5.
+
+### Steps
+
+```bash
+# Ensure IgnitionSync CR exists (from Lab 3A.5)
+# Create a pod with ref-override
+cat <<EOF | kubectl apply -n lab -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gateway-ref-override
+  labels:
+    app.kubernetes.io/name: gateway-ref-override
+  annotations:
+    ignition-sync.io/inject: "true"
+    ignition-sync.io/cr-name: "lab-sync"
+    ignition-sync.io/sync-profile: "lab-site-profile"
+    ignition-sync.io/gateway-name: "override-gw"
+    ignition-sync.io/ref-override: "v1.0.0-rc1"
+spec:
+  containers:
+    - name: ignition
+      image: registry.k8s.io/pause:3.9
+      imagePullPolicy: IfNotPresent
+EOF
+```
+
+### What to Verify
+
+1. **Gateway discovered by controller**:
+   ```bash
+   kubectl get ignitionsync lab-sync -n lab \
+     -o jsonpath='{.status.discoveredGateways[?(@.name=="override-gw")].name}'
+   ```
+   Expected: `override-gw`
+
+2. **Annotation preserved on pod**:
+   ```bash
+   kubectl get pod gateway-ref-override -n lab \
+     -o jsonpath='{.metadata.annotations.ignition-sync\.io/ref-override}'
+   ```
+   Expected: `v1.0.0-rc1`
+
+> **Note:** The agent reads this annotation and uses it instead of the metadata ConfigMap's ref. The controller detects skew and sets a `RefSkew` warning condition. This behavioral flow is tested in Phase 5.
+
+### Cleanup
+```bash
+kubectl delete pod gateway-ref-override -n lab
+```
+
+---
+
+## Lab 3A.17: Ignition Gateway Health Check
 
 ### Purpose
 Confirm nothing in this phase affected the Ignition gateway.
@@ -583,5 +832,10 @@ curl -s http://localhost:8088/StatusPing
 | Profile update triggers re-reconcile of affected gateways | |
 | Profile deletion → graceful degradation, warning logged | |
 | Paused profile → still Accepted, paused flag preserved | |
+| `dependsOn` field accepted and roundtrips | |
+| `vars` map accepted and roundtrips | |
+| `dryRun` field accepted and roundtrips | |
+| `required` field on mapping accepted and roundtrips | |
+| Pod with `ref-override` annotation discovered, annotation preserved | |
 | Ignition gateway unaffected | |
 | Operator pod has 0 restarts and no ERROR logs | |

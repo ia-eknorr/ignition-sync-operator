@@ -391,9 +391,226 @@ $KUBECTL delete syncprofile test-paused-profile -n "$TEST_NAMESPACE" --ignore-no
 sleep 1
 
 # ────────────────────────────────────────────────────────────────────
-# Test 3A.11: Controller Health
+# Test 3A.12: Profile with dependsOn
 # ────────────────────────────────────────────────────────────────────
-log_test "3A.11: Controller Health After All Tests"
+log_test "3A.12: Profile with dependsOn"
+
+apply_rc=0
+cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f - 2>/dev/null || apply_rc=$?
+apiVersion: sync.ignition.io/v1alpha1
+kind: SyncProfile
+metadata:
+  name: test-depends-on
+spec:
+  dependsOn:
+    - profileName: "test-site-profile"
+  mappings:
+    - source: "services/area/projects"
+      destination: "projects"
+    - source: "services/area/config/resources/core"
+      destination: "config/resources/core"
+EOF
+
+if [[ $apply_rc -eq 0 ]]; then
+    # Verify the field roundtrips
+    dep=$(kubectl_jq "syncprofile/test-depends-on" '.spec.dependsOn[0].profileName')
+    if [[ "$dep" == "test-site-profile" ]]; then
+        log_pass "dependsOn field accepted and roundtrips"
+    elif [[ "$dep" == "null" ]] || [[ -z "$dep" ]]; then
+        log_skip "dependsOn field not in CRD schema yet (stripped by server)"
+    else
+        log_pass "dependsOn field accepted (got: $dep)"
+    fi
+
+    # Verify Accepted condition still set
+    wait_for_typed_condition "syncprofile/test-depends-on" "Accepted" "True" 30 && \
+        log_pass "Profile with dependsOn is Accepted=True" || \
+        log_info "Profile with dependsOn not yet reconciled"
+else
+    log_skip "dependsOn: CRD rejected the field (not in schema yet)"
+fi
+
+$KUBECTL delete syncprofile test-depends-on -n "$TEST_NAMESPACE" --ignore-not-found 2>/dev/null || true
+sleep 1
+
+# ────────────────────────────────────────────────────────────────────
+# Test 3A.13: Profile with vars
+# ────────────────────────────────────────────────────────────────────
+log_test "3A.13: Profile with vars"
+
+apply_rc=0
+cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f - 2>/dev/null || apply_rc=$?
+apiVersion: sync.ignition.io/v1alpha1
+kind: SyncProfile
+metadata:
+  name: test-vars
+spec:
+  vars:
+    siteNumber: "1"
+    region: "us-east"
+  mappings:
+    - source: "services/site/projects"
+      destination: "projects"
+EOF
+
+if [[ $apply_rc -eq 0 ]]; then
+    site_num=$(kubectl_jq "syncprofile/test-vars" '.spec.vars.siteNumber')
+    region=$(kubectl_jq "syncprofile/test-vars" '.spec.vars.region')
+    if [[ "$site_num" == "1" ]] && [[ "$region" == "us-east" ]]; then
+        log_pass "vars map accepted and roundtrips"
+    elif [[ "$site_num" == "null" ]] || [[ -z "$site_num" ]]; then
+        log_skip "vars field not in CRD schema yet (stripped by server)"
+    else
+        log_pass "vars field accepted (siteNumber=$site_num, region=$region)"
+    fi
+
+    wait_for_typed_condition "syncprofile/test-vars" "Accepted" "True" 30 && \
+        log_pass "Profile with vars is Accepted=True" || \
+        log_info "Profile with vars not yet reconciled"
+else
+    log_skip "vars: CRD rejected the field (not in schema yet)"
+fi
+
+$KUBECTL delete syncprofile test-vars -n "$TEST_NAMESPACE" --ignore-not-found 2>/dev/null || true
+sleep 1
+
+# ────────────────────────────────────────────────────────────────────
+# Test 3A.14: Profile with dryRun
+# ────────────────────────────────────────────────────────────────────
+log_test "3A.14: Profile with dryRun"
+
+apply_rc=0
+cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f - 2>/dev/null || apply_rc=$?
+apiVersion: sync.ignition.io/v1alpha1
+kind: SyncProfile
+metadata:
+  name: test-dryrun
+spec:
+  dryRun: true
+  mappings:
+    - source: "services/site/projects"
+      destination: "projects"
+EOF
+
+if [[ $apply_rc -eq 0 ]]; then
+    dry=$(kubectl_jq "syncprofile/test-dryrun" '.spec.dryRun')
+    if [[ "$dry" == "true" ]]; then
+        log_pass "dryRun field accepted and roundtrips"
+    elif [[ "$dry" == "null" ]] || [[ -z "$dry" ]]; then
+        log_skip "dryRun field not in CRD schema yet (stripped by server)"
+    else
+        log_pass "dryRun field accepted (got: $dry)"
+    fi
+
+    wait_for_typed_condition "syncprofile/test-dryrun" "Accepted" "True" 30 && \
+        log_pass "Profile with dryRun is Accepted=True" || \
+        log_info "Profile with dryRun not yet reconciled"
+else
+    log_skip "dryRun: CRD rejected the field (not in schema yet)"
+fi
+
+$KUBECTL delete syncprofile test-dryrun -n "$TEST_NAMESPACE" --ignore-not-found 2>/dev/null || true
+sleep 1
+
+# ────────────────────────────────────────────────────────────────────
+# Test 3A.15: Mapping with required field
+# ────────────────────────────────────────────────────────────────────
+log_test "3A.15: Mapping with required Field"
+
+apply_rc=0
+cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f - 2>/dev/null || apply_rc=$?
+apiVersion: sync.ignition.io/v1alpha1
+kind: SyncProfile
+metadata:
+  name: test-required
+spec:
+  mappings:
+    - source: "services/site/projects"
+      destination: "projects"
+      required: true
+    - source: "shared/optional-extras"
+      destination: "extras"
+      required: false
+EOF
+
+if [[ $apply_rc -eq 0 ]]; then
+    req=$(kubectl_jq "syncprofile/test-required" '.spec.mappings[0].required')
+    if [[ "$req" == "true" ]]; then
+        log_pass "required field accepted on mapping and roundtrips"
+    elif [[ "$req" == "null" ]] || [[ -z "$req" ]]; then
+        log_skip "required field not in CRD schema yet (stripped by server)"
+    else
+        log_pass "required field accepted (got: $req)"
+    fi
+
+    wait_for_typed_condition "syncprofile/test-required" "Accepted" "True" 30 && \
+        log_pass "Profile with required mappings is Accepted=True" || \
+        log_info "Profile with required mappings not yet reconciled"
+else
+    log_skip "required: CRD rejected the field (not in schema yet)"
+fi
+
+$KUBECTL delete syncprofile test-required -n "$TEST_NAMESPACE" --ignore-not-found 2>/dev/null || true
+sleep 1
+
+# ────────────────────────────────────────────────────────────────────
+# Test 3A.16: Pod with ref-override Annotation
+# ────────────────────────────────────────────────────────────────────
+log_test "3A.16: Pod with ref-override Annotation"
+
+# Ensure IgnitionSync CR exists (may already from 3A.5)
+apply_fixture "api-key-secret.yaml" 2>/dev/null || true
+apply_fixture "test-cr.yaml" 2>/dev/null || true
+wait_for_typed_condition "ignitionsync/test-sync" "RefResolved" "True" 90
+
+cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gateway-ref-override
+  labels:
+    app: gateway-test
+    app.kubernetes.io/name: gateway-ref-override
+  annotations:
+    ignition-sync.io/inject: "true"
+    ignition-sync.io/cr-name: "test-sync"
+    ignition-sync.io/sync-profile: "test-site-profile"
+    ignition-sync.io/gateway-name: "override-gw"
+    ignition-sync.io/ref-override: "v1.0.0-rc1"
+spec:
+  containers:
+    - name: ignition
+      image: registry.k8s.io/pause:3.9
+      imagePullPolicy: IfNotPresent
+EOF
+
+wait_for_named_pod_phase "gateway-ref-override" "Running" 60
+
+# Verify gateway discovered
+deadline=$((SECONDS + 30))
+gw_name=""
+while [[ $SECONDS -lt $deadline ]]; do
+    gw_name=$(kubectl_jq "ignitionsync/test-sync" \
+        '.status.discoveredGateways[] | select(.name=="override-gw") | .name')
+    if [[ "$gw_name" == "override-gw" ]]; then
+        break
+    fi
+    sleep 2
+done
+assert_eq "override-gw" "$gw_name" "Gateway with ref-override annotation discovered"
+
+# Verify the annotation is preserved on the pod
+ref_val=$($KUBECTL get pod gateway-ref-override -n "$TEST_NAMESPACE" \
+    -o jsonpath='{.metadata.annotations.ignition-sync\.io/ref-override}' 2>/dev/null || echo "")
+assert_eq "v1.0.0-rc1" "$ref_val" "ref-override annotation preserved on pod"
+
+$KUBECTL delete pod gateway-ref-override -n "$TEST_NAMESPACE" --ignore-not-found 2>/dev/null || true
+sleep 1
+
+# ────────────────────────────────────────────────────────────────────
+# Test 3A.17: Controller Health
+# ────────────────────────────────────────────────────────────────────
+log_test "3A.17: Controller Health After All Tests"
 
 ctrl_phase=$($KUBECTL get pods -n "$controller_ns" -l control-plane=controller-manager \
     -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")

@@ -53,6 +53,18 @@ const (
 	// AnnotationSystemNameTemplate is a Go template for systemName (default: "{{.GatewayName}}").
 	AnnotationSystemNameTemplate = AnnotationPrefix + "/system-name-template"
 
+	// AnnotationSyncProfile names the SyncProfile to use for this gateway pod.
+	// If omitted, the agent falls back to service-path annotation (2-tier mode).
+	AnnotationSyncProfile = AnnotationPrefix + "/sync-profile"
+
+	// AnnotationRefOverride overrides the git ref for this pod only.
+	// Read by the agent sidecar, NOT the controller. The agent resolves
+	// the ref independently via ls-remote and syncs to that commit instead
+	// of the metadata ConfigMap's ref. The controller detects the skew
+	// (syncedRef != lastSyncRef) and sets a RefSkew warning condition.
+	// Intended for dev/test gateways in production namespaces.
+	AnnotationRefOverride = AnnotationPrefix + "/ref-override"
+
 	// CR annotations — set by the webhook receiver on the IgnitionSync CR (not by users).
 
 	// AnnotationRequestedRef is set by the webhook receiver to request a ref update.

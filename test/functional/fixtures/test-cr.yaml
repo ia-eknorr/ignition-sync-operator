@@ -11,6 +11,8 @@ spec:
         secretRef:
           name: git-token-secret
           key: token
+  polling:
+    interval: "10s"
   gateway:
     apiKeySecretRef:
       name: ignition-api-key

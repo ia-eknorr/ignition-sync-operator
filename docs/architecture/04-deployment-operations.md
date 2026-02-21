@@ -184,6 +184,61 @@ Canary sync flow:
 - If failure: condition "CanaryStageFailed" with details
 - Operators can investigate failed stage, fix root cause, then manually retrigger
 
+### Ref Override Escape Valve
+
+For the ~5% of cases where a dev or test gateway in a production namespace needs to run a different git ref (e.g., a feature branch or release candidate), a **pod-level annotation override** is available. This is intentionally narrow — it bypasses the standard ref resolution pipeline and generates a warning.
+
+**Usage:**
+
+```yaml
+# On a dev/test gateway pod only
+podAnnotations:
+  ignition-sync.io/inject: "true"
+  ignition-sync.io/cr-name: "proveit-sync"
+  ignition-sync.io/sync-profile: "proveit-site"
+  ignition-sync.io/ref-override: "v2.1.0-rc1"    # escape valve
+```
+
+**How it works:**
+
+1. The **controller** does NOT read this annotation. It continues resolving `spec.git.ref` as normal and writing the resolved commit to the metadata ConfigMap.
+2. The **agent** sidecar reads the `ref-override` annotation from its own pod (via the Kubernetes downward API or direct pod metadata lookup).
+3. If present, the agent uses that ref instead of the metadata ConfigMap's ref when calling `CloneOrFetch`. The agent resolves the ref to a commit SHA independently via its own `ls-remote` call.
+4. The agent writes `syncedRef: "v2.1.0-rc1"` (and the resolved commit) to the status ConfigMap, as it would for any sync.
+5. The controller detects the skew during its next reconcile: gateway's `syncedRef` differs from `lastSyncRef`. It sets a `RefSkew` warning condition on the IgnitionSync CR:
+
+```text
+Warning  RefSkew  IgnitionSync/proveit-sync  Gateway dev-gw running v2.1.0-rc1, expected 2.0.0
+```
+
+**When to use:**
+
+- Validating a release candidate on a dedicated dev/test gateway before updating the CR's ref for all gateways.
+- Running a feature branch on a non-production gateway for integration testing.
+- Hotfixing a single gateway during an incident (with explicit approval).
+
+**When NOT to use:**
+
+- Production canary rollouts — use `spec.deployment.strategy: canary` with stages instead.
+- Permanent multi-version setups — use separate IgnitionSync CRs.
+- Multi-site rollouts — use separate namespaces with separate CRs.
+
+**Removing the override:**
+
+Delete the annotation (via Helm values change or `kubectl annotate pod ... ignition-sync.io/ref-override-`). On the next sync cycle, the agent falls back to the metadata ConfigMap's ref, and the gateway converges to the CR's version. The `RefSkew` condition clears on the next reconcile.
+
+**Interaction with deployment stages:**
+
+The ref-override annotation bypasses deployment stage ordering. A pod with `ref-override` syncs immediately to the overridden ref regardless of which stage it belongs to. This is intentional — the escape valve is for exceptional cases where normal staging does not apply.
+
+**Security and audit:**
+
+- The annotation is visible in `kubectl describe pod` and in the Kubernetes audit log.
+- The `RefSkew` warning condition ensures the skew is not silent — it appears in `kubectl get isync` and in any alerting configured on IgnitionSync conditions.
+- RBAC can restrict who can set pod annotations in production namespaces.
+
+---
+
 ### Auto-Rollback on Failure
 
 **Scan API Failure Detection**

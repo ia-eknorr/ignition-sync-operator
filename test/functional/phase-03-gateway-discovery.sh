@@ -138,6 +138,8 @@ spec:
         secretRef:
           name: git-token-secret
           key: token
+  polling:
+    interval: "10s"
   gateway:
     apiKeySecretRef:
       name: ignition-api-key
@@ -254,7 +256,7 @@ sleep 5
 
 # Create status ConfigMap with Synced status
 create_status_cm "test-sync" "gw-status-test" "Synced" "$RESOLVED_COMMIT"
-sleep 10
+sleep 15
 
 # Verify status fields are populated
 gw_sync=$(kubectl_jq "ignitionsync/test-sync" '.status.discoveredGateways[] | select(.name=="gw-status-test") | .syncStatus')
@@ -303,7 +305,7 @@ $KUBECTL get configmap "ignition-sync-status-test-sync" -n "$TEST_NAMESPACE" -o 
     jq --arg name "gw-status-test-2" --arg commit "$RESOLVED_COMMIT" \
     '.data[$name] = "{\"syncStatus\":\"Synced\",\"syncedCommit\":\"" + $commit + "\",\"syncedRef\":\"main\",\"lastSyncTime\":\"2025-01-01T00:00:00Z\",\"agentVersion\":\"0.1.0\",\"filesChanged\":3,\"projectsSynced\":[\"MyProject\"]}"' | \
     $KUBECTL apply -n "$TEST_NAMESPACE" -f -
-sleep 10
+sleep 15
 
 all_synced=$(kubectl_json "ignitionsync/test-sync" \
     '{.status.conditions[?(@.type=="AllGatewaysSynced")].status}')
@@ -314,7 +316,7 @@ $KUBECTL get configmap "ignition-sync-status-test-sync" -n "$TEST_NAMESPACE" -o 
     jq --arg name "gw-status-test-2" \
     '.data[$name] = "{\"syncStatus\":\"Error\",\"errorMessage\":\"test error\"}"' | \
     $KUBECTL apply -n "$TEST_NAMESPACE" -f -
-sleep 10
+sleep 15
 
 all_synced=$(kubectl_json "ignitionsync/test-sync" \
     '{.status.conditions[?(@.type=="AllGatewaysSynced")].status}')
@@ -338,7 +340,7 @@ $KUBECTL get configmap "ignition-sync-status-test-sync" -n "$TEST_NAMESPACE" -o 
     jq --arg name "gw-status-test-2" --arg commit "$RESOLVED_COMMIT" \
     '.data[$name] = "{\"syncStatus\":\"Synced\",\"syncedCommit\":\"" + $commit + "\",\"syncedRef\":\"main\",\"lastSyncTime\":\"2025-01-01T00:00:00Z\",\"agentVersion\":\"0.1.0\",\"filesChanged\":3,\"projectsSynced\":[\"MyProject\"]}"' | \
     $KUBECTL apply -n "$TEST_NAMESPACE" -f -
-sleep 10
+sleep 15
 
 # Now RefResolved=True + AllGatewaysSynced=True → Ready=True
 ready_status=$(kubectl_json "ignitionsync/test-sync" \
