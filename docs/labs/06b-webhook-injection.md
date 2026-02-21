@@ -126,7 +126,6 @@ kubectl get pod -n ignition-test -l app.kubernetes.io/name=ignition-gateway \
   "capabilities": { "drop": ["ALL"] },
   "readOnlyRootFilesystem": true,
   "runAsNonRoot": true,
-  "runAsUser": 65532,
   "seccompProfile": { "type": "RuntimeDefault" }
 }
 ```

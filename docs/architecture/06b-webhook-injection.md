@@ -53,7 +53,7 @@ Five expert reviews informed this design. Key consensus points and disagreements
 |-------|-----------|-----------|------------|
 | **ServiceAccount** | Security: replace pod SA with dedicated agent SA | K8s: bind agent role to gateway's SA via ClusterRoleBinding | **Keep existing ClusterRoleBinding** (`system:serviceaccounts` in `agent_role.yaml`). K8s doesn't support multiple SAs per pod. The agent's ConfigMap/CR permissions are read-only except status writes. |
 | **Error behavior** | DX: Deny with helpful error messages | K8s/Scale: always Allow, never block | **Deny only when webhook IS reached** (missing CR, paused CR, missing SyncProfile). Since `failurePolicy: Ignore`, pods still create if webhook is down. When the webhook runs, it should fail loudly with actionable messages. |
-| **fsGroup for UID** | Security: set `fsGroup: 2003` (Ignition UID) | Implementation: webhook can't set pod-level securityContext | **Not set by webhook.** Ignition Helm chart already manages pod-level security context. Agent container uses its own `runAsUser: 65532` (distroless nonroot). Shared volumes use `0444` mode. |
+| **fsGroup for UID** | Security: set `fsGroup: 2003` (Ignition UID) | Implementation: webhook can't set pod-level securityContext | **Not set by webhook.** Ignition Helm chart already manages pod-level security context. Agent container omits `RunAsUser` so it inherits the pod-level UID (e.g., 2003 for Ignition), ensuring shared volume files have correct ownership. |
 | **Image versioning** | 3-tier: annotation > CR spec > Helm default | 2-tier: CR spec > Helm default | **3-tier adopted.** Annotation override (`ignition-sync.io/agent-image`) enables per-pod debugging without CR changes. Rarely used but valuable for incident response. |
 
 ---
@@ -308,7 +308,8 @@ initContainers:
         memory: 256Mi
     securityContext:
       runAsNonRoot: true
-      runAsUser: 65532
+      # RunAsUser intentionally omitted — inherits pod-level UID (e.g., 2003
+      # for Ignition) so files on the shared data volume have correct ownership.
       readOnlyRootFilesystem: true
       allowPrivilegeEscalation: false
       seccompProfile:
@@ -512,7 +513,7 @@ This ensures operators are notified even if the webhook was down during pod crea
 
 The injected container meets `restricted` PSS:
 - `runAsNonRoot: true`
-- `runAsUser: 65532` (distroless nonroot)
+- No explicit `runAsUser` — inherits the pod-level UID (e.g., 2003 for Ignition) so files on the shared data volume have correct ownership
 - `readOnlyRootFilesystem: true`
 - `allowPrivilegeEscalation: false`
 - `seccompProfile.type: RuntimeDefault`
