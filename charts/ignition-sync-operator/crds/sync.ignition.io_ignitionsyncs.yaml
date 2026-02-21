@@ -1,0 +1,862 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.0
+  name: ignitionsyncs.sync.ignition.io
+spec:
+  group: sync.ignition.io
+  names:
+    kind: IgnitionSync
+    listKind: IgnitionSyncList
+    plural: ignitionsyncs
+    shortNames:
+    - isync
+    - igs
+    singular: ignitionsync
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.git.ref
+      name: Ref
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="AllGatewaysSynced")].status
+      name: Synced
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="AllGatewaysSynced")].message
+      name: Gateways
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: IgnitionSync is the Schema for the ignitionsyncs API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of IgnitionSync.
+            properties:
+              additionalFiles:
+                description: additionalFiles defines arbitrary file/directory syncs.
+                items:
+                  description: AdditionalFile defines an arbitrary file or directory
+                    to sync.
+                  properties:
+                    dest:
+                      description: dest is the destination path relative to /ignition-data/.
+                      minLength: 1
+                      type: string
+                    source:
+                      description: source is the repo-relative path to the source
+                        file or directory.
+                      minLength: 1
+                      type: string
+                    type:
+                      default: file
+                      description: type is the entry type — "file" or "dir".
+                      enum:
+                      - file
+                      - dir
+                      type: string
+                  required:
+                  - dest
+                  - source
+                  type: object
+                type: array
+              agent:
+                description: agent configures the sync agent sidecar container.
+                properties:
+                  image:
+                    description: image configures the agent container image.
+                    properties:
+                      digest:
+                        description: digest is an optional pinned image digest for
+                          supply chain security.
+                        type: string
+                      pullPolicy:
+                        default: IfNotPresent
+                        description: pullPolicy is the image pull policy.
+                        type: string
+                      repository:
+                        default: ghcr.io/inductiveautomation/ignition-sync-agent
+                        description: repository is the container image repository.
+                        type: string
+                      tag:
+                        description: tag is the container image tag.
+                        type: string
+                    type: object
+                  resources:
+                    description: resources configures compute resources for the agent
+                      container.
+                    properties:
+                      claims:
+                        description: |-
+                          Claims lists the names of resources, defined in spec.resourceClaims,
+                          that are used by this container.
+
+                          This field depends on the
+                          DynamicResourceAllocation feature gate.
+
+                          This field is immutable. It can only be set for containers.
+                        items:
+                          description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                          properties:
+                            name:
+                              description: |-
+                                Name must match the name of one entry in pod.spec.resourceClaims of
+                                the Pod where this field is used. It makes that resource available
+                                inside a container.
+                              type: string
+                            request:
+                              description: |-
+                                Request is the name chosen for a request in the referenced claim.
+                                If empty, everything from the claim is made available, otherwise
+                                only the result of this request.
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                      limits:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Limits describes the maximum amount of compute resources allowed.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                      requests:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Requests describes the minimum amount of compute resources required.
+                          If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                          otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                    type: object
+                type: object
+              bidirectional:
+                description: bidirectional configures gateway-to-git reverse sync.
+                properties:
+                  conflictStrategy:
+                    default: gitWins
+                    description: conflictStrategy determines how conflicts between
+                      git and gateway are resolved.
+                    enum:
+                    - gitWins
+                    - gatewayWins
+                    - manual
+                    type: string
+                  createPR:
+                    description: createPR controls whether changes are submitted as
+                      a pull request.
+                    type: boolean
+                  debounce:
+                    description: debounce is the wait time after the last change before
+                      creating a PR.
+                    type: string
+                  enabled:
+                    description: enabled activates bi-directional sync.
+                    type: boolean
+                  guardrails:
+                    description: guardrails set limits to prevent accidental data
+                      exfiltration or repo bloat.
+                    properties:
+                      excludePatterns:
+                        description: excludePatterns are glob patterns for files that
+                          should never be pushed to git.
+                        items:
+                          type: string
+                        type: array
+                      maxFileSize:
+                        default: 10Mi
+                        description: maxFileSize is the maximum size per file pushed
+                          to git (e.g., "10Mi").
+                        type: string
+                      maxFilesPerPR:
+                        default: 100
+                        description: maxFilesPerPR is the maximum number of files
+                          per auto-generated PR.
+                        format: int32
+                        type: integer
+                    type: object
+                  prLabels:
+                    description: prLabels are labels applied to auto-generated PRs.
+                    items:
+                      type: string
+                    type: array
+                  targetBranch:
+                    description: |-
+                      targetBranch is the branch to push gateway changes to.
+                      Supports Go templates (e.g., "gateway-changes/{{.Namespace}}").
+                    type: string
+                  watchPaths:
+                    description: |-
+                      watchPaths is an allowlist of gateway filesystem paths to watch.
+                      Only paths in this list can flow back to git.
+                    items:
+                      type: string
+                    type: array
+                type: object
+              deployment:
+                description: deployment configures how syncs are rolled out across
+                  gateways.
+                properties:
+                  autoRollback:
+                    description: autoRollback configures automatic rollback on failure.
+                    properties:
+                      enabled:
+                        description: enabled activates automatic rollback.
+                        type: boolean
+                      triggers:
+                        description: triggers lists events that trigger a rollback
+                          (e.g., "scanFailure").
+                        items:
+                          type: string
+                        type: array
+                    type: object
+                  stages:
+                    description: stages defines ordered deployment stages for canary
+                      rollouts.
+                    items:
+                      description: DeploymentStage defines a single stage in a canary
+                        deployment.
+                      properties:
+                        gatewaySelector:
+                          additionalProperties:
+                            type: string
+                          description: gatewaySelector selects gateways for this stage
+                            by label.
+                          type: object
+                        name:
+                          description: name identifies this deployment stage.
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                  strategy:
+                    default: all-at-once
+                    description: strategy selects the rollout strategy.
+                    enum:
+                    - all-at-once
+                    - canary
+                    type: string
+                  syncOrder:
+                    description: syncOrder defines dependency-aware sync ordering
+                      by gateway name.
+                    items:
+                      type: string
+                    type: array
+                type: object
+              excludePatterns:
+                default:
+                - '**/.git/'
+                - '**/.gitkeep'
+                - '**/.resources/**'
+                description: |-
+                  excludePatterns are glob patterns for files to exclude from sync.
+                  The pattern "**/.resources/**" is always enforced by the agent even if omitted.
+                items:
+                  type: string
+                type: array
+              gateway:
+                description: gateway configures how the operator connects to Ignition
+                  gateways.
+                properties:
+                  apiKeySecretRef:
+                    description: apiKeySecretRef points to the Secret containing the
+                      Ignition API key.
+                    properties:
+                      key:
+                        description: key is the key within the Secret data.
+                        minLength: 1
+                        type: string
+                      name:
+                        description: name is the name of the Secret in the same namespace.
+                        minLength: 1
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  port:
+                    default: 8043
+                    description: port is the Ignition gateway API port.
+                    format: int32
+                    type: integer
+                  tls:
+                    default: true
+                    description: tls enables TLS for gateway API connections.
+                    type: boolean
+                required:
+                - apiKeySecretRef
+                type: object
+              git:
+                description: git configures the source repository.
+                properties:
+                  auth:
+                    description: auth configures git authentication. Exactly one method
+                      should be specified.
+                    properties:
+                      githubApp:
+                        description: |-
+                          githubApp authenticates via a GitHub App installation.
+                          Enables bi-directional PR creation.
+                        properties:
+                          appId:
+                            description: appId is the GitHub App ID.
+                            format: int64
+                            type: integer
+                          installationId:
+                            description: installationId is the GitHub App installation
+                              ID.
+                            format: int64
+                            type: integer
+                          privateKeySecretRef:
+                            description: privateKeySecretRef points to the Secret
+                              containing the App's private key PEM.
+                            properties:
+                              key:
+                                description: key is the key within the Secret data.
+                                minLength: 1
+                                type: string
+                              name:
+                                description: name is the name of the Secret in the
+                                  same namespace.
+                                minLength: 1
+                                type: string
+                            required:
+                            - key
+                            - name
+                            type: object
+                        required:
+                        - appId
+                        - installationId
+                        - privateKeySecretRef
+                        type: object
+                      sshKey:
+                        description: sshKey authenticates via SSH deploy key.
+                        properties:
+                          secretRef:
+                            description: secretRef points to the Secret containing
+                              the SSH private key.
+                            properties:
+                              key:
+                                description: key is the key within the Secret data.
+                                minLength: 1
+                                type: string
+                              name:
+                                description: name is the name of the Secret in the
+                                  same namespace.
+                                minLength: 1
+                                type: string
+                            required:
+                            - key
+                            - name
+                            type: object
+                        required:
+                        - secretRef
+                        type: object
+                      token:
+                        description: token authenticates via a personal access token
+                          or service account token.
+                        properties:
+                          secretRef:
+                            description: secretRef points to the Secret containing
+                              the git token.
+                            properties:
+                              key:
+                                description: key is the key within the Secret data.
+                                minLength: 1
+                                type: string
+                              name:
+                                description: name is the name of the Secret in the
+                                  same namespace.
+                                minLength: 1
+                                type: string
+                            required:
+                            - key
+                            - name
+                            type: object
+                        required:
+                        - secretRef
+                        type: object
+                    type: object
+                  ref:
+                    description: |-
+                      ref is the git reference to sync — tag, branch, or commit SHA.
+                      Typically managed by Kargo or a webhook.
+                    type: string
+                  repo:
+                    description: repo is the git repository URL (SSH or HTTPS).
+                    minLength: 1
+                    type: string
+                required:
+                - ref
+                - repo
+                type: object
+              ignition:
+                description: ignition configures Ignition-specific behavior during
+                  sync.
+                properties:
+                  designerSessionPolicy:
+                    default: wait
+                    description: designerSessionPolicy controls behavior when Designer
+                      sessions are active.
+                    enum:
+                    - wait
+                    - proceed
+                    - fail
+                    type: string
+                  peerGatewayName:
+                    description: peerGatewayName is the name of the redundancy peer
+                      gateway.
+                    type: string
+                  perspectiveSessionPolicy:
+                    description: perspectiveSessionPolicy controls behavior for active
+                      Perspective sessions.
+                    type: string
+                  redundancyRole:
+                    description: redundancyRole restricts sync to gateways with this
+                      redundancy role.
+                    type: string
+                type: object
+              normalize:
+                description: normalize configures config.json field normalization.
+                properties:
+                  fields:
+                    description: fields is a list of additional JSON field replacements.
+                    items:
+                      description: FieldReplacement defines a JSON field to replace
+                        in config files.
+                      properties:
+                        jsonPath:
+                          description: jsonPath is the dot-notation path to the field
+                            (e.g., ".someField").
+                          type: string
+                        valueTemplate:
+                          description: valueTemplate is a Go template for the replacement
+                            value.
+                          type: string
+                      required:
+                      - jsonPath
+                      - valueTemplate
+                      type: object
+                    type: array
+                  systemName:
+                    description: systemName enables automatic systemName replacement
+                      in config.json files.
+                    type: boolean
+                type: object
+              paused:
+                description: paused halts all sync operations when set to true.
+                type: boolean
+              polling:
+                description: polling configures the fallback git polling interval.
+                properties:
+                  enabled:
+                    default: true
+                    description: enabled controls whether periodic polling is active.
+                    type: boolean
+                  interval:
+                    default: 60s
+                    description: interval is the polling period (e.g., "60s", "5m").
+                    type: string
+                type: object
+              shared:
+                description: shared configures resources synced to all discovered
+                  gateways.
+                properties:
+                  externalResources:
+                    description: externalResources configures sync of external resource
+                      config files.
+                    properties:
+                      createFallback:
+                        description: createFallback creates a minimal config-mode.json
+                          if the source doesn't exist.
+                        type: boolean
+                      enabled:
+                        description: enabled controls whether external resource sync
+                          is active.
+                        type: boolean
+                      source:
+                        description: source is the repo-relative path to the external
+                          resources directory.
+                        type: string
+                    type: object
+                  scripts:
+                    description: scripts configures sync of shared Python scripts.
+                    properties:
+                      destPath:
+                        description: destPath is the destination path relative to
+                          /ignition-data/projects/{projectName}/.
+                        type: string
+                      enabled:
+                        description: enabled controls whether script sync is active.
+                        type: boolean
+                      source:
+                        description: source is the repo-relative path to the scripts
+                          directory.
+                        type: string
+                    type: object
+                  udts:
+                    description: udts configures sync of shared UDT definitions.
+                    properties:
+                      enabled:
+                        description: enabled controls whether UDT sync is active.
+                        type: boolean
+                      source:
+                        description: source is the repo-relative path to the UDT definitions
+                          directory.
+                        type: string
+                    type: object
+                type: object
+              siteNumber:
+                description: siteNumber identifies this site for config normalization.
+                type: string
+              snapshots:
+                description: snapshots configures pre-sync snapshot creation for rollback.
+                properties:
+                  enabled:
+                    description: enabled activates pre-sync snapshots.
+                    type: boolean
+                  retentionCount:
+                    default: 5
+                    description: retentionCount is the number of snapshots to retain.
+                    format: int32
+                    type: integer
+                  storage:
+                    description: storage configures where snapshots are stored.
+                    properties:
+                      s3:
+                        description: s3 configures S3-compatible snapshot storage.
+                        properties:
+                          bucket:
+                            description: bucket is the S3 bucket name.
+                            type: string
+                          keyPrefix:
+                            description: keyPrefix is the prefix for snapshot objects
+                              in the bucket.
+                            type: string
+                        type: object
+                      type:
+                        default: pvc
+                        description: type selects the storage backend.
+                        enum:
+                        - pvc
+                        - s3
+                        - gcs
+                        type: string
+                    type: object
+                type: object
+              storage:
+                description: |-
+                  storage is deprecated — agent clones locally, no shared PVC needed.
+                  Retained for backward compatibility; has no effect.
+                properties:
+                  accessMode:
+                    default: ReadWriteMany
+                    description: accessMode is the PVC access mode.
+                    enum:
+                    - ReadWriteOnce
+                    - ReadWriteMany
+                    type: string
+                  size:
+                    default: 1Gi
+                    description: size is the PVC capacity request.
+                    type: string
+                  storageClassName:
+                    description: storageClassName selects the StorageClass. Empty
+                      string uses the cluster default.
+                    type: string
+                type: object
+              validation:
+                description: validation configures pre-sync validation checks.
+                properties:
+                  dryRunBefore:
+                    description: dryRunBefore runs a dry-run sync before applying
+                      changes.
+                    type: boolean
+                  webhook:
+                    description: webhook configures an external validation webhook
+                      called before sync.
+                    properties:
+                      timeout:
+                        default: 10s
+                        description: timeout is the maximum time to wait for a validation
+                          response.
+                        type: string
+                      url:
+                        description: url is the validation webhook endpoint.
+                        type: string
+                    type: object
+                type: object
+              webhook:
+                description: webhook configures the inbound webhook receiver.
+                properties:
+                  enabled:
+                    default: true
+                    description: enabled controls whether the webhook listener is
+                      active.
+                    type: boolean
+                  port:
+                    default: 8443
+                    description: port is the webhook listener port.
+                    format: int32
+                    type: integer
+                  secretRef:
+                    description: secretRef points to the HMAC key Secret for payload
+                      verification.
+                    properties:
+                      key:
+                        description: key is the key within the Secret data.
+                        minLength: 1
+                        type: string
+                      name:
+                        description: name is the name of the Secret in the same namespace.
+                        minLength: 1
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                type: object
+            required:
+            - gateway
+            - git
+            type: object
+          status:
+            description: status defines the observed state of IgnitionSync.
+            properties:
+              conditions:
+                description: conditions represent the current state of the IgnitionSync
+                  resource.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              discoveredGateways:
+                description: discoveredGateways lists all gateways discovered by the
+                  controller in this namespace.
+                items:
+                  description: DiscoveredGateway represents a single Ignition gateway
+                    discovered by the controller.
+                  properties:
+                    agentVersion:
+                      description: agentVersion is the version of the sync agent on
+                        this gateway.
+                      type: string
+                    filesChanged:
+                      description: filesChanged is the number of files changed in
+                        the last sync.
+                      format: int32
+                      type: integer
+                    lastScanResult:
+                      description: lastScanResult summarizes the last Ignition scan
+                        API response.
+                      type: string
+                    lastSnapshot:
+                      description: lastSnapshot is the most recent pre-sync snapshot
+                        for this gateway.
+                      properties:
+                        id:
+                          description: id is the snapshot identifier.
+                          type: string
+                        size:
+                          description: size is the snapshot size (e.g., "256MB").
+                          type: string
+                        timestamp:
+                          description: timestamp is when the snapshot was taken.
+                          format: date-time
+                          type: string
+                      type: object
+                    lastSyncDuration:
+                      description: lastSyncDuration is how long the last sync took.
+                      type: string
+                    lastSyncTime:
+                      description: lastSyncTime is when this gateway was last synced.
+                      format: date-time
+                      type: string
+                    name:
+                      description: name is the gateway identity (from annotation or
+                        app.kubernetes.io/name label).
+                      type: string
+                    namespace:
+                      description: namespace is the namespace of the gateway pod.
+                      type: string
+                    podName:
+                      description: podName is the name of the gateway pod.
+                      type: string
+                    projectsSynced:
+                      description: projectsSynced lists the Ignition project names
+                        synced to this gateway.
+                      items:
+                        type: string
+                      type: array
+                    servicePath:
+                      description: servicePath is the repo-relative path to this gateway's
+                        service directory.
+                      type: string
+                    syncHistory:
+                      description: syncHistory is a bounded list of recent sync results.
+                      items:
+                        description: SyncHistoryEntry records a single sync operation
+                          result.
+                        properties:
+                          commit:
+                            description: commit is the git commit SHA that was synced.
+                            type: string
+                          duration:
+                            description: duration is how long the sync took.
+                            type: string
+                          result:
+                            description: result is the sync outcome (e.g., "success",
+                              "error").
+                            type: string
+                          timestamp:
+                            description: timestamp is when the sync occurred.
+                            format: date-time
+                            type: string
+                        type: object
+                      type: array
+                    syncStatus:
+                      description: syncStatus is the current sync state of this gateway.
+                      enum:
+                      - Pending
+                      - Syncing
+                      - Synced
+                      - Error
+                      type: string
+                    syncedCommit:
+                      description: syncedCommit is the git commit SHA currently synced
+                        to this gateway.
+                      type: string
+                    syncedRef:
+                      description: syncedRef is the git ref currently synced to this
+                        gateway.
+                      type: string
+                  required:
+                  - name
+                  - namespace
+                  - podName
+                  type: object
+                type: array
+              lastSyncCommit:
+                description: lastSyncCommit is the git commit SHA that was last synced.
+                type: string
+              lastSyncRef:
+                description: lastSyncRef is the git ref that was last synced.
+                type: string
+              lastSyncTime:
+                description: lastSyncTime is when the most recent sync completed.
+                format: date-time
+                type: string
+              observedGeneration:
+                description: observedGeneration is the most recent generation observed
+                  by the controller.
+                format: int64
+                type: integer
+              refResolutionStatus:
+                description: refResolutionStatus indicates the state of git ref resolution.
+                enum:
+                - NotResolved
+                - Resolving
+                - Resolved
+                - Error
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
