@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Phase 04: Webhook Receiver — HTTP handler, HMAC, payload formats
+# Phase 05: Webhook Receiver — HTTP handler, HMAC, payload formats
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib.sh"
 
-log_phase "04 — Webhook Receiver"
+log_phase "05 — Webhook Receiver"
 
 # Ensure clean state
 phase_cleanup

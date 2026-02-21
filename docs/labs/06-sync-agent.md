@@ -1,14 +1,14 @@
-# Lab 05 — Sync Agent
+# Lab 06 — Sync Agent
 
 ## Objective
 
 Validate the sync agent binary end-to-end with a real Ignition gateway. The agent clones the git repository to a local emptyDir volume (`/repo`), syncs project files to the Ignition data directory, triggers the scan API, and reports status via ConfigMap. This is the first phase where we see **projects actually appear in the Ignition web UI**.
 
-**Prerequisite:** Complete [04 — Webhook Receiver](04-webhook-receiver.md). The `lab-sync` CR should be `Ready` with `RefResolved=True` and 2 gateways discovered.
+**Prerequisite:** Complete [05 — Webhook Receiver](05-webhook-receiver.md). The `lab-sync` CR should be `Ready` with `RefResolved=True` and 2 gateways discovered.
 
 ---
 
-## Lab 5.1: Agent Binary Smoke Test
+## Lab 6.1: Agent Binary Smoke Test
 
 ### Purpose
 Verify the agent container image starts, clones the git repo to its local emptyDir, and enters its watch loop without crashing.
@@ -119,7 +119,7 @@ kubectl delete pod agent-test -n lab
 
 ---
 
-## Lab 5.2: File Sync to Ignition Data Directory
+## Lab 6.2: File Sync to Ignition Data Directory
 
 ### Purpose
 Verify the agent correctly syncs project files from its local `/repo` clone to `/ignition-data/projects/`, respecting the `.resources/` protection.
@@ -236,7 +236,7 @@ kubectl delete pod agent-sync-test -n lab
 
 ---
 
-## Lab 5.3: Agent Status Reporting via ConfigMap
+## Lab 6.3: Agent Status Reporting via ConfigMap
 
 ### Purpose
 Verify the agent writes its sync status to the `ignition-sync-status-{crName}` ConfigMap with the correct JSON structure.
@@ -270,7 +270,7 @@ Expected fields:
 
 ---
 
-## Lab 5.4: Re-Sync on Metadata ConfigMap Change
+## Lab 6.4: Re-Sync on Metadata ConfigMap Change
 
 ### Purpose
 Verify the agent detects changes to the metadata ConfigMap (new commit SHA or trigger timestamp) and triggers a re-sync (git fetch + checkout).
@@ -365,7 +365,7 @@ kubectl delete pod agent-resync-test -n lab
 
 ---
 
-## Lab 5.5: Scan API Graceful Failure
+## Lab 6.5: Scan API Graceful Failure
 
 ### Purpose
 When no real Ignition gateway API is reachable (wrong port, bad API key), the agent should report Error status but not crash. File sync should still succeed.
@@ -466,7 +466,7 @@ kubectl delete pod agent-bad-port -n lab
 
 ---
 
-## Lab 5.6: Config Normalization
+## Lab 6.6: Config Normalization
 
 ### Purpose
 Verify `systemName` normalization rewrites `config.json` files with gateway-specific values.
@@ -482,16 +482,16 @@ sleep 30
 
 Deploy an agent and check if config.json files in the synced output contain the gateway name:
 ```bash
-# Use a fresh agent pod or the sidecar from Lab 5.7
+# Use a fresh agent pod or the sidecar from Lab 6.7
 kubectl exec ignition-0 -n lab -c sync-agent -- \
-  find /usr/local/bin/ignition/data/projects -name "config.json" -exec cat {} \; 2>/dev/null || echo "Run after Lab 5.7"
+  find /usr/local/bin/ignition/data/projects -name "config.json" -exec cat {} \; 2>/dev/null || echo "Run after Lab 6.7"
 ```
 
 Look for `systemName` field values matching the gateway name.
 
 ---
 
-## Lab 5.7: Agent with Real Ignition Gateway — End-to-End
+## Lab 6.7: Agent with Real Ignition Gateway — End-to-End
 
 ### Purpose
 This is the critical test: deploy the agent as a sidecar alongside a real Ignition gateway and verify that projects appear in the Ignition web UI after sync + scan.
@@ -626,7 +626,7 @@ curl -X POST http://localhost:8088/data/api/v1/scan/project 2>/dev/null || \
 
 ---
 
-## Lab 5.8: Ref Change End-to-End — Projects Update in Ignition
+## Lab 6.8: Ref Change End-to-End — Projects Update in Ignition
 
 ### Purpose
 The crown jewel test: change the git ref and verify the agent fetches the new commit, syncs updated files, and the changes appear in the Ignition web UI.

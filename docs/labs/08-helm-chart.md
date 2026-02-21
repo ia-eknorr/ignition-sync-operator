@@ -1,10 +1,10 @@
-# Lab 07 — Helm Chart
+# Lab 08 — Helm Chart
 
 ## Objective
 
 Validate the operator's own Helm chart for installation, configuration, upgrades, and clean removal. Test that all resources are created correctly from Helm values, that the operator works identically when installed via Helm (vs. `make deploy`), and that upgrades preserve state.
 
-**Prerequisite:** Complete [06 — Sidecar Injection](06-sidecar-injection.md). Before starting, undeploy the kustomize-based operator to test a clean Helm install.
+**Prerequisite:** Complete [07 — Sidecar Injection](07-sidecar-injection.md). Before starting, undeploy the kustomize-based operator to test a clean Helm install.
 
 ---
 
@@ -20,7 +20,7 @@ kubectl get pods -n ignition-sync-operator-system 2>&1
 
 ---
 
-## Lab 7.1: Helm Install with Defaults
+## Lab 8.1: Helm Install with Defaults
 
 ### Steps
 
@@ -89,7 +89,7 @@ helm upgrade --install ignition-sync-operator ./charts/ignition-sync-operator \
 
 ---
 
-## Lab 7.2: Custom Helm Values
+## Lab 8.2: Custom Helm Values
 
 ### Purpose
 Verify chart values override defaults correctly.
@@ -138,7 +138,7 @@ kubectl rollout status deployment/ignition-sync-operator-controller-manager \
 
 ---
 
-## Lab 7.3: Helm Upgrade — No Downtime
+## Lab 8.3: Helm Upgrade — No Downtime
 
 ### Purpose
 Verify `helm upgrade` performs a rolling update without losing state.
@@ -186,7 +186,7 @@ kubectl rollout status deployment/ignition-sync-operator-controller-manager \
 
 ---
 
-## Lab 7.4: Helm Uninstall — Clean Removal
+## Lab 8.4: Helm Uninstall — Clean Removal
 
 ### Steps
 
@@ -235,7 +235,7 @@ kubectl rollout status deployment/ignition-sync-operator-controller-manager \
 
 ---
 
-## Lab 7.5: Helm Values — HMAC Secret from Kubernetes Secret
+## Lab 8.5: Helm Values — HMAC Secret from Kubernetes Secret
 
 ### Purpose
 Verify the chart supports configuring the webhook HMAC secret from a Kubernetes Secret (not hardcoded in values).

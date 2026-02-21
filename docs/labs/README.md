@@ -46,12 +46,12 @@ Each phase doc follows this structure:
 | [00 — Environment Setup](00-environment-setup.md) | Pre | Required first |
 | [02 — Controller Core](02-controller-core.md) | 2 | CRD, ref resolution, metadata ConfigMap, finalizer |
 | [03 — Gateway Discovery](03-gateway-discovery.md) | 3 | Pod annotation discovery, status, conditions |
-| [03A — SyncProfile](03a-sync-profile.md) | 3A | SyncProfile CRD, 3-tier config, backward compat |
-| [04 — Webhook Receiver](04-webhook-receiver.md) | 4 | HTTP handler, HMAC, payload formats |
-| [05 — Sync Agent](05-sync-agent.md) | 5 | Git clone, file sync, scan API, status reporting |
-| [06 — Sidecar Injection](06-sidecar-injection.md) | 6 | Mutating webhook, pod injection, git secret injection |
-| [07 — Helm Chart](07-helm-chart.md) | 7 | Operator helm install, values, upgrades |
-| [08 — Observability](08-observability.md) | 8 | Metrics, structured logging, events |
+| [04 — SyncProfile](04-sync-profile.md) | 4 | SyncProfile CRD, 3-tier config, backward compat |
+| [05 — Webhook Receiver](05-webhook-receiver.md) | 5 | HTTP handler, HMAC, payload formats |
+| [06 — Sync Agent](06-sync-agent.md) | 6 | Git clone, file sync, scan API, status reporting |
+| [07 — Sidecar Injection](07-sidecar-injection.md) | 7 | Mutating webhook, pod injection, git secret injection |
+| [08 — Helm Chart](08-helm-chart.md) | 8 | Operator helm install, values, upgrades |
+| [09 — Observability](09-observability.md) | 9 | Metrics, structured logging, events |
 
 ## Phase Gate Rule
 

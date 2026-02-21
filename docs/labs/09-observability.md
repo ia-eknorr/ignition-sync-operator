@@ -1,14 +1,14 @@
-# Lab 08 — Observability
+# Lab 09 — Observability
 
 ## Objective
 
 Validate the operator's observability features: Prometheus metrics endpoint, structured JSON logging, Kubernetes events, and status conditions as a debugging surface. Verify these work in the real cluster environment with Ignition gateways running.
 
-**Prerequisite:** Complete [07 — Helm Chart](07-helm-chart.md). The operator should be running (via Helm or kustomize) with `lab-sync` CR active.
+**Prerequisite:** Complete [08 — Helm Chart](08-helm-chart.md). The operator should be running (via Helm or kustomize) with `lab-sync` CR active.
 
 ---
 
-## Lab 8.1: Prometheus Metrics Endpoint
+## Lab 9.1: Prometheus Metrics Endpoint
 
 ### Purpose
 Verify the controller exposes Prometheus-compatible metrics at the configured endpoint.
@@ -72,7 +72,7 @@ Record which custom metrics exist — this informs whether we need to add more i
 
 ---
 
-## Lab 8.2: Structured JSON Logging
+## Lab 9.2: Structured JSON Logging
 
 ### Purpose
 Verify controller logs are structured JSON with expected fields, making them parseable by log aggregation systems (Loki, Elasticsearch, CloudWatch).
@@ -117,7 +117,7 @@ kubectl logs "$CTRL_POD" -n ignition-sync-operator-system --tail=30
 
 ---
 
-## Lab 8.3: Kubernetes Events
+## Lab 9.3: Kubernetes Events
 
 ### Purpose
 Verify the operator emits meaningful Kubernetes events that appear in `kubectl describe` and event streams.
@@ -194,7 +194,7 @@ kubectl delete ignitionsync event-test -n lab
 
 ---
 
-## Lab 8.4: Status Conditions as Debugging Surface
+## Lab 9.4: Status Conditions as Debugging Surface
 
 ### Purpose
 Verify conditions provide enough information for operators to diagnose issues without reading logs.
@@ -239,7 +239,7 @@ kubectl get ignitionsync lab-sync -n lab -o json | jq '[.status.conditions[] | {
 
 ---
 
-## Lab 8.5: Log Levels and Verbosity
+## Lab 9.5: Log Levels and Verbosity
 
 ### Purpose
 Verify the controller respects log verbosity settings (useful for debugging vs. production).
@@ -274,7 +274,7 @@ Look for additional context in debug entries (e.g., specific resource versions, 
 
 ---
 
-## Lab 8.6: Health Endpoints
+## Lab 9.6: Health Endpoints
 
 ### Purpose
 Verify liveness and readiness probes work correctly.
@@ -318,7 +318,7 @@ The pod should go through `Not Ready → Ready` as the controller initializes.
 
 ---
 
-## Lab 8.7: Agent Logs (if sidecar is injected)
+## Lab 9.7: Agent Logs (if sidecar is injected)
 
 ### Purpose
 Verify agent sidecar logs are accessible and structured. The agent clones the git repo to a local emptyDir on the gateway pod and handles sync operations independently.
@@ -339,7 +339,7 @@ kubectl logs ignition-0 -n lab -c sync-agent --tail=20 2>/dev/null || \
 
 ---
 
-## Lab 8.8: Full Observability Walkthrough — Simulated Incident
+## Lab 9.8: Full Observability Walkthrough — Simulated Incident
 
 ### Purpose
 Simulate a real debugging scenario: something breaks, and we use only observability tools (no code reading) to diagnose it.

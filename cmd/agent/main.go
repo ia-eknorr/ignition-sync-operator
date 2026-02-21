@@ -23,7 +23,7 @@ import (
 
 func main() {
 	fmt.Println("ignition-sync-agent starting...")
-	// TODO: implement agent — see docs/architecture/08-agent-development-plan.md
+	// TODO: implement agent — see docs/architecture/06a-agent-development-plan.md
 	// Watches metadata ConfigMap for sync signals, clones repo to local emptyDir,
 	// builds staging from SyncProfile mappings, merges to /ignition-data/,
 	// triggers Ignition scan API, reports status via ConfigMap.

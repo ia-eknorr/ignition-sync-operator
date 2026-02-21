@@ -1,5 +1,5 @@
 <!-- Part of: Ignition Sync Operator Architecture (v3) -->
-<!-- See also: 00-overview.md, 01-crd.md, 02-controller.md, 03-sync-agent.md, 04-deployment-operations.md, 05-enterprise-examples.md, 07-sync-profile.md -->
+<!-- See also: 00-overview.md, 01-crd.md, 02-controller.md, 04-sync-profile.md, 06-sync-agent.md, 08-deployment-operations.md, 10-enterprise-examples.md -->
 
 # Ignition Sync Operator — Security, Testing & Roadmap
 
@@ -377,7 +377,7 @@ data:
 
 ### v1 (Current)
 - Single-cluster gateway discovery and sync
-- **SyncProfile CRD** — ordered source→destination mappings, deployment mode overlays, 3-tier config precedence (see [07-sync-profile.md](07-sync-profile.md))
+- **SyncProfile CRD** — ordered source→destination mappings, deployment mode overlays, 3-tier config precedence (see [04-sync-profile.md](04-sync-profile.md))
 - Webhook-driven updates via ArgoCD, Kargo, GitHub (annotation-based, not spec mutation)
 - Finalizer-based cleanup for CR deletion
 - ConfigMap-only controller-agent signaling

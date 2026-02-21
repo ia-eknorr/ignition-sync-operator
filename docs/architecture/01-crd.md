@@ -1,5 +1,5 @@
 <!-- Part of: Ignition Sync Operator Architecture (v3) -->
-<!-- See also: 00-overview.md, 02-controller.md, 03-sync-agent.md, 04-deployment-operations.md, 05-enterprise-examples.md, 06-security-testing-roadmap.md, 07-sync-profile.md -->
+<!-- See also: 00-overview.md, 02-controller.md, 04-sync-profile.md, 06-sync-agent.md, 08-deployment-operations.md, 09-security-testing-roadmap.md, 10-enterprise-examples.md -->
 
 # Ignition Sync Operator — Custom Resource Definition
 
@@ -108,7 +108,7 @@ spec:
   # for recursive matching. Go's filepath.Match does NOT support ** natively.
 
   # ────────────────────────────────────────────────────────────
-  # DEPRECATED — replaced by SyncProfile CRD (see 07-sync-profile.md)
+  # DEPRECATED — replaced by SyncProfile CRD (see 04-sync-profile.md)
   # The following fields are removed in favor of SyncProfile's
   # ordered source→destination mappings:
   #   - siteNumber      → future: template variables via hooks
@@ -347,7 +347,7 @@ Key status design decisions following K8s conventions:
 
 ## SyncProfile CRD
 
-> Full design document: [07-sync-profile.md](07-sync-profile.md)
+> Full design document: [04-sync-profile.md](04-sync-profile.md)
 
 `SyncProfile` is a second namespace-scoped CRD that defines **ordered source→destination mappings** for a gateway role. It replaces the opinionated `shared`, `additionalFiles`, `normalize`, and `siteNumber` fields from IgnitionSync with a generic abstraction.
 
@@ -395,7 +395,7 @@ This is a breaking change at v1alpha1. Pods without a `sync-profile` annotation 
 annotation > SyncProfile > IgnitionSync > defaults
 ```
 
-See [07-sync-profile.md](07-sync-profile.md) for the full CRD spec, Go types, worked examples, and backward compatibility details.
+See [04-sync-profile.md](04-sync-profile.md) for the full CRD spec, Go types, worked examples, and backward compatibility details.
 
 ---
 

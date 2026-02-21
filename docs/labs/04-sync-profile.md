@@ -1,14 +1,14 @@
-# Lab 03A — SyncProfile CRD
+# Lab 04 — SyncProfile CRD
 
 ## Objective
 
-Validate the SyncProfile CRD: installation, validation, the 3-tier config precedence model (IgnitionSync → SyncProfile → pod annotation), backward compatibility with 2-tier mode, and graceful degradation on profile deletion. This lab confirms the SyncProfile abstraction works correctly before the agent (Phase 5) relies on it for file routing.
+Validate the SyncProfile CRD: installation, validation, the 3-tier config precedence model (IgnitionSync → SyncProfile → pod annotation), backward compatibility with 2-tier mode, and graceful degradation on profile deletion. This lab confirms the SyncProfile abstraction works correctly before the agent (Phase 6) relies on it for file routing.
 
 **Prerequisite:** Complete [00 — Environment Setup](00-environment-setup.md) and [02 — Controller Core](02-controller-core.md).
 
 ---
 
-## Lab 3A.1: CRD Smoke Test
+## Lab 4.1: CRD Smoke Test
 
 ### Purpose
 Verify the SyncProfile CRD is installed with expected schema, short names, and print columns.
@@ -32,7 +32,7 @@ kubectl get syncprofiles -n lab
 
 ---
 
-## Lab 3A.2: Create Valid SyncProfile
+## Lab 4.2: Create Valid SyncProfile
 
 ### Purpose
 Create a valid SyncProfile and verify the controller sets the `Accepted=True` condition.
@@ -86,7 +86,7 @@ EOF
 
 ---
 
-## Lab 3A.3: Invalid SyncProfile — Path Traversal
+## Lab 4.3: Invalid SyncProfile — Path Traversal
 
 ### Purpose
 Verify that SyncProfile with path traversal (`..`) is rejected with `Accepted=False`.
@@ -129,7 +129,7 @@ kubectl delete syncprofile bad-traversal -n lab
 
 ---
 
-## Lab 3A.4: Invalid SyncProfile — Absolute Path
+## Lab 4.4: Invalid SyncProfile — Absolute Path
 
 ### Purpose
 Verify absolute paths in mappings are rejected.
@@ -164,7 +164,7 @@ kubectl delete syncprofile bad-absolute -n lab
 
 ---
 
-## Lab 3A.5: Pod References SyncProfile (3-Tier Mode)
+## Lab 4.5: Pod References SyncProfile (3-Tier Mode)
 
 ### Purpose
 Verify that a pod with `ignition-sync.io/sync-profile` annotation is correctly associated with the referenced SyncProfile, and the profile's `gatewayCount` status is updated.
@@ -240,7 +240,7 @@ kubectl delete pod gateway-profile-test -n lab
 
 ---
 
-## Lab 3A.6: Pod Without SyncProfile (2-Tier Backward Compatibility)
+## Lab 4.6: Pod Without SyncProfile (2-Tier Backward Compatibility)
 
 ### Purpose
 Verify that a pod without `sync-profile` annotation still works in 2-tier mode using the `service-path` annotation.
@@ -298,7 +298,7 @@ kubectl delete pod gateway-2tier-test -n lab
 
 ---
 
-## Lab 3A.7: Multiple Gateways Share One Profile
+## Lab 4.7: Multiple Gateways Share One Profile
 
 ### Purpose
 Verify that multiple pods can reference the same SyncProfile and the `gatewayCount` reflects the total.
@@ -368,7 +368,7 @@ kubectl delete pod gateway-area-1 gateway-area-2 gateway-area-3 -n lab
 
 ---
 
-## Lab 3A.8: Profile Update Triggers Re-Reconcile
+## Lab 4.8: Profile Update Triggers Re-Reconcile
 
 ### Purpose
 Verify that updating a SyncProfile triggers the IgnitionSync controller to re-reconcile affected gateways.
@@ -425,7 +425,7 @@ kubectl delete pod gateway-update-test -n lab
 
 ---
 
-## Lab 3A.9: Profile Deletion — Graceful Degradation
+## Lab 4.9: Profile Deletion — Graceful Degradation
 
 ### Purpose
 Verify that deleting a SyncProfile referenced by pods triggers a warning but doesn't crash the controller or break existing gateways.
@@ -500,7 +500,7 @@ kubectl delete pod gateway-temp -n lab
 
 ---
 
-## Lab 3A.10: SyncProfile with Paused=true
+## Lab 4.10: SyncProfile with Paused=true
 
 ### Purpose
 Verify that a paused profile is still accepted but signals gateways to halt sync.
@@ -544,7 +544,7 @@ kubectl delete syncprofile paused-profile -n lab
 
 ---
 
-## Lab 3A.12: Profile with `dependsOn`
+## Lab 4.12: Profile with `dependsOn`
 
 ### Purpose
 Verify the CRD accepts the `dependsOn` field for profile dependency ordering (e.g., area profile depends on site profile being synced first).
@@ -595,7 +595,7 @@ kubectl delete syncprofile lab-depends-on -n lab
 
 ---
 
-## Lab 3A.13: Profile with `vars`
+## Lab 4.13: Profile with `vars`
 
 ### Purpose
 Verify the CRD accepts the `vars` map for template variables resolved by the agent at sync time. This replaces the removed `siteNumber` and `normalize` fields.
@@ -642,7 +642,7 @@ kubectl delete syncprofile lab-with-vars -n lab
 
 ---
 
-## Lab 3A.14: Profile with `dryRun`
+## Lab 4.14: Profile with `dryRun`
 
 ### Purpose
 Verify the CRD accepts the `dryRun` boolean field. When true, the agent syncs to a staging directory but doesn't copy to `/ignition-data/`.
@@ -688,7 +688,7 @@ kubectl delete syncprofile lab-dryrun -n lab
 
 ---
 
-## Lab 3A.15: Mapping with `required` Field
+## Lab 4.15: Mapping with `required` Field
 
 ### Purpose
 Verify the CRD accepts the `required` boolean on individual mappings. When `required: true`, the agent fails sync if the source path doesn't exist in the repo.
@@ -737,7 +737,7 @@ kubectl delete syncprofile lab-required -n lab
 
 ---
 
-## Lab 3A.16: Pod with `ref-override` Annotation
+## Lab 4.16: Pod with `ref-override` Annotation
 
 ### Purpose
 Verify that a pod with the `ignition-sync.io/ref-override` annotation is still discovered by the controller and the annotation is preserved. The actual ref override behavior (agent-side) is tested in Phase 5.
@@ -745,7 +745,7 @@ Verify that a pod with the `ignition-sync.io/ref-override` annotation is still d
 ### Steps
 
 ```bash
-# Ensure IgnitionSync CR exists (from Lab 3A.5)
+# Ensure IgnitionSync CR exists (from Lab 4.5)
 # Create a pod with ref-override
 cat <<EOF | kubectl apply -n lab -f -
 apiVersion: v1
@@ -793,7 +793,7 @@ kubectl delete pod gateway-ref-override -n lab
 
 ---
 
-## Lab 3A.17: Ignition Gateway Health Check
+## Lab 4.17: Ignition Gateway Health Check
 
 ### Purpose
 Confirm nothing in this phase affected the Ignition gateway.

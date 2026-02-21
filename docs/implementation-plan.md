@@ -625,7 +625,7 @@ const (
 
 ## Phase 3A: SyncProfile CRD
 
-> Architecture doc: [docs/architecture/07-sync-profile.md](architecture/07-sync-profile.md)
+> Architecture doc: [docs/architecture/04-sync-profile.md](architecture/04-sync-profile.md)
 
 ### Motivation
 

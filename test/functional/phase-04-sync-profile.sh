@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Phase 03A: SyncProfile CRD — Validation, 3-Tier Config, Backward Compatibility
+# Phase 04: SyncProfile CRD — Validation, 3-Tier Config, Backward Compatibility
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib.sh"
 
-log_phase "03A — SyncProfile CRD"
+log_phase "04 — SyncProfile CRD"
 
 # Ensure clean state
 phase_cleanup

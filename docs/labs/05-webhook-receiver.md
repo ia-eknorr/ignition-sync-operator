@@ -1,4 +1,4 @@
-# Lab 04 — Webhook Receiver
+# Lab 05 — Webhook Receiver
 
 ## Objective
 
@@ -8,7 +8,7 @@ Validate the inbound webhook HTTP handler end-to-end: port reachability, all fou
 
 ---
 
-## Lab 4.1: Webhook Port Reachability
+## Lab 5.1: Webhook Port Reachability
 
 ### Purpose
 Verify the webhook receiver HTTP server is running inside the controller and reachable via port-forward.
@@ -44,7 +44,7 @@ Expected: `webhook accepted` log entry.
 
 ---
 
-## Lab 4.2: Generic Payload
+## Lab 5.2: Generic Payload
 
 ### Purpose
 Test the simplest payload format: `{"ref": "..."}`.
@@ -99,7 +99,7 @@ echo "Body: $HTTP_BODY"
 
 ---
 
-## Lab 4.3: GitHub Release Payload
+## Lab 5.3: GitHub Release Payload
 
 ### Steps
 
@@ -133,7 +133,7 @@ Expected: `ref: "v3.1.0"`, `by: "github"`
 
 ---
 
-## Lab 4.4: ArgoCD Notification Payload
+## Lab 5.4: ArgoCD Notification Payload
 
 ### Steps
 
@@ -173,7 +173,7 @@ Expected: `ref: "v4.2.0"`, `by: "argocd"`
 
 ---
 
-## Lab 4.5: Kargo Promotion Payload
+## Lab 5.5: Kargo Promotion Payload
 
 ### Steps
 
@@ -211,7 +211,7 @@ Expected: `ref: "v5.0.0"`, `by: "kargo"`
 
 ---
 
-## Lab 4.6: HMAC Signature Validation
+## Lab 5.6: HMAC Signature Validation
 
 ### Purpose
 Test the full HMAC lifecycle: enable HMAC on the controller, verify invalid signatures are rejected, valid signatures accepted.
@@ -290,7 +290,7 @@ Expected: `HTTP 202`
 
 ---
 
-## Lab 4.7: HMAC Checked Before CR Lookup (Enumeration Prevention)
+## Lab 5.7: HMAC Checked Before CR Lookup (Enumeration Prevention)
 
 ### Purpose
 Verify HMAC is validated BEFORE the controller looks up the CR. This prevents attackers from using 404 vs 401 responses to enumerate valid CR names.
@@ -328,7 +328,7 @@ Expected: `HTTP 404` — valid HMAC passes, then CR lookup fails.
 
 ---
 
-## Lab 4.8: Error Responses
+## Lab 5.8: Error Responses
 
 ### Bad payload (no ref extractable):
 
@@ -371,7 +371,7 @@ Expected: `HTTP 405` (Method Not Allowed) or `404`.
 
 ---
 
-## Lab 4.9: Idempotent Duplicate Ref
+## Lab 5.9: Idempotent Duplicate Ref
 
 ### Purpose
 Sending the same ref twice should return 200 (not 202) with a message about the ref already being set.
@@ -411,7 +411,7 @@ echo "Body: $BODY2"
 
 ---
 
-## Lab 4.10: Webhook Triggers Full Reconciliation
+## Lab 5.10: Webhook Triggers Full Reconciliation
 
 ### Purpose
 This is the end-to-end test: send a webhook to change the ref, and verify the controller actually resolves the new ref, updates the metadata ConfigMap, and refreshes status.
@@ -474,7 +474,7 @@ kubectl logs -n ignition-sync-operator-system "$CTRL_POD" --tail=30 | grep -E "w
 
 ---
 
-## Lab 4.11: Restore State and Disable HMAC
+## Lab 5.11: Restore State and Disable HMAC
 
 ```bash
 # Remove HMAC from controller
@@ -500,7 +500,7 @@ sleep 20
 
 ---
 
-## Lab 4.12: Ignition Gateway Health Check
+## Lab 5.12: Ignition Gateway Health Check
 
 ```bash
 # Both gateways still healthy

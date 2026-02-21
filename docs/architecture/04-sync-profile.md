@@ -1,5 +1,5 @@
 <!-- Part of: Ignition Sync Operator Architecture (v3) -->
-<!-- See also: 00-overview.md, 01-crd.md, 02-controller.md, 03-sync-agent.md, 04-deployment-operations.md, 05-enterprise-examples.md, 06-security-testing-roadmap.md -->
+<!-- See also: 00-overview.md, 01-crd.md, 02-controller.md, 06-sync-agent.md, 08-deployment-operations.md, 09-security-testing-roadmap.md, 10-enterprise-examples.md -->
 
 # Ignition Sync Operator — SyncProfile CRD
 
@@ -61,7 +61,7 @@ A natural question is whether `SyncProfile` should include a `ref` field to allo
 |----------|-----------|
 | Staged rollout within a site (~70% of upgrades) | `spec.deployment.strategy: canary` with `stages[]` — same ref, ordered delivery with health checks |
 | Multi-site rollout (~25%) | Separate IgnitionSync CRs per namespace — each site advances independently |
-| Dev/test gateway on feature branch (~5%) | Pod annotation `ignition-sync.io/ref-override` — agent-side only, generates `RefSkew` warning (see [04-deployment-operations.md](04-deployment-operations.md#ref-override-escape-valve)) |
+| Dev/test gateway on feature branch (~5%) | Pod annotation `ignition-sync.io/ref-override` — agent-side only, generates `RefSkew` warning (see [08-deployment-operations.md](08-deployment-operations.md#ref-override-escape-valve)) |
 | Permanent multi-version within a site (rare) | Separate IgnitionSync CRs — explicit, auditable, independent status |
 
 ---
@@ -723,7 +723,7 @@ With SyncProfile, the per-pod annotation set simplifies:
 | `ignition-sync.io/cr-name` | No* | Name of the `IgnitionSync` CR. *Auto-derived if exactly one CR exists. |
 | `ignition-sync.io/sync-profile` | No | Name of the `SyncProfile` to use. If omitted, falls back to `service-path` annotation. |
 | `ignition-sync.io/gateway-name` | No | Override gateway identity (defaults to pod label `app.kubernetes.io/name`) |
-| `ignition-sync.io/ref-override` | No | Override the git ref for this pod only. Read by the agent, not the controller. Generates a `RefSkew` warning condition on the IgnitionSync CR. See [04-deployment-operations.md](04-deployment-operations.md#ref-override-escape-valve). |
+| `ignition-sync.io/ref-override` | No | Override the git ref for this pod only. Read by the agent, not the controller. Generates a `RefSkew` warning condition on the IgnitionSync CR. See [08-deployment-operations.md](08-deployment-operations.md#ref-override-escape-valve). |
 
 Annotations that become **unnecessary when using SyncProfile** (but still work for 2-tier mode):
 
@@ -857,5 +857,5 @@ The SyncProfile controller is lightweight:
 
 - [01-crd.md](01-crd.md) — IgnitionSync CRD (simplified after SyncProfile extraction)
 - [02-controller.md](02-controller.md) — Controller Manager reconciliation loop
-- [03-sync-agent.md](03-sync-agent.md) — Sync agent uses SyncProfile for file mapping
-- [05-enterprise-examples.md](05-enterprise-examples.md) — Enterprise examples updated for SyncProfile
+- [06-sync-agent.md](06-sync-agent.md) — Sync agent uses SyncProfile for file mapping
+- [10-enterprise-examples.md](10-enterprise-examples.md) — Enterprise examples updated for SyncProfile

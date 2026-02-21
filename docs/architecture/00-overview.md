@@ -1,5 +1,5 @@
 <!-- Part of: Ignition Sync Operator Architecture (v3) -->
-<!-- See also: 01-crd.md, 02-controller.md, 03-sync-agent.md, 04-deployment-operations.md, 05-enterprise-examples.md, 06-security-testing-roadmap.md, 07-sync-profile.md -->
+<!-- See also: 01-crd.md, 02-controller.md, 04-sync-profile.md, 06-sync-agent.md, 08-deployment-operations.md, 09-security-testing-roadmap.md, 10-enterprise-examples.md -->
 
 # Ignition Sync Operator — Architecture Design (v3)
 
@@ -282,8 +282,9 @@ The webhook **does not modify** if the annotation is absent or `"false"`, and it
 
 - [01-crd.md](01-crd.md) — Custom Resource Definition (spec, status, markers, versioning)
 - [02-controller.md](02-controller.md) — Controller Manager, RBAC, reconciliation loop, storage, multi-repo
-- [03-sync-agent.md](03-sync-agent.md) — Sync agent binary, sync flow, Ignition-aware sync
-- [04-deployment-operations.md](04-deployment-operations.md) — Helm chart, deployment safety, observability, scale
-- [05-enterprise-examples.md](05-enterprise-examples.md) — Integration patterns, worked examples, enterprise features
-- [06-security-testing-roadmap.md](06-security-testing-roadmap.md) — Security architecture, testing, migration, roadmap
-- [07-sync-profile.md](07-sync-profile.md) — SyncProfile CRD, 3-tier config model, ordered mappings
+- [04-sync-profile.md](04-sync-profile.md) — SyncProfile CRD, 3-tier config model, ordered mappings
+- [06-sync-agent.md](06-sync-agent.md) — Sync agent binary, sync flow, Ignition-aware sync
+- [06a-agent-development-plan.md](06a-agent-development-plan.md) — Agent development plan and build phases
+- [08-deployment-operations.md](08-deployment-operations.md) — Helm chart, deployment safety, observability, scale
+- [09-security-testing-roadmap.md](09-security-testing-roadmap.md) — Security architecture, testing, migration, roadmap
+- [10-enterprise-examples.md](10-enterprise-examples.md) — Integration patterns, worked examples, enterprise features

@@ -1,5 +1,5 @@
 <!-- Part of: Ignition Sync Operator Architecture (v3) -->
-<!-- See also: 00-overview.md, 01-crd.md, 02-controller.md, 03-sync-agent.md, 04-deployment-operations.md, 06-security-testing-roadmap.md, 07-sync-profile.md -->
+<!-- See also: 00-overview.md, 01-crd.md, 02-controller.md, 04-sync-profile.md, 06-sync-agent.md, 08-deployment-operations.md, 09-security-testing-roadmap.md -->
 
 # Ignition Sync Operator — Integration Patterns, Examples & Enterprise
 
@@ -94,7 +94,7 @@ The mutating webhook handles the rest. If the ignition chart later adds first-cl
 
 ## Worked Examples
 
-> These examples use the [SyncProfile CRD](07-sync-profile.md) for file routing, separating
+> These examples use the [SyncProfile CRD](04-sync-profile.md) for file routing, separating
 > infrastructure concerns (IgnitionSync) from file mappings (SyncProfile).
 
 ### ProveIt 2026 (5 gateways, 1 site + 4 areas)

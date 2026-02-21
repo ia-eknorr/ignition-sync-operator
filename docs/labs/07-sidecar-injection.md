@@ -1,4 +1,4 @@
-# Lab 06 — Sidecar Injection
+# Lab 07 — Sidecar Injection
 
 ## Objective
 
@@ -10,7 +10,7 @@ The webhook injects:
 - A projected secret volume (`git-credentials`) from the git token secret referenced in the IgnitionSync CR
 - Agent configuration via environment variables derived from pod annotations and CR spec
 
-**Prerequisite:** Complete [05 — Sync Agent](05-sync-agent.md). The agent binary must be proven to work. Remove any manual sidecar patches from the Ignition StatefulSet before starting.
+**Prerequisite:** Complete [06 — Sync Agent](06-sync-agent.md). The agent binary must be proven to work. Remove any manual sidecar patches from the Ignition StatefulSet before starting.
 
 ---
 
@@ -51,7 +51,7 @@ kubectl rollout status statefulset/ignition -n lab --timeout=300s
 
 ---
 
-## Lab 6.1: MutatingWebhookConfiguration Exists
+## Lab 7.1: MutatingWebhookConfiguration Exists
 
 ### Steps
 
@@ -77,7 +77,7 @@ kubectl get mutatingwebhookconfiguration -o json | jq '.items[] | {
 
 ---
 
-## Lab 6.2: Injection — Pod With Annotation Gets Agent Sidecar
+## Lab 7.2: Injection — Pod With Annotation Gets Agent Sidecar
 
 ### Purpose
 Add `ignition-sync.io/inject: "true"` to the Ignition StatefulSet and verify the agent container is automatically injected with an emptyDir volume for repo clone and a projected git auth secret.
@@ -140,7 +140,7 @@ kubectl rollout status statefulset/ignition -n lab --timeout=300s
 
 ---
 
-## Lab 6.3: Verify Injected Volumes
+## Lab 7.3: Verify Injected Volumes
 
 ### Purpose
 Confirm the webhook injected an emptyDir (not a PVC) for repo storage, and that the git auth secret is correctly mounted.
@@ -180,7 +180,7 @@ Confirm the webhook injected an emptyDir (not a PVC) for repo storage, and that 
 
 ---
 
-## Lab 6.4: No Injection — Pod Without Annotation
+## Lab 7.4: No Injection — Pod Without Annotation
 
 ### Purpose
 Verify pods without the inject annotation are NOT modified by the webhook.
@@ -220,7 +220,7 @@ kubectl delete pod no-inject-test -n lab
 
 ---
 
-## Lab 6.5: Annotation Values Propagated to Agent Env Vars
+## Lab 7.5: Annotation Values Propagated to Agent Env Vars
 
 ### Purpose
 Verify all supported pod annotations are correctly translated into agent environment variables.
@@ -271,7 +271,7 @@ kubectl rollout status statefulset/ignition -n lab --timeout=300s
 
 ---
 
-## Lab 6.6: Injected Container Meets Pod Security Standards
+## Lab 7.6: Injected Container Meets Pod Security Standards
 
 ### Purpose
 Verify the injected sidecar container follows Kubernetes pod security standards (non-root, read-only root filesystem, no privilege escalation).
@@ -295,7 +295,7 @@ kubectl get pod ignition-0 -n lab -o json | jq '.spec.containers[] | select(.nam
 
 ---
 
-## Lab 6.7: Injection with auto-derived CR Name
+## Lab 7.7: Injection with auto-derived CR Name
 
 ### Purpose
 When only one IgnitionSync CR exists in the namespace, `ignition-sync.io/cr-name` annotation should be optional — the webhook auto-derives it.
@@ -333,7 +333,7 @@ kubectl rollout status statefulset/ignition -n lab --timeout=300s
 
 ---
 
-## Lab 6.8: Full Round Trip — Injection + Sync + Scan + Ignition UI
+## Lab 7.8: Full Round Trip — Injection + Sync + Scan + Ignition UI
 
 ### Purpose
 The ultimate integration test. With injection enabled, change the git ref and verify:

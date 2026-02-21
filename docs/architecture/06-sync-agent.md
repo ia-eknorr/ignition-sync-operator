@@ -1,5 +1,5 @@
 <!-- Part of: Ignition Sync Operator Architecture (v3) -->
-<!-- See also: 00-overview.md, 01-crd.md, 02-controller.md, 04-deployment-operations.md, 05-enterprise-examples.md, 06-security-testing-roadmap.md -->
+<!-- See also: 00-overview.md, 01-crd.md, 02-controller.md, 04-sync-profile.md, 08-deployment-operations.md, 09-security-testing-roadmap.md, 10-enterprise-examples.md -->
 
 # Ignition Sync Operator — Sync Agent & Ignition-Aware Sync
 

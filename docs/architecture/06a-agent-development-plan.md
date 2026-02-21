@@ -1,5 +1,5 @@
 <!-- Part of: Ignition Sync Operator Architecture (v3) -->
-<!-- See also: 00-overview.md, 01-crd.md, 02-controller.md, 03-sync-agent.md, 07-sync-profile.md -->
+<!-- See also: 00-overview.md, 01-crd.md, 02-controller.md, 04-sync-profile.md, 06-sync-agent.md -->
 
 # Sync Agent — Development Plan
 
