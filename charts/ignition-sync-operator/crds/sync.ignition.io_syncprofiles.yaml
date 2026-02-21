@@ -17,10 +17,6 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - description: Number of source→dest mappings
-      jsonPath: .spec.mappings
-      name: Mappings
-      type: integer
     - jsonPath: .spec.deploymentMode.name
       name: Mode
       type: string

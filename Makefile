@@ -48,9 +48,10 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 HELM_CHART_DIR ?= charts/ignition-sync-operator
 
 .PHONY: helm-sync
-helm-sync: manifests ## Sync CRD and verify RBAC between kustomize config and Helm chart.
+helm-sync: manifests ## Sync CRDs and verify RBAC between kustomize config and Helm chart.
 	@cp config/crd/bases/sync.ignition.io_ignitionsyncs.yaml $(HELM_CHART_DIR)/crds/
-	@echo "CRD copied to $(HELM_CHART_DIR)/crds/"
+	@cp config/crd/bases/sync.ignition.io_syncprofiles.yaml $(HELM_CHART_DIR)/crds/
+	@echo "CRDs copied to $(HELM_CHART_DIR)/crds/"
 	@diff <(sed -n '/^rules:/,$$p' config/rbac/role.yaml | sed 's/^[[:space:]]*//' | grep -v '^$$') \
 	      <(sed -n '/^rules:/,$$p' $(HELM_CHART_DIR)/templates/clusterrole.yaml | sed 's/^[[:space:]]*//' | grep -v '^$$') \
 	  && echo "RBAC rules in sync" \
