@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,9 +40,7 @@ func fetchSyncProfile(ctx context.Context, c client.Client, namespace, name stri
 // buildTemplateContext creates a TemplateContext from agent config and metadata.
 func buildTemplateContext(cfg *Config, meta *Metadata, profileVars map[string]string) *TemplateContext {
 	vars := make(map[string]string, len(profileVars))
-	for k, v := range profileVars {
-		vars[k] = v
-	}
+	maps.Copy(vars, profileVars)
 	return &TemplateContext{
 		GatewayName: cfg.GatewayName,
 		Namespace:   cfg.CRNamespace,
@@ -157,7 +156,7 @@ func buildSyncPlan(
 	}
 
 	// Merge excludes from three sources: engine defaults, profile, CR.
-	var allExcludes []string
+	allExcludes := make([]string, 0, len(crExcludes)+len(profile.ExcludePatterns))
 	allExcludes = append(allExcludes, crExcludes...)
 	allExcludes = append(allExcludes, profile.ExcludePatterns...)
 	plan.ExcludePatterns = allExcludes

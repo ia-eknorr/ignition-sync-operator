@@ -74,7 +74,7 @@ func (c *Client) postScan(path string) (int, error) {
 	url := c.BaseURL + path
 
 	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := range 3 {
 		if attempt > 0 {
 			time.Sleep(time.Duration(attempt) * 2 * time.Second)
 		}
@@ -90,8 +90,8 @@ func (c *Client) postScan(path string) (int, error) {
 			lastErr = err
 			continue
 		}
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			return resp.StatusCode, nil
@@ -117,8 +117,8 @@ func (c *Client) HealthCheck() error {
 	if err != nil {
 		return fmt.Errorf("gateway health check: %w", err)
 	}
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil

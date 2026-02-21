@@ -67,7 +67,7 @@ func WriteStatusConfigMap(ctx context.Context, c client.Client, namespace, crNam
 		return fmt.Errorf("marshaling status: %w", err)
 	}
 
-	for attempt := 0; attempt < 3; attempt++ {
+	for range 3 {
 		cm := &corev1.ConfigMap{}
 		err := c.Get(ctx, key, cm)
 

@@ -9,19 +9,19 @@ import (
 
 // Config holds the agent runtime configuration loaded from env vars and mounted files.
 type Config struct {
-	PodName       string
-	PodNamespace  string
-	GatewayName   string
-	CRName        string
-	CRNamespace   string
-	RepoPath      string
-	DataPath      string
-	GatewayPort   string
-	GatewayTLS    bool
-	APIKeyFile    string
-	SyncPeriod    int // seconds
-	GitTokenFile  string
-	GitSSHKeyFile string
+	PodName         string
+	PodNamespace    string
+	GatewayName     string
+	CRName          string
+	CRNamespace     string
+	RepoPath        string
+	DataPath        string
+	GatewayPort     string
+	GatewayTLS      bool
+	APIKeyFile      string
+	SyncPeriod      int // seconds
+	GitTokenFile    string
+	GitSSHKeyFile   string
 	ServicePath     string // optional: repo subdirectory to sync
 	SystemName      string // optional: systemName for config normalization
 	SyncProfileName string // optional: SyncProfile CR name
@@ -30,17 +30,17 @@ type Config struct {
 // LoadConfig reads agent configuration from environment variables.
 func LoadConfig() (*Config, error) {
 	cfg := &Config{
-		PodName:       os.Getenv("POD_NAME"),
-		PodNamespace:  os.Getenv("POD_NAMESPACE"),
-		GatewayName:   os.Getenv("GATEWAY_NAME"),
-		CRName:        os.Getenv("CR_NAME"),
-		CRNamespace:   os.Getenv("CR_NAMESPACE"),
-		RepoPath:      os.Getenv("REPO_PATH"),
-		DataPath:      os.Getenv("DATA_PATH"),
-		GatewayPort:   os.Getenv("GATEWAY_PORT"),
-		APIKeyFile:    os.Getenv("API_KEY_FILE"),
-		GitTokenFile:  os.Getenv("GIT_TOKEN_FILE"),
-		GitSSHKeyFile: os.Getenv("GIT_SSH_KEY_FILE"),
+		PodName:         os.Getenv("POD_NAME"),
+		PodNamespace:    os.Getenv("POD_NAMESPACE"),
+		GatewayName:     os.Getenv("GATEWAY_NAME"),
+		CRName:          os.Getenv("CR_NAME"),
+		CRNamespace:     os.Getenv("CR_NAMESPACE"),
+		RepoPath:        os.Getenv("REPO_PATH"),
+		DataPath:        os.Getenv("DATA_PATH"),
+		GatewayPort:     os.Getenv("GATEWAY_PORT"),
+		APIKeyFile:      os.Getenv("API_KEY_FILE"),
+		GitTokenFile:    os.Getenv("GIT_TOKEN_FILE"),
+		GitSSHKeyFile:   os.Getenv("GIT_SSH_KEY_FILE"),
 		ServicePath:     os.Getenv("SERVICE_PATH"),
 		SystemName:      os.Getenv("SYSTEM_NAME"),
 		SyncProfileName: os.Getenv("SYNC_PROFILE"),

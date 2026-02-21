@@ -41,7 +41,7 @@ func (hs *HealthServer) Start(ctx context.Context) {
 
 	go func() {
 		<-ctx.Done()
-		hs.server.Close()
+		_ = hs.server.Close()
 	}()
 
 	log.Info("health server starting", "addr", hs.server.Addr)
@@ -52,25 +52,25 @@ func (hs *HealthServer) Start(ctx context.Context) {
 
 func (hs *HealthServer) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("ok"))
+	_, _ = w.Write([]byte("ok"))
 }
 
 func (hs *HealthServer) handleReadyz(w http.ResponseWriter, _ *http.Request) {
 	if hs.initialSyncDone.Load() {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	} else {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte("not ready"))
+		_, _ = w.Write([]byte("not ready"))
 	}
 }
 
 func (hs *HealthServer) handleStartupz(w http.ResponseWriter, _ *http.Request) {
 	if hs.initialSyncDone.Load() {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	} else {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte("starting"))
+		_, _ = w.Write([]byte("starting"))
 	}
 }

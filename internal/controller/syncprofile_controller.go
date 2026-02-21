@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -104,12 +105,7 @@ func validatePath(p, field string) error {
 
 // containsTraversal checks for ".." path components.
 func containsTraversal(p string) bool {
-	for _, part := range strings.Split(filepath.ToSlash(p), "/") {
-		if part == ".." {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(strings.Split(filepath.ToSlash(p), "/"), "..")
 }
 
 // setProfileCondition sets a condition on the SyncProfile's status.

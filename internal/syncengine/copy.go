@@ -24,13 +24,13 @@ func copyFile(src, dst string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("opening source %s: %w", src, err)
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
 	out, err := os.Create(dst)
 	if err != nil {
 		return false, fmt.Errorf("creating destination %s: %w", dst, err)
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	if _, err := io.Copy(out, in); err != nil {
 		return false, fmt.Errorf("copying %s to %s: %w", src, dst, err)
@@ -70,7 +70,7 @@ func sha256File(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {

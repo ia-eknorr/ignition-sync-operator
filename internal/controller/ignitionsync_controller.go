@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -343,14 +344,7 @@ func resolveAuthType(auth *syncv1alpha1.GitAuthSpec) string {
 
 // joinCSV joins strings with commas.
 func joinCSV(items []string) string {
-	result := ""
-	for i, item := range items {
-		if i > 0 {
-			result += ","
-		}
-		result += item
-	}
-	return result
+	return strings.Join(items, ",")
 }
 
 // setCondition sets a condition on the CR's status.

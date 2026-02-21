@@ -160,7 +160,9 @@ func TestBuildSyncPlan_RequiredMissing(t *testing.T) {
 	repoPath := filepath.Join(tmp, "repo")
 	liveDir := filepath.Join(tmp, "live")
 
-	os.MkdirAll(repoPath, 0755)
+	if err := os.MkdirAll(repoPath, 0755); err != nil {
+		t.Fatal(err)
+	}
 
 	profile := &syncv1alpha1.SyncProfileSpec{
 		Mappings: []syncv1alpha1.SyncMapping{

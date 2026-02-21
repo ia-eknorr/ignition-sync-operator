@@ -199,7 +199,7 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 	var err error
 
 	if a.Config.HasSyncProfile() {
-		syncResult, profileName, isDryRun, err = a.syncWithProfile(ctx, commit, ref)
+		syncResult, profileName, isDryRun, err = a.syncWithProfile(ctx)
 	} else {
 		srcRoot := a.Config.SourceRoot()
 		dstRoot := a.Config.DataPath
@@ -288,7 +288,7 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 
 // syncWithProfile fetches the SyncProfile, builds a plan, and executes it.
 // Returns the sync result, profile name, dry-run flag, and any error.
-func (a *Agent) syncWithProfile(ctx context.Context, commit, ref string) (*syncengine.SyncResult, string, bool, error) {
+func (a *Agent) syncWithProfile(ctx context.Context) (*syncengine.SyncResult, string, bool, error) {
 	log := logf.FromContext(ctx).WithName("profile-sync")
 	profileName := a.Config.SyncProfileName
 

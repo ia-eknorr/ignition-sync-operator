@@ -94,7 +94,7 @@ func (e *Engine) ExecutePlan(plan *SyncPlan) (*SyncResult, error) {
 	}
 
 	// Phase 3: Cleanup staging.
-	os.RemoveAll(plan.StagingDir)
+	_ = os.RemoveAll(plan.StagingDir)
 
 	result.ProjectsSynced = discoverProjects(plan.LiveDir)
 	result.Duration = time.Since(start)
@@ -242,7 +242,7 @@ func mergeStagingToLive(stagingDir, liveDir string) (added, modified int, err er
 		}
 		return nil
 	})
-	return
+	return added, modified, err
 }
 
 // cleanOrphans removes files in live that are under managed roots but not in staging.
