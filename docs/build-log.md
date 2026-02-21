@@ -67,7 +67,7 @@ DiscoveredGateway, GatewaySnapshot, SyncHistoryEntry
 
 ---
 
-## Phase 2: Controller Core — PVC, Git & Finalizer
+## Phase 2: Controller Core — Git ls-remote & Finalizer
 
 | # | Step | Status | Notes |
 |---|------|--------|-------|
@@ -93,14 +93,20 @@ DiscoveredGateway, GatewaySnapshot, SyncHistoryEntry
 - `config/rbac/role.yaml` — Auto-generated RBAC with PVC/ConfigMap/Secret/Event permissions
 
 **Design decisions:**
-- Non-blocking git via `sync.Map` + goroutine: first reconcile launches clone, subsequent reconciles check result
-- Git operations have 2m context timeout; controller requeues every 5s while git is in flight
+- Controller resolves refs via `git ls-remote` (no clone, no PVC, no emptyDir)
+- Agent sidecar clones repo independently to local emptyDir `/repo`
+- Communication via ConfigMaps only (metadata + status), no shared PVC
 - `GenerationChangedPredicate` on primary watch prevents status-update reconcile storms
-- `MaxConcurrentReconciles: 5` so one slow clone doesn't block other CRs
-- Controller owns PVCs and ConfigMaps (garbage collected on CR deletion)
-- Finalizer explicitly cleans ConfigMaps (metadata, status, changes); PVC is GC'd by owner ref
+- `MaxConcurrentReconciles: 5` so one slow ref resolution doesn't block other CRs
+- Controller owns metadata ConfigMaps (garbage collected on CR deletion)
+- Finalizer explicitly cleans ConfigMaps (metadata, status, changes)
 - Webhook-requested ref override via annotation takes precedence over spec.git.ref
 - GitHub App auth stubbed but not implemented (deferred)
+
+> **Architecture pivot (applied retroactively):** Originally used PVC + controller clone + async goroutine.
+> Pivoted to ls-remote + agent-independent clone before Phase 6. Removed `internal/storage/pvc.go`,
+> `sync.Map`, emptyDir on controller. Renamed conditions: `RepoCloneStatus` → `RefResolutionStatus`,
+> `RepoCloned` → `RefResolved`. StorageSpec deprecated then removed in Phase 6.
 
 ---
 
@@ -133,37 +139,7 @@ DiscoveredGateway, GatewaySnapshot, SyncHistoryEntry
 
 ---
 
-## Phase 4: Webhook Receiver
-
-| # | Step | Status | Notes |
-|---|------|--------|-------|
-| 1 | Create `internal/webhook/hmac.go` | done | HMAC-SHA256 with `crypto/subtle.ConstantTimeCompare` |
-| 2 | Create `internal/webhook/receiver.go` | done | HTTP handler, 4 payload formats, CR annotation, `manager.Runnable` |
-| 3 | Wire webhook into `cmd/controller/main.go` | done | `--webhook-receiver-port` flag, `WEBHOOK_HMAC_SECRET` env var |
-| 4 | Write HMAC tests | done | 4 tests: valid, invalid, missing prefix, empty secret |
-| 5 | Write receiver tests | done | 12 tests: payload parsing (4 formats + empty + invalid), HTTP handler (accept, 404, 401, valid HMAC, annotation, duplicate, bad payload, HMAC-before-lookup) |
-| 6 | Verify `make build` | done | Both binaries compile |
-| 7 | Verify `make test` | done | Controller 82.5%, webhook 75.0% |
-
-**Key files created/modified:**
-- `internal/webhook/hmac.go` — HMAC-SHA256 validation with constant-time comparison
-- `internal/webhook/receiver.go` — HTTP server implementing `manager.Runnable`, auto-detects GitHub/ArgoCD/Kargo/Generic payloads, annotates CR with requested-ref/at/by
-- `internal/webhook/hmac_test.go` — 4 HMAC unit tests
-- `internal/webhook/receiver_test.go` — 12 tests: payload parsing + HTTP handler with fake k8s client
-- `cmd/controller/main.go` — Registers webhook receiver as `mgr.Add(Runnable)`, flag for port, env var for HMAC secret
-
-**Design decisions:**
-- Standard library `net/http` routing (Go 1.22+ patterns: `POST /webhook/{namespace}/{crName}`)
-- Implements `manager.Runnable` for lifecycle management (starts/stops with controller-runtime manager)
-- Global HMAC secret via `WEBHOOK_HMAC_SECRET` env var — validated before any CR lookup to prevent enumeration
-- Per-CR `spec.webhook.secretRef` deferred (chicken-and-egg: can't read per-CR secret before CR lookup)
-- Annotation-based trigger (not spec mutation) — avoids conflicts with GitOps controllers like ArgoCD
-- Duplicate ref requests return 200 OK (idempotent), new refs return 202 Accepted
-- 1 MiB payload limit via `io.LimitReader`
-
----
-
-## Phase 3a: SyncProfile CRD
+## Phase 4: SyncProfile CRD
 
 | # | Step | Status | Notes |
 |---|------|--------|-------|
@@ -191,16 +167,16 @@ DiscoveredGateway, GatewaySnapshot, SyncHistoryEntry
 - `pkg/conditions/conditions.go` — Added TypeAccepted, ReasonValidationPassed, ReasonValidationFailed
 - `config/rbac/role.yaml` — Auto-generated with syncprofiles permissions
 
-**Lab 03a results (kind cluster, 16/16 checks):**
-- 3A.1: CRD installed, short name `sp` works
-- 3A.2: Valid profile → Accepted=True, observedGeneration=1
-- 3A.3: Path traversal → Accepted=False
-- 3A.4: Absolute path → Accepted=False
-- 3A.5–3A.7: Gateway discovery with sync-profile annotation, gatewayCount updates
-- 3A.8–3A.9: Profile update triggers reconcile, deletion degrades gracefully
-- 3A.10, 3A.12–3A.15: Optional fields (paused, dependsOn, vars, dryRun, required) roundtrip correctly
-- 3A.16: ref-override annotation preserved on discovered gateways
-- 3A.17: Ignition health check passes, operator 0 restarts, 0 errors
+**Lab 04 results (kind cluster, 16/16 checks):**
+- 4.1: CRD installed, short name `sp` works
+- 4.2: Valid profile → Accepted=True, observedGeneration=1
+- 4.3: Path traversal → Accepted=False
+- 4.4: Absolute path → Accepted=False
+- 4.5–4.7: Gateway discovery with sync-profile annotation, gatewayCount updates
+- 4.8–4.9: Profile update triggers reconcile, deletion degrades gracefully
+- 4.10, 4.12–4.15: Optional fields (paused, dependsOn, vars, dryRun, required) roundtrip correctly
+- 4.16: ref-override annotation preserved on discovered gateways
+- 4.17: Ignition health check passes, operator 0 restarts, 0 errors
 
 **Design decisions:**
 - SyncProfile is a passive CRD — controller validates spec and sets Accepted condition, no reconciliation loop beyond validation
@@ -210,32 +186,108 @@ DiscoveredGateway, GatewaySnapshot, SyncHistoryEntry
 
 ---
 
-## Phase 5: Sync Agent
+## Phase 5: Webhook Receiver
 
 | # | Step | Status | Notes |
 |---|------|--------|-------|
-| 1 | Agent binary (cmd/agent/main.go) | pending | |
-| 2 | ConfigMap watcher | pending | |
-| 3 | File copy from PVC to /ignition-data/ | pending | |
-| 4 | Config normalization (systemName) | pending | |
-| 5 | Ignition scan API integration | pending | |
-| 6 | .resources/ protection | pending | |
-| 7 | Tests | pending | |
+| 1 | Create `internal/webhook/hmac.go` | done | HMAC-SHA256 with `crypto/subtle.ConstantTimeCompare` |
+| 2 | Create `internal/webhook/receiver.go` | done | HTTP handler, 4 payload formats, CR annotation, `manager.Runnable` |
+| 3 | Wire webhook into `cmd/controller/main.go` | done | `--webhook-receiver-port` flag, `WEBHOOK_HMAC_SECRET` env var |
+| 4 | Write HMAC tests | done | 4 tests: valid, invalid, missing prefix, empty secret |
+| 5 | Write receiver tests | done | 12 tests: payload parsing (4 formats + empty + invalid), HTTP handler (accept, 404, 401, valid HMAC, annotation, duplicate, bad payload, HMAC-before-lookup) |
+| 6 | Verify `make build` | done | Both binaries compile |
+| 7 | Verify `make test` | done | Controller 82.5%, webhook 75.0% |
+
+**Key files created/modified:**
+- `internal/webhook/hmac.go` — HMAC-SHA256 validation with constant-time comparison
+- `internal/webhook/receiver.go` — HTTP server implementing `manager.Runnable`, auto-detects GitHub/ArgoCD/Kargo/Generic payloads, annotates CR with requested-ref/at/by
+- `internal/webhook/hmac_test.go` — 4 HMAC unit tests
+- `internal/webhook/receiver_test.go` — 12 tests: payload parsing + HTTP handler with fake k8s client
+- `cmd/controller/main.go` — Registers webhook receiver as `mgr.Add(Runnable)`, flag for port, env var for HMAC secret
+
+**Design decisions:**
+- Standard library `net/http` routing (Go 1.22+ patterns: `POST /webhook/{namespace}/{crName}`)
+- Implements `manager.Runnable` for lifecycle management (starts/stops with controller-runtime manager)
+- Global HMAC secret via `WEBHOOK_HMAC_SECRET` env var — validated before any CR lookup to prevent enumeration
+- Annotation-based trigger (not spec mutation) — avoids conflicts with GitOps controllers like ArgoCD
+- Duplicate ref requests return 200 OK (idempotent), new refs return 202 Accepted
+- 1 MiB payload limit via `io.LimitReader`
 
 ---
 
-## Phase 6: Sidecar Injection Webhook
+## Phase 6: Sync Agent
+
+| # | Step | Status | Notes |
+|---|------|--------|-------|
+| 1 | Implement sync engine (`internal/syncengine/`) | done | Two-phase sync: copy changed files (SHA-256 diffing), delete orphans (managed-path-only) |
+| 2 | Implement exclude patterns | done | `doublestar/v4` for `**` glob support, hardcoded `.sync-staging` exclude |
+| 3 | Implement `.resources/` protection | done | Protected path patterns prevent sync/deletion of `.resources/` directories |
+| 4 | Implement Ignition API client (`internal/ignition/`) | done | Scan trigger (projects first, then config), 3 retries, graceful failure |
+| 5 | Implement agent config (`internal/agent/config.go`) | done | Env var loading, file-based auth readers, defaults |
+| 6 | Implement ConfigMap read/write (`internal/agent/configmap.go`) | done | Metadata read, status write with optimistic concurrency (3 retries on conflict) |
+| 7 | Implement ConfigMap watcher (`internal/agent/watcher.go`) | done | Poll-based (3s interval) with ResourceVersion tracking + fallback timer |
+| 8 | Implement health endpoints (`internal/agent/health.go`) | done | `/healthz`, `/readyz`, `/startupz` on `:8082` |
+| 9 | Implement agent orchestration (`internal/agent/agent.go`) | done | Main loop: metadata → clone → sync → scan → status, smart skip on unchanged commit |
+| 10 | Rewrite agent entry point (`cmd/agent/main.go`) | done | Full wiring replacing stub |
+| 11 | Update controller metadata ConfigMap | done | Added `gitURL`, `paused`, `authType`, `excludePatterns`, `gatewayPort`, `gatewayTLS` |
+| 12 | Update Dockerfile for dual binaries | done | Builds both `manager` and `agent` |
+| 13 | Add agent RBAC | done | `config/rbac/agent_role.yaml` — ConfigMap CRUD, CR read |
+| 14 | Remove deprecated StorageSpec | done | Removed from CRD types, regenerated CRD YAML |
+| 15 | Lab 06 verification | done | 5/5 automated checks pass + full integration test |
+
+**Key files created:**
+- `internal/syncengine/engine.go` — Two-phase sync engine (copy changed → delete orphans)
+- `internal/syncengine/copy.go` — SHA-256 file diffing and copy
+- `internal/syncengine/exclude.go` — Doublestar glob exclude patterns + protected paths
+- `internal/ignition/client.go` — Ignition gateway API client (scan trigger, health check)
+- `internal/agent/config.go` — Env var config loading, file-based credential readers
+- `internal/agent/configmap.go` — ConfigMap read (metadata) and write (status) with retry
+- `internal/agent/watcher.go` — ConfigMap poller (3s) + fallback timer
+- `internal/agent/health.go` — HTTP health server (`:8082`)
+- `internal/agent/agent.go` — Main agent orchestration loop
+- `config/rbac/agent_role.yaml` — Agent ClusterRole + ClusterRoleBinding
+
+**Key files modified:**
+- `cmd/agent/main.go` — Rewritten from stub to full entry point with K8s client wiring
+- `internal/controller/ignitionsync_controller.go` — `ensureMetadataConfigMap` adds agent-needed fields, `resolveAuthType` + `joinCSV` helpers
+- `Dockerfile` — Builds both controller and agent binaries
+- `api/v1alpha1/ignitionsync_types.go` — Removed `StorageSpec` type and `Storage` field
+- `api/v1alpha1/zz_generated.deepcopy.go` — Regenerated
+- `config/crd/bases/sync.ignition.io_ignitionsyncs.yaml` — Regenerated without storage fields
+- `go.mod` / `go.sum` — Added `github.com/bmatcuk/doublestar/v4 v4.10.0`
+
+**Lab 06 results (kind cluster):**
+- 6.1 (Agent Binary Smoke Test): PASS — agent starts, clones 1766 files, enters watch loop
+- 6.2 (File Sync): PASS — files synced to `/ignition-data`, `.resources/` not synced, `.git/` not synced
+- 6.3 (Status Reporting): PASS — ConfigMap has correct JSON with all fields
+- 6.4 (Re-Sync on ConfigMap Change): PASS — detected commit change on ref switch, synced 10 modified + 1 deleted
+- 6.5 (Scan API Graceful Failure): PASS — error status reported, pod still Running, files still synced
+- Full integration: PASS — Controller Ready=True, AllGatewaysSynced=True (1/1)
+
+**Design decisions:**
+- 3-layer architecture: `syncengine` (generic, K8s-unaware) → `agent` (K8s integration) → `ignition` (gateway hooks)
+- Agent clones repo independently to local emptyDir `/repo` (no shared PVC with controller)
+- Controller → Agent communication via metadata ConfigMap; Agent → Controller via status ConfigMap
+- File-based auth: agent reads credentials from mounted secret files, not K8s API
+- Poll-based ConfigMap watching (3s) over full informer for simplicity
+- Smart sync skip: doesn't re-sync when commit is unchanged
+- Scan API fires projects before config (order matters for Ignition), fire-and-forget with retries
+- `doublestar/v4` for `**` glob matching in exclude patterns
+
+---
+
+## Phase 7: Sidecar Injection Webhook
 
 | # | Step | Status | Notes |
 |---|------|--------|-------|
 | 1 | Mutating admission webhook | pending | |
-| 2 | Inject agent + shared PVC volume | pending | |
+| 2 | Inject agent + shared volume | pending | |
 | 3 | Cert management | pending | |
 | 4 | Tests | pending | |
 
 ---
 
-## Phase 7: Helm Chart
+## Phase 8: Helm Chart
 
 | # | Step | Status | Notes |
 |---|------|--------|-------|
@@ -246,7 +298,7 @@ DiscoveredGateway, GatewaySnapshot, SyncHistoryEntry
 
 ---
 
-## Phase 8: Observability & Polish
+## Phase 9: Observability & Polish
 
 | # | Step | Status | Notes |
 |---|------|--------|-------|
