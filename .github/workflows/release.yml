@@ -15,19 +15,20 @@ jobs:
   build-images:
     strategy:
       matrix:
+        image_name: [stoker-operator, stoker-agent]
+        arch: [amd64, arm64]
         include:
-          - name: controller
+          - image_name: stoker-operator
             file: Dockerfile
-            image_name: stoker-operator
-          - name: agent
+          - image_name: stoker-agent
             file: Dockerfile.agent
-            image_name: stoker-agent
-        platform:
-          - runner: ubuntu-latest
-            arch: linux/amd64
-          - runner: ubuntu-24.04-arm
-            arch: linux/arm64
-    runs-on: ${{ matrix.platform.runner }}
+          - arch: amd64
+            runner: ubuntu-latest
+            platform: linux/amd64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    runs-on: ${{ matrix.runner }}
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -53,10 +54,10 @@ jobs:
         with:
           context: .
           file: ${{ matrix.file }}
-          platforms: ${{ matrix.platform.arch }}
+          platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image_name }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image_name }}:buildcache-${{ matrix.platform.arch == 'linux/amd64' && 'amd64' || 'arm64' }}
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image_name }}:buildcache-${{ matrix.platform.arch == 'linux/amd64' && 'amd64' || 'arm64' }},mode=max
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image_name }}:buildcache-${{ matrix.arch }}
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image_name }}:buildcache-${{ matrix.arch }},mode=max
 
       - name: Export digest
         run: |
@@ -67,7 +68,7 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@v4
         with:
-          name: digest-${{ matrix.image_name }}-${{ matrix.platform.arch == 'linux/amd64' && 'amd64' || 'arm64' }}
+          name: digest-${{ matrix.image_name }}-${{ matrix.arch }}
           path: /tmp/digests/${{ matrix.image_name }}
           if-no-files-found: error
           retention-days: 1
