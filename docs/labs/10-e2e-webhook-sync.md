@@ -16,7 +16,7 @@ Unlike Lab 06 (which manually patches StatefulSets with the sidecar), this lab u
 export E2E_NS=e2e-webhook
 export OPERATOR_NS=ignition-sync-operator-system
 export GIT_REPO_URL=https://github.com/ia-eknorr/test-ignition-project.git
-export API_TOKEN="ignition-api-key:CYCSdRgW6MHYkeIXhH-BMqo1oaqfTdFi8tXvHJeCKmY"
+export API_TOKEN="ignition-api-key:<your-api-token>"
 ```
 
 ---
@@ -98,7 +98,7 @@ kubectl create secret generic git-token-secret -n $E2E_NS \
 
 # Create API key secret (for agent → gateway API calls)
 kubectl create secret generic ignition-api-key -n $E2E_NS \
-  --from-literal=apiKey="ignition-api-key:CYCSdRgW6MHYkeIXhH-BMqo1oaqfTdFi8tXvHJeCKmY"
+  --from-literal=apiKey="ignition-api-key:<your-api-token>"
 
 # Create API token config (for Ignition gateway to recognize the API key)
 kubectl create configmap ignition-api-token-config -n $E2E_NS \

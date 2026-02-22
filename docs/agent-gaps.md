@@ -71,8 +71,8 @@ Checklist of remaining work from [06a-agent-development-plan.md](architecture/06
 - [x] 7.1 Symlink guard — all walks use `WalkDir` + `Lstat`; symlinks are skipped everywhere
 - [ ] 7.2 Max template path length (4096 chars)
 - [ ] 7.2 Secret file paths via env vars — plan recommended hardcoded mount paths to avoid `/proc` leakage (S-H2); current impl exposes `API_KEY_FILE`, `GIT_TOKEN_FILE`, `GIT_SSH_KEY_FILE`
-- [ ] 7.3 `readOnlyRootFilesystem` compatibility — `/tmp` emptyDir, `TMPDIR` env var (deployment config)
-- [ ] 7.4 Container security context — `runAsNonRoot`, `readOnlyRootFilesystem`, drop `ALL` caps (deployment config)
+- [x] 7.3 `readOnlyRootFilesystem` compatibility — sidecar injected with `readOnlyRootFilesystem: true`; controller Helm chart has `/tmp` emptyDir
+- [x] 7.4 Container security context — sidecar injected with `runAsNonRoot`, `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, drop `ALL` caps, `RuntimeDefault` seccomp
 
 ## Phase 8 — Controller Integration
 

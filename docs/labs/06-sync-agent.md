@@ -74,7 +74,7 @@ kubectl -n ignition-test port-forward pod/ignition-blue-gateway-0 8088:8088 &
 kubectl -n ignition-test port-forward pod/ignition-red-gateway-0 8089:8088 &
 sleep 5
 
-export API_TOKEN="ignition-api-key:CYCSdRgW6MHYkeIXhH-BMqo1oaqfTdFi8tXvHJeCKmY"
+export API_TOKEN="ignition-api-key:<your-api-token>"
 ```
 
 ### What to Verify

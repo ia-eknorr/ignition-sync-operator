@@ -20,9 +20,9 @@ is limited.
 
 ### Remaining for v0.1.0
 
-- M1: Webhook receiver HMAC signature validation (currently accepts all requests)
-- M2: Agent Dockerfile health endpoint (liveness/readiness for the sidecar)
-- M3: Structured logging alignment (controller uses `logr`, agent should match)
+- ~~M1: Webhook receiver HMAC signature validation~~ — done (PR #19)
+- ~~M2: Agent health probes (liveness/readiness/startup for the sidecar)~~ — done (PR #20)
+- ~~M3: Structured logging alignment (controller and agent both use logr/zap)~~ — done (PR #21)
 - M4: Helm chart values documentation via helm-docs
 - M5: Integration test for full sync cycle (controller + agent in kind)
 

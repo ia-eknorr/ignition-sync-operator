@@ -288,7 +288,7 @@ var _ = Describe("SyncProfile Controller", func() {
 			profile := &syncv1alpha1.SyncProfile{}
 			Expect(k8sClient.Get(ctx, nn, profile)).To(Succeed())
 
-			cond := findCondition(profile, conditions.TypeAccepted)
+			cond := findAcceptedCondition(profile)
 			Expect(cond).NotTo(BeNil())
 			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(cond.Reason).To(Equal(conditions.ReasonCycleDetected))
@@ -331,7 +331,7 @@ var _ = Describe("SyncProfile Controller", func() {
 			profile := &syncv1alpha1.SyncProfile{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: profileA, Namespace: "default"}, profile)).To(Succeed())
 
-			cond := findCondition(profile, conditions.TypeAccepted)
+			cond := findAcceptedCondition(profile)
 			Expect(cond).NotTo(BeNil())
 			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(cond.Reason).To(Equal(conditions.ReasonCycleDetected))
@@ -374,7 +374,7 @@ var _ = Describe("SyncProfile Controller", func() {
 			profile := &syncv1alpha1.SyncProfile{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-tri-a", Namespace: "default"}, profile)).To(Succeed())
 
-			cond := findCondition(profile, conditions.TypeAccepted)
+			cond := findAcceptedCondition(profile)
 			Expect(cond).NotTo(BeNil())
 			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(cond.Reason).To(Equal(conditions.ReasonCycleDetected))
@@ -411,7 +411,7 @@ var _ = Describe("SyncProfile Controller", func() {
 			profile := &syncv1alpha1.SyncProfile{}
 			Expect(k8sClient.Get(ctx, nn, profile)).To(Succeed())
 
-			cond := findCondition(profile, conditions.TypeAccepted)
+			cond := findAcceptedCondition(profile)
 			Expect(cond).NotTo(BeNil())
 			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(cond.Reason).To(Equal(conditions.ReasonDependencyNotFound))
@@ -457,7 +457,7 @@ var _ = Describe("SyncProfile Controller", func() {
 			profile := &syncv1alpha1.SyncProfile{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: child, Namespace: "default"}, profile)).To(Succeed())
 
-			cond := findCondition(profile, conditions.TypeAccepted)
+			cond := findAcceptedCondition(profile)
 			Expect(cond).NotTo(BeNil())
 			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 			Expect(cond.Reason).To(Equal(conditions.ReasonValidationPassed))
@@ -465,10 +465,10 @@ var _ = Describe("SyncProfile Controller", func() {
 	})
 })
 
-// findCondition returns the condition with the given type, or nil.
-func findCondition(profile *syncv1alpha1.SyncProfile, condType string) *metav1.Condition {
+// findAcceptedCondition returns the Accepted condition, or nil.
+func findAcceptedCondition(profile *syncv1alpha1.SyncProfile) *metav1.Condition {
 	for i := range profile.Status.Conditions {
-		if profile.Status.Conditions[i].Type == condType {
+		if profile.Status.Conditions[i].Type == conditions.TypeAccepted {
 			return &profile.Status.Conditions[i]
 		}
 	}

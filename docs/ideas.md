@@ -120,19 +120,9 @@ Ideas captured from removed CRD types and architecture docs. These were defined 
 
 ---
 
-## Agent Image Configuration via CRD
+## ~~Agent Image Configuration via CRD~~ (Implemented)
 
-**What:** Let users configure the sync agent container image (repository, tag, pull policy, digest) via the IgnitionSync CRD.
-
-**Why:** Enables pinning agent versions, using private registries, or running canary agent versions on specific gateways.
-
-**Design considerations:**
-- Image reference: repository + tag, or repository + digest for supply chain security
-- Pull policy: IfNotPresent, Always, Never
-- Resource limits/requests for the agent container
-- Would be consumed by the mutating webhook during sidecar injection
-
-**When to consider:** When the mutating webhook for sidecar injection is implemented.
+Implemented via 3-tier image resolution in the mutating webhook: pod annotation > CR `spec.agent.image` > env `DEFAULT_AGENT_IMAGE`. Supports repository, tag, pull policy, and resource limits/requests. See `internal/webhook/inject.go` and `api/v1alpha1/ignitionsync_types.go` (`AgentImageSpec`).
 
 ---
 
