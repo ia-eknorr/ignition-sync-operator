@@ -23,7 +23,7 @@ import (
 const (
 	agentContainerName = "sync-agent"
 
-	defaultAgentImage = "ghcr.io/inductiveautomation/ignition-sync-agent:latest"
+	defaultAgentImage = "ghcr.io/ia-eknorr/ignition-sync-agent:latest"
 
 	// Volume names injected by the webhook.
 	volumeSyncRepo       = "sync-repo"

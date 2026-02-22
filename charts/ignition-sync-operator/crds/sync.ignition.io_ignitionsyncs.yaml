@@ -70,7 +70,7 @@ spec:
                         description: pullPolicy is the image pull policy.
                         type: string
                       repository:
-                        default: ghcr.io/inductiveautomation/ignition-sync-agent
+                        default: ghcr.io/ia-eknorr/ignition-sync-agent
                         description: repository is the container image repository.
                         type: string
                       tag:

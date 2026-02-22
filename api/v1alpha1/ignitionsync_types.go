@@ -140,7 +140,7 @@ type AgentSpec struct {
 // AgentImageSpec configures the agent container image.
 type AgentImageSpec struct {
 	// repository is the container image repository.
-	// +kubebuilder:default="ghcr.io/inductiveautomation/ignition-sync-agent"
+	// +kubebuilder:default="ghcr.io/ia-eknorr/ignition-sync-agent"
 	// +optional
 	Repository string `json:"repository,omitempty"`
 
