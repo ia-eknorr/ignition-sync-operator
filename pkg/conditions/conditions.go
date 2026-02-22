@@ -33,4 +33,6 @@ const (
 	ReasonValidationFailed    = "ValidationFailed"
 	ReasonSidecarMissing      = "SidecarMissing"
 	ReasonSidecarPresent      = "SidecarPresent"
+	ReasonCycleDetected       = "CycleDetected"
+	ReasonDependencyNotFound  = "DependencyNotFound"
 )

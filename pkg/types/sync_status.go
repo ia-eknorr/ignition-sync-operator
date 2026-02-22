@@ -61,4 +61,7 @@ type GatewayStatus struct {
 
 	// DryRunDiffDeleted is the count of files that would be removed.
 	DryRunDiffDeleted int32 `json:"dryRunDiffDeleted,omitempty"`
+
+	// DesignerSessionsBlocked indicates the agent is waiting for designer sessions to close.
+	DesignerSessionsBlocked bool `json:"designerSessionsBlocked,omitempty"`
 }

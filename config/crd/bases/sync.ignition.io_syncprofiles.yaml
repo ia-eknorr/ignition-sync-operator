@@ -99,6 +99,17 @@ spec:
                 - name
                 - source
                 type: object
+              designerSessionPolicy:
+                default: proceed
+                description: |-
+                  designerSessionPolicy controls sync behavior when Ignition Designer
+                  sessions are active. "proceed" (default) logs a warning and continues,
+                  "wait" retries until sessions close (up to 5 min), "fail" aborts the sync.
+                enum:
+                - proceed
+                - wait
+                - fail
+                type: string
               dryRun:
                 description: |-
                   dryRun causes the agent to sync to a staging directory without

@@ -51,6 +51,14 @@ type SyncProfileSpec struct {
 	// +optional
 	DryRun bool `json:"dryRun,omitempty"`
 
+	// designerSessionPolicy controls sync behavior when Ignition Designer
+	// sessions are active. "proceed" (default) logs a warning and continues,
+	// "wait" retries until sessions close (up to 5 min), "fail" aborts the sync.
+	// +kubebuilder:default="proceed"
+	// +kubebuilder:validation:Enum=proceed;wait;fail
+	// +optional
+	DesignerSessionPolicy string `json:"designerSessionPolicy,omitempty"`
+
 	// paused halts sync for all gateways referencing this profile.
 	// +optional
 	Paused bool `json:"paused,omitempty"`

@@ -40,6 +40,9 @@ func (r *SyncProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err := validateSyncProfile(&profile); err != nil {
 		log.Info("SyncProfile validation failed", "name", profile.Name, "error", err.Error())
 		setProfileCondition(&profile, conditions.TypeAccepted, metav1.ConditionFalse, conditions.ReasonValidationFailed, err.Error())
+	} else if err := r.validateDependencies(ctx, &profile); err != nil {
+		log.Info("SyncProfile dependency validation failed", "name", profile.Name, "error", err.Error())
+		setProfileCondition(&profile, conditions.TypeAccepted, metav1.ConditionFalse, err.reason, err.Error())
 	} else {
 		setProfileCondition(&profile, conditions.TypeAccepted, metav1.ConditionTrue, conditions.ReasonValidationPassed, "Profile spec is valid")
 	}
@@ -113,6 +116,109 @@ func setProfileCondition(profile *syncv1alpha1.SyncProfile, condType string, sta
 		}
 	}
 	profile.Status.Conditions = append(profile.Status.Conditions, condition)
+}
+
+// dependencyError is a validation error that carries its own condition reason.
+type dependencyError struct {
+	reason  string
+	message string
+}
+
+func (e *dependencyError) Error() string { return e.message }
+
+// validateDependencies checks for missing dependency references and cycles.
+func (r *SyncProfileReconciler) validateDependencies(ctx context.Context, profile *syncv1alpha1.SyncProfile) *dependencyError {
+	if len(profile.Spec.DependsOn) == 0 {
+		return nil
+	}
+
+	// List all profiles in the namespace to build the adjacency map.
+	var profileList syncv1alpha1.SyncProfileList
+	if err := r.List(ctx, &profileList, client.InNamespace(profile.Namespace)); err != nil {
+		return &dependencyError{
+			reason:  conditions.ReasonValidationFailed,
+			message: fmt.Sprintf("listing profiles for dependency check: %v", err),
+		}
+	}
+
+	// Build adjacency map: name → []dependsOn names.
+	adj := make(map[string][]string, len(profileList.Items))
+	for i := range profileList.Items {
+		p := &profileList.Items[i]
+		deps := make([]string, len(p.Spec.DependsOn))
+		for j, d := range p.Spec.DependsOn {
+			deps[j] = d.ProfileName
+		}
+		adj[p.Name] = deps
+	}
+
+	// Check that all dependencies reference existing profiles.
+	for _, dep := range profile.Spec.DependsOn {
+		if _, exists := adj[dep.ProfileName]; !exists {
+			return &dependencyError{
+				reason:  conditions.ReasonDependencyNotFound,
+				message: fmt.Sprintf("dependency %q not found in namespace %s", dep.ProfileName, profile.Namespace),
+			}
+		}
+	}
+
+	// DFS cycle detection from this profile.
+	if cycle := detectCycle(profile.Name, adj); cycle != "" {
+		return &dependencyError{
+			reason:  conditions.ReasonCycleDetected,
+			message: fmt.Sprintf("dependency cycle detected: %s", cycle),
+		}
+	}
+
+	return nil
+}
+
+// detectCycle runs DFS from start and returns a cycle path string if found, or "" if none.
+func detectCycle(start string, adj map[string][]string) string {
+	const (
+		white = 0 // unvisited
+		gray  = 1 // in current recursion stack
+		black = 2 // fully explored
+	)
+
+	color := make(map[string]int)
+	parent := make(map[string]string)
+
+	var dfs func(node string) string
+	dfs = func(node string) string {
+		color[node] = gray
+		for _, dep := range adj[node] {
+			if color[dep] == gray {
+				// Back edge — build cycle path.
+				return buildCyclePath(dep, node, parent)
+			}
+			if color[dep] == white {
+				parent[dep] = node
+				if cycle := dfs(dep); cycle != "" {
+					return cycle
+				}
+			}
+		}
+		color[node] = black
+		return ""
+	}
+
+	return dfs(start)
+}
+
+// buildCyclePath reconstructs the cycle from the back-edge target back to itself.
+func buildCyclePath(cycleNode, from string, parent map[string]string) string {
+	path := []string{cycleNode}
+	node := from
+	for node != cycleNode {
+		path = append([]string{node}, path...)
+		node = parent[node]
+	}
+	path = append([]string{cycleNode}, path...)
+	// Reverse to get forward order: cycleNode → ... → from → cycleNode
+	// Actually path is already: [cycleNode, ..., from, cycleNode]
+	// Let's build it properly.
+	return strings.Join(path, " → ")
 }
 
 // SetupWithManager sets up the SyncProfile controller with the Manager.

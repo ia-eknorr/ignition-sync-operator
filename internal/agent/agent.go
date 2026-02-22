@@ -224,9 +224,117 @@ func (a *Agent) handleSyncTrigger(ctx context.Context, gitURL string, auth trans
 	}
 
 	log.Info("git updated", "commit", result.Commit)
+
+	// Pre-sync designer session check.
+	profile, err := fetchSyncProfile(ctx, a.K8sClient, a.Config.CRNamespace, a.Config.SyncProfileName)
+	if err != nil {
+		log.Error(err, "failed to fetch SyncProfile for designer check")
+		a.reportError(ctx, result.Commit, result.Ref, fmt.Sprintf("fetching profile: %v", err))
+		return
+	}
+
+	if !profile.Paused && !profile.DryRun {
+		if blocked := a.checkDesignerSessions(ctx, profile.DesignerSessionPolicy, result.Commit, result.Ref); blocked {
+			return
+		}
+	}
+
 	if syncErr := a.syncOnce(ctx, result.Commit, result.Ref, false); syncErr != nil {
 		log.Error(syncErr, "sync had errors")
 	}
+}
+
+// checkDesignerSessions enforces the designer session policy before sync.
+// Returns true if the sync should be skipped (blocked or failed).
+func (a *Agent) checkDesignerSessions(ctx context.Context, policy, commit, ref string) bool {
+	log := logf.FromContext(ctx).WithName("designer-check")
+
+	if policy == "" {
+		policy = "proceed"
+	}
+
+	sessions, err := a.IgnitionAPI.GetDesignerSessions(ctx)
+	if err != nil {
+		log.Info("failed to query designer sessions (continuing sync)", "error", err)
+		return false
+	}
+
+	if len(sessions) == 0 {
+		return false
+	}
+
+	// Format session info for logging.
+	sessionInfo := formatDesignerSessions(sessions)
+
+	switch policy {
+	case "proceed":
+		log.Info("designer sessions active, proceeding per policy", "sessions", sessionInfo)
+		return false
+
+	case "fail":
+		log.Info("designer sessions active, aborting sync per policy", "sessions", sessionInfo)
+		a.reportError(ctx, commit, ref, fmt.Sprintf("designer sessions active (policy=fail): %s", sessionInfo))
+		return true
+
+	case "wait":
+		log.Info("designer sessions active, waiting for close", "sessions", sessionInfo)
+		a.setDesignerBlocked(ctx, true)
+		defer a.setDesignerBlocked(ctx, false)
+
+		// Retry every 10s for up to 5 minutes.
+		timeout := time.After(5 * time.Minute)
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return true
+			case <-timeout:
+				log.Info("timed out waiting for designer sessions to close", "sessions", sessionInfo)
+				a.reportError(ctx, commit, ref, fmt.Sprintf("designer sessions still active after 5m timeout: %s", sessionInfo))
+				return true
+			case <-ticker.C:
+				sessions, err = a.IgnitionAPI.GetDesignerSessions(ctx)
+				if err != nil {
+					log.Info("designer check failed during wait (continuing sync)", "error", err)
+					return false
+				}
+				if len(sessions) == 0 {
+					log.Info("designer sessions closed, proceeding with sync")
+					return false
+				}
+				log.V(1).Info("still waiting for designer sessions", "sessions", formatDesignerSessions(sessions))
+			}
+		}
+
+	default:
+		log.Info("unknown designer session policy, proceeding", "policy", policy)
+		return false
+	}
+}
+
+// setDesignerBlocked updates the DesignerSessionsBlocked field in the status ConfigMap.
+func (a *Agent) setDesignerBlocked(ctx context.Context, blocked bool) {
+	status := &synctypes.GatewayStatus{
+		SyncStatus:              synctypes.SyncStatusPending,
+		AgentVersion:            agentVersion,
+		LastSyncTime:            time.Now().UTC().Format(time.RFC3339),
+		DesignerSessionsBlocked: blocked,
+	}
+	if a.lastSyncedCommit != "" {
+		status.SyncedCommit = a.lastSyncedCommit
+	}
+	_ = WriteStatusConfigMap(ctx, a.K8sClient, a.Config.CRNamespace, a.Config.CRName, a.Config.GatewayName, status)
+}
+
+// formatDesignerSessions builds a human-readable summary of active sessions.
+func formatDesignerSessions(sessions []ignition.DesignerSession) string {
+	parts := make([]string, len(sessions))
+	for i, s := range sessions {
+		parts[i] = fmt.Sprintf("%s on %s", s.User, s.Project)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // syncOnce performs a single sync cycle: copy files, trigger scan, report status.
