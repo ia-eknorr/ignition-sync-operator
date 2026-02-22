@@ -1,123 +1,104 @@
-# ignition-sync-operator
-// TODO(user): Add simple overview of use/purpose
+# Ignition Sync Operator
 
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+A Kubernetes operator that continuously syncs Ignition gateway configuration from a Git repository. It resolves Git refs via `ls-remote`, discovers annotated gateway pods, and injects a sync agent sidecar that clones the repo and applies file mappings defined in `SyncProfile` resources.
 
-## Getting Started
+## Features
 
-### Prerequisites
-- go version v1.24.6+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
+- **Git-driven configuration sync** — gateway projects, tags, and resources managed in Git
+- **No shared storage** — controller resolves refs via `ls-remote`; agent clones independently to a local emptyDir
+- **SyncProfile mappings** — declarative source-to-destination file mappings with glob patterns and template variables
+- **Automatic sidecar injection** — MutatingWebhook injects the sync agent into annotated pods
+- **Gateway discovery** — controller discovers annotated pods and aggregates sync status
+- **Webhook receiver** — push-event-driven sync via `POST /webhook/{namespace}/{crName}`
+- **Deployment mode overlays** — per-profile overlays applied after mappings
 
-### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
+## Prerequisites
 
-```sh
-make docker-build docker-push IMG=<some-registry>/ignition-sync-operator:tag
+- Kubernetes >= 1.28
+- [cert-manager](https://cert-manager.io/) (for webhook TLS)
+- Helm 3
+
+## Quick Start
+
+```bash
+# Install the operator
+helm install ignition-sync oci://ghcr.io/inductiveautomation/charts/ignition-sync-operator
+
+# Create a git auth secret
+kubectl create secret generic git-creds --from-literal=token=ghp_...
+
+# Create a gateway API key secret
+kubectl create secret generic gw-api-key --from-literal=apiKey=my-key:my-secret
+
+# Apply an IgnitionSync CR
+kubectl apply -f config/samples/sync_v1alpha1_ignitionsync.yaml
+
+# Apply a SyncProfile
+kubectl apply -f config/samples/sync_v1alpha1_syncprofile.yaml
+
+# Label the namespace for sidecar injection
+kubectl label namespace default ignition-sync.io/inject=enabled
+
+# Grant the agent RBAC in your namespace
+kubectl create rolebinding ignition-sync-agent \
+  --clusterrole=ignition-sync-operator-agent \
+  --serviceaccount=default:default
 ```
 
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
+## Architecture
 
-**Install the CRDs into the cluster:**
-
-```sh
-make install
+```text
+┌──────────────────────────────────────────────────────┐
+│  Controller (Deployment)                              │
+│  • Resolves git refs via ls-remote (no clone)        │
+│  • Writes metadata ConfigMap (commit, ref, gitURL)   │
+│  • Discovers annotated gateway pods                  │
+│  • Aggregates sync status from agent ConfigMaps      │
+│  • Injects agent sidecar via MutatingWebhook         │
+└──────────────────────┬───────────────────────────────┘
+                       │ ConfigMaps
+                       ▼
+┌──────────────────────────────────────────────────────┐
+│  Agent Sidecar (per gateway pod)                      │
+│  • Reads metadata ConfigMap for commit + ref          │
+│  • Clones repo to local emptyDir /repo               │
+│  • Applies SyncProfile mappings to /ignition-data    │
+│  • Reports status via status ConfigMap               │
+└──────────────────────────────────────────────────────┘
 ```
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+## CRDs
 
-```sh
-make deploy IMG=<some-registry>/ignition-sync-operator:tag
+| CRD | Description |
+| --- | --- |
+| `IgnitionSync` | Defines the git repository, auth, polling, and gateway connection settings |
+| `SyncProfile` | Defines file mappings, deployment mode overlays, exclude patterns, and template variables |
+
+## Development
+
+```bash
+# Build controller and agent binaries
+make build
+
+# Run tests
+make test
+
+# Run the controller locally (requires kubeconfig)
+make run
+
+# Generate CRDs and RBAC
+make manifests
+
+# Sync CRDs to Helm chart
+make helm-sync
+
+# Run functional tests in kind
+make functional-test
+
+# Lint
+make lint
 ```
-
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
-
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
-
-```sh
-kubectl apply -k config/samples/
-```
-
->**NOTE**: Ensure that the samples has default values to test it out.
-
-### To Uninstall
-**Delete the instances (CRs) from the cluster:**
-
-```sh
-kubectl delete -k config/samples/
-```
-
-**Delete the APIs(CRDs) from the cluster:**
-
-```sh
-make uninstall
-```
-
-**UnDeploy the controller from the cluster:**
-
-```sh
-make undeploy
-```
-
-## Project Distribution
-
-Following the options to release and provide this solution to the users.
-
-### By providing a bundle with all YAML files
-
-1. Build the installer for the image built and published in the registry:
-
-```sh
-make build-installer IMG=<some-registry>/ignition-sync-operator:tag
-```
-
-**NOTE:** The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without its
-dependencies.
-
-2. Using the installer
-
-Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
-the project, i.e.:
-
-```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/ignition-sync-operator/<tag or branch>/dist/install.yaml
-```
-
-### By providing a Helm Chart
-
-1. Build the chart using the optional helm plugin
-
-```sh
-kubebuilder edit --plugins=helm/v2-alpha
-```
-
-2. See that a chart was generated under 'dist/chart', and users
-can obtain this solution from there.
-
-**NOTE:** If you change the project, you need to update the Helm Chart
-using the same command above to sync the latest changes. Furthermore,
-if you create webhooks, you need to use the above command with
-the '--force' flag and manually ensure that any custom configuration
-previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
-is manually re-applied afterwards.
-
-## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
-
-**NOTE:** Run `make help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
 
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
-
