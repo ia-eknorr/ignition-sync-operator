@@ -19,10 +19,11 @@ import (
 )
 
 func main() {
-	logf.SetLogger(zap.New(zap.UseDevMode(true)))
+	devMode := os.Getenv("LOG_DEV_MODE") == "true"
+	logf.SetLogger(zap.New(zap.UseDevMode(devMode)))
 	log := logf.Log.WithName("agent")
 
-	log.Info("ignition-sync-agent starting")
+	log.Info("ignition-sync-agent starting", "devMode", devMode)
 
 	// Load configuration from environment.
 	cfg, err := agent.LoadConfig()
