@@ -59,24 +59,22 @@ kubectl create rolebinding stoker-agent \
 
 ## Architecture
 
-```text
-┌──────────────────────────────────────────────────────┐
-│  Controller (Deployment)                              │
-│  • Resolves git refs via ls-remote (no clone)        │
-│  • Writes metadata ConfigMap (commit, ref, gitURL)   │
-│  • Discovers annotated gateway pods                  │
-│  • Aggregates sync status from agent ConfigMaps      │
-│  • Injects agent sidecar via MutatingWebhook         │
-└──────────────────────┬───────────────────────────────┘
-                       │ ConfigMaps
-                       ▼
-┌──────────────────────────────────────────────────────┐
-│  Agent Sidecar (per gateway pod)                      │
-│  • Reads metadata ConfigMap for commit + ref          │
-│  • Clones repo to local emptyDir /repo               │
-│  • Applies SyncProfile mappings to /ignition-data    │
-│  • Reports status via status ConfigMap               │
-└──────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    Git[(Git Repo)] --> Stoker
+
+    subgraph cluster [Cluster]
+        Stoker
+        subgraph ns [Namespace]
+            SP[SyncProfile]
+            subgraph pod [Gateway Pod]
+                Agent[Agent Sidecar] --> GW[Ignition Gateway]
+            end
+        end
+    end
+
+    Stoker --> Agent
+    SP --> Agent
 ```
 
 ## CRDs
