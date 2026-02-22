@@ -261,7 +261,6 @@ var _ = Describe("IgnitionSync Controller", func() {
 			Expect(k8sClient.Get(ctx, cmNN, cm)).To(Succeed())
 			Expect(cm.Data["commit"]).To(Equal("abc123def"))
 			Expect(cm.Data["ref"]).To(Equal("main"))
-			Expect(cm.Data["trigger"]).NotTo(BeEmpty())
 
 			// Git client should have been called exactly once
 			Expect(gitClient.calls).To(Equal(1))

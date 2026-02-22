@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -262,11 +264,10 @@ func (r *IgnitionSyncReconciler) ensureMetadataConfigMap(ctx context.Context, is
 	key := types.NamespacedName{Name: cmName, Namespace: isync.Namespace}
 
 	data := map[string]string{
-		"commit":  result.Commit,
-		"ref":     result.Ref,
-		"trigger": time.Now().UTC().Format(time.RFC3339),
-		"gitURL":  isync.Spec.Git.Repo,
-		"paused":  fmt.Sprintf("%t", isync.Spec.Paused),
+		"commit": result.Commit,
+		"ref":    result.Ref,
+		"gitURL": isync.Spec.Git.Repo,
+		"paused": fmt.Sprintf("%t", isync.Spec.Paused),
 	}
 
 	// Include auth type so agent knows which credential file to use.
@@ -305,6 +306,9 @@ func (r *IgnitionSyncReconciler) ensureMetadataConfigMap(ctx context.Context, is
 		return fmt.Errorf("getting ConfigMap %s: %w", cmName, err)
 	}
 
+	if reflect.DeepEqual(cm.Data, data) {
+		return nil
+	}
 	cm.Data = data
 	return r.Update(ctx, cm)
 }
@@ -401,10 +405,24 @@ func (r *IgnitionSyncReconciler) findIgnitionSyncsForProfile(ctx context.Context
 	return requests
 }
 
+// annotationOrGenerationChanged passes update events where either the
+// generation changed (spec edits) or annotations changed (webhook receiver).
+// This filters out status-only patches that would cause reconcile noise.
+type annotationOrGenerationChanged struct {
+	predicate.GenerationChangedPredicate
+}
+
+func (p annotationOrGenerationChanged) Update(e event.UpdateEvent) bool {
+	if p.GenerationChangedPredicate.Update(e) {
+		return true
+	}
+	return !reflect.DeepEqual(e.ObjectOld.GetAnnotations(), e.ObjectNew.GetAnnotations())
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *IgnitionSyncReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&syncv1alpha1.IgnitionSync{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		For(&syncv1alpha1.IgnitionSync{}, builder.WithPredicates(annotationOrGenerationChanged{})).
 		Owns(&corev1.ConfigMap{}).
 		Watches(&corev1.Pod{}, handler.EnqueueRequestsFromMapFunc(r.findIgnitionSyncForPod)).
 		Watches(&syncv1alpha1.SyncProfile{}, handler.EnqueueRequestsFromMapFunc(r.findIgnitionSyncsForProfile)).
