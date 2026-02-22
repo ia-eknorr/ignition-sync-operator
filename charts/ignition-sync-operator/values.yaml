@@ -69,27 +69,28 @@ networkPolicy:
   # -- Create a NetworkPolicy for the controller.
   enabled: false
 
-# -- Mutating webhook for sidecar injection. When enabled, pods with annotation
+# -- Sidecar injection via MutatingWebhook. When enabled, pods with annotation
 # `ignition-sync.io/inject: "true"` in labeled namespaces get the sync-agent
 # sidecar injected automatically.
-webhook:
-  # -- Enable the MutatingWebhookConfiguration and webhook Service.
+injection:
+  # -- Enable the MutatingWebhookConfiguration and injection Service.
   enabled: true
   # -- Webhook server port on the controller container.
   port: 9443
 
-# -- cert-manager integration for webhook TLS certificates.
+# -- cert-manager integration for injection webhook TLS certificates.
 # Requires cert-manager to be installed in the cluster.
 certManager:
-  # -- Create a self-signed Issuer and Certificate for webhook TLS.
+  # -- Create a self-signed Issuer and Certificate for injection webhook TLS.
   # Requires cert-manager to be installed in the cluster.
   enabled: true
 
-# -- Git webhook receiver for push-event-driven sync.
-webhookReceiver:
-  # -- Port for the inbound git webhook receiver. Set to 0 to disable.
+# -- Git push receiver for event-driven sync. Accepts POST from GitHub/GitLab
+# webhooks at /webhook/{namespace}/{crName}.
+pushReceiver:
+  # -- Port for the inbound push receiver. Set to 0 to disable.
   port: 9444
-  # -- HMAC secret for validating webhook signatures (X-Hub-Signature-256).
+  # -- HMAC secret for validating push receiver signatures (X-Hub-Signature-256).
   # Provide either a literal value or a reference to an existing Secret.
   hmac:
     # -- HMAC secret value. Ignored if secretRef is set.

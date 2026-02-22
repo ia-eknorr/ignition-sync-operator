@@ -32,26 +32,26 @@ spec:
             - --leader-elect
             {{- end }}
             - --health-probe-bind-address=:8081
-          {{- if and .Values.webhook.enabled .Values.certManager.enabled }}
+          {{- if and .Values.injection.enabled .Values.certManager.enabled }}
             - --webhook-cert-path=/etc/webhook-certs
           {{- end }}
-            - --webhook-receiver-port={{ .Values.webhookReceiver.port | default 9444 }}
+            - --webhook-receiver-port={{ .Values.pushReceiver.port | default 9444 }}
           env:
             - name: DEFAULT_AGENT_IMAGE
               value: "{{ .Values.agentImage.repository }}:{{ .Values.agentImage.tag | default .Chart.AppVersion }}"
-            {{- if .Values.webhookReceiver.hmac.secretRef.name }}
+            {{- if .Values.pushReceiver.hmac.secretRef.name }}
             - name: WEBHOOK_HMAC_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.webhookReceiver.hmac.secretRef.name }}
-                  key: {{ .Values.webhookReceiver.hmac.secretRef.key }}
-            {{- else if .Values.webhookReceiver.hmac.secret }}
+                  name: {{ .Values.pushReceiver.hmac.secretRef.name }}
+                  key: {{ .Values.pushReceiver.hmac.secretRef.key }}
+            {{- else if .Values.pushReceiver.hmac.secret }}
             - name: WEBHOOK_HMAC_SECRET
-              value: {{ .Values.webhookReceiver.hmac.secret | quote }}
+              value: {{ .Values.pushReceiver.hmac.secret | quote }}
             {{- end }}
           ports:
-          {{- if .Values.webhook.enabled }}
-            - containerPort: {{ .Values.webhook.port | default 9443 }}
+          {{- if .Values.injection.enabled }}
+            - containerPort: {{ .Values.injection.port | default 9443 }}
               name: webhook-server
               protocol: TCP
           {{- else }}
@@ -80,7 +80,7 @@ spec:
           volumeMounts:
             - mountPath: /tmp
               name: tmp
-            {{- if and .Values.webhook.enabled .Values.certManager.enabled }}
+            {{- if and .Values.injection.enabled .Values.certManager.enabled }}
             - mountPath: /etc/webhook-certs
               name: cert
               readOnly: true
@@ -88,7 +88,7 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
-        {{- if and .Values.webhook.enabled .Values.certManager.enabled }}
+        {{- if and .Values.injection.enabled .Values.certManager.enabled }}
         - name: cert
           secret:
             defaultMode: 420

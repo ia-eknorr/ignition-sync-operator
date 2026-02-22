@@ -22,7 +22,7 @@ A Kubernetes operator that continuously syncs Ignition gateway configuration fro
 
 ```bash
 # Install the operator
-helm install ignition-sync oci://ghcr.io/inductiveautomation/charts/ignition-sync-operator
+helm install ignition-sync oci://ghcr.io/ia-eknorr/charts/ignition-sync-operator
 
 # Create a git auth secret
 kubectl create secret generic git-creds --from-literal=token=ghp_...
@@ -37,7 +37,7 @@ kubectl apply -f config/samples/sync_v1alpha1_ignitionsync.yaml
 kubectl apply -f config/samples/sync_v1alpha1_syncprofile.yaml
 
 # Label the namespace for sidecar injection
-kubectl label namespace default ignition-sync.io/inject=enabled
+kubectl label namespace default ignition-sync.io/injection=enabled
 
 # Grant the agent RBAC in your namespace
 kubectl create rolebinding ignition-sync-agent \

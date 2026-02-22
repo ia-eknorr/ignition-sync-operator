@@ -1,0 +1,71 @@
+Ignition Sync Operator has been installed in namespace {{ .Release.Namespace }}.
+
+== Next Steps ==
+
+1. Create secrets for git authentication and gateway API access:
+
+    kubectl create secret generic git-creds -n <namespace> \
+      --from-literal=token=<your-git-token>
+
+    kubectl create secret generic gw-api-key -n <namespace> \
+      --from-literal=apiKey=<token-name>:<token-secret>
+
+2. Apply an IgnitionSync CR to define the git repository:
+
+    apiVersion: sync.ignition.io/v1alpha1
+    kind: IgnitionSync
+    metadata:
+      name: my-sync
+    spec:
+      git:
+        repo: "https://github.com/your-org/ignition-config.git"
+        ref: "main"
+        auth:
+          token:
+            secretRef:
+              name: git-creds
+              key: token
+      gateway:
+        apiKeySecretRef:
+          name: gw-api-key
+          key: apiKey
+
+3. Apply a SyncProfile to define file mappings:
+
+    apiVersion: sync.ignition.io/v1alpha1
+    kind: SyncProfile
+    metadata:
+      name: my-profile
+    spec:
+      mappings:
+        - source: "projects/"
+          destination: "projects/"
+          type: dir
+          required: true
+      syncPeriod: 30
+
+4. Label the namespace for sidecar injection:
+
+    kubectl label namespace <namespace> ignition-sync.io/injection=enabled
+
+5. Grant the agent RBAC in each namespace where gateways run:
+
+    kubectl create rolebinding ignition-sync-agent -n <namespace> \
+      --clusterrole={{ include "ignition-sync-operator.fullname" . }}-agent \
+      --serviceaccount=<namespace>:<gateway-service-account>
+
+6. Add the injection annotation to your Ignition gateway pod template:
+
+    podAnnotations:
+      ignition-sync.io/inject: "true"
+      ignition-sync.io/sync-profile: "my-profile"
+
+{{- if and .Values.injection.enabled .Values.certManager.enabled }}
+
+== cert-manager ==
+
+TLS certificates for sidecar injection are managed by cert-manager.
+Ensure cert-manager is installed: https://cert-manager.io/docs/installation/
+{{- end }}
+
+For documentation, see: https://github.com/ia-eknorr/ignition-sync-operator

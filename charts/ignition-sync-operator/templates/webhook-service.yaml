@@ -1,4 +1,4 @@
-{{- if .Values.webhook.enabled }}
+{{- if .Values.injection.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -10,7 +10,7 @@ spec:
   ports:
     - port: 443
       protocol: TCP
-      targetPort: {{ .Values.webhook.port | default 9443 }}
+      targetPort: {{ .Values.injection.port | default 9443 }}
   selector:
     {{- include "ignition-sync-operator.selectorLabels" . | nindent 4 }}
 {{- end }}
