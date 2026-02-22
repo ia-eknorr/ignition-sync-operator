@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.1.2] - 2026-02-22
+
+### Fixed
+
+- Controller failed to match gateway status from ConfigMap when `stoker.io/gateway-name` annotation was unset, causing gateways to stay `Pending` indefinitely
+
 ## [v0.1.1] - 2026-02-22
 
 ### Fixed
@@ -30,5 +36,6 @@ Initial release — controller + agent sidecar for Git-driven Ignition gateway c
 - **Functional test suite** with phased kind cluster tests (phases 02-09)
 - Unit tests with envtest for controller and syncengine
 
+[v0.1.2]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.1.2
 [v0.1.1]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.1.1
 [v0.1.0]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.1.0
