@@ -33,29 +33,15 @@ Stoker tends your Ignition gateways, continuously feeding them configuration fro
 ## Quick Start
 
 ```bash
+# Install cert-manager (required for webhook TLS)
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.2/cert-manager.yaml
+
 # Install the operator
-helm install stoker oci://ghcr.io/ia-eknorr/charts/stoker-operator
-
-# Create a git auth secret
-kubectl create secret generic git-creds --from-literal=token=ghp_...
-
-# Create a gateway API key secret
-kubectl create secret generic gw-api-key --from-literal=apiKey=my-key:my-secret
-
-# Apply a Stoker CR
-kubectl apply -f config/samples/stoker_v1alpha1_stoker.yaml
-
-# Apply a SyncProfile
-kubectl apply -f config/samples/stoker_v1alpha1_syncprofile.yaml
-
-# Label the namespace for sidecar injection
-kubectl label namespace default stoker.io/injection=enabled
-
-# Grant the agent RBAC in your namespace
-kubectl create rolebinding stoker-agent \
-  --clusterrole=stoker-agent \
-  --serviceaccount=default:default
+helm install stoker oci://ghcr.io/ia-eknorr/charts/stoker-operator \
+  -n stoker-system --create-namespace
 ```
+
+For a complete walkthrough — from installing the operator to syncing projects to an Ignition gateway — see the **[Quickstart Guide](docs/quickstart.md)**.
 
 ## Architecture
 

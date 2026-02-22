@@ -1,20 +1,14 @@
+# Example Stoker CR — points to a public example repository.
+# For private repos, add spec.git.auth with a token or SSH key secret reference.
 apiVersion: stoker.io/v1alpha1
 kind: Stoker
 metadata:
-  labels:
-    app.kubernetes.io/name: stoker-operator
-    app.kubernetes.io/managed-by: kustomize
-  name: stoker-sample
+  name: quickstart
 spec:
   git:
-    repo: "git@github.com:example-org/ignition-config.git"
+    repo: "https://github.com/ia-eknorr/test-ignition-project.git"
     ref: "main"
-    auth:
-      sshKey:
-        secretRef:
-          name: "git-sync-secret"
-          key: "ssh-privatekey"
   gateway:
     apiKeySecretRef:
-      name: "ignition-api-key"
-      key: "apiKey"
+      name: gw-api-key
+      key: apiKey
