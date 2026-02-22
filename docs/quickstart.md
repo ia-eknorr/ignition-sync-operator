@@ -57,16 +57,14 @@ The `stoker.io/injection=enabled` label tells the mutating webhook to watch for 
 
 ## 4. Create secrets
 
-The gateway API key secret is required by the Stoker CR. For this quickstart we'll use a placeholder since file sync works without a real Ignition API key:
+The example repository includes a pre-configured API token resource. Create a matching secret so the agent can authenticate with the gateway's scan API:
 
 ```bash
 kubectl create secret generic gw-api-key -n quickstart \
-  --from-literal=apiKey=placeholder:placeholder
+  --from-literal=apiKey="ignition-api-key:CYCSdRgW6MHYkeIXhH-BMqo1oaqfTdFi8tXvHJeCKmY"
 ```
 
-> **Note:** A real API key (created through the Ignition web UI) is needed for the agent to trigger project scans after syncing. File delivery works without it.
-
-No git credentials are needed for this quickstart since we're using a public repository.
+No git credentials are needed since we're using a public repository.
 
 ## 5. Create a Stoker CR
 
@@ -146,21 +144,36 @@ kubectl create rolebinding stoker-agent -n quickstart \
 
 ## 8. Deploy an Ignition gateway
 
-Install using the [official Ignition Helm chart](https://charts.ia.io) with Stoker annotations:
+Install using the [official Ignition Helm chart](https://charts.ia.io) with Stoker annotations.
 
 ```bash
 helm repo add inductiveautomation https://charts.ia.io
 helm repo update
 ```
 
+Create a values file that enables auto-commissioning and adds the Stoker sidecar injection annotations:
+
+```yaml
+# ignition-values.yaml
+commissioning:
+  edition: standard
+  acceptIgnitionEULA: true
+
+gateway:
+  preconfigure:
+    additionalCmds:
+      - |
+        [ -f "/data/commissioning.json" ] || echo "{}" > /data/commissioning.json
+
+podAnnotations:
+  stoker.io/inject: "true"
+  stoker.io/cr-name: quickstart
+  stoker.io/sync-profile: standard
+```
+
 ```bash
-helm install ignition inductiveautomation/ignition \
-  -n quickstart \
-  --set commissioning.edition=standard \
-  --set commissioning.acceptIgnitionEULA=true \
-  --set-string podAnnotations."stoker\.io/inject"="true" \
-  --set-string podAnnotations."stoker\.io/cr-name"="quickstart" \
-  --set-string podAnnotations."stoker\.io/sync-profile"="standard"
+helm upgrade --install ignition inductiveautomation/ignition \
+  -n quickstart -f ignition-values.yaml
 ```
 
 The key annotations:
@@ -216,8 +229,6 @@ NAME         REF    SYNCED   GATEWAYS             READY   AGE
 quickstart   main   True     1/1 gateways synced  True    5m
 ```
 
-> **Using a placeholder API key?** The `SYNCED` column may show `False` and `GATEWAYS` may show `0/1 gateways synced` because the agent cannot call the Ignition scan API with a placeholder key. Files are still delivered — see the agent logs below. To get a clean `True` status, create a real API key through the Ignition web UI (see [Next steps](#next-steps)).
-
 ### Describe the Stoker CR
 
 For detailed status including conditions and discovered gateways:
@@ -241,7 +252,7 @@ Look for:
 
 - `clone complete` — the repo was cloned successfully
 - `files synced` with `added` and `projects` — files were delivered to the gateway
-- `scan API warning (non-fatal)` — expected with a placeholder API key
+- `scan API success` — Ignition acknowledged the project reload
 
 ### Inspect the status ConfigMap
 
@@ -296,6 +307,6 @@ kind delete cluster --name stoker-quickstart
 - **Multiple gateways:** Instead of hardcoding paths per gateway, use `{{.GatewayName}}` in your SyncProfile source paths and the `stoker.io/gateway-name` annotation on each pod. One SyncProfile then serves any number of gateways.
 - **Deployment mode overlays:** Use `spec.deploymentMode` in your SyncProfile to apply environment-specific config.
 - **Webhook-driven sync:** Configure `POST /webhook/{namespace}/{crName}` to trigger syncs on git push events instead of polling.
-- **Real API key:** Create an API key through the Ignition web UI and update the `gw-api-key` secret to enable project scan triggers after sync.
+- **Private repos:** Add `spec.git.auth` with a token or SSH key secret reference to sync from private repositories.
 
 See the [architecture docs](architecture/) for deeper technical detail.
