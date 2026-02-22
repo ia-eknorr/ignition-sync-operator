@@ -54,11 +54,13 @@
       --clusterrole={{ include "stoker-operator.fullname" . }}-agent \
       --serviceaccount=<namespace>:<gateway-service-account>
 
-6. Add the injection annotation to your Ignition gateway pod template:
+6. Add the injection annotations to your Ignition gateway pod template:
 
     podAnnotations:
       stoker.io/inject: "true"
+      stoker.io/cr-name: "my-sync"
       stoker.io/sync-profile: "my-profile"
+      # stoker.io/gateway-name: "my-gw"  # optional — defaults to app.kubernetes.io/name label or pod name
 
 {{- if and .Values.webhook.enabled .Values.certManager.enabled }}
 

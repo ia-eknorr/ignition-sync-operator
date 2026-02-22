@@ -126,9 +126,14 @@ func (r *StokerReconciler) collectGatewayStatus(ctx context.Context, stk *stoker
 		return gateways
 	}
 
-	// Enrich each gateway with its status
+	// Enrich each gateway with its status.
+	// The agent writes status keyed by its GATEWAY_NAME env, which defaults to the
+	// pod name when unset. Look up by PodName first, then fall back to Name.
 	for i := range gateways {
-		statusJSON, ok := cm.Data[gateways[i].Name]
+		statusJSON, ok := cm.Data[gateways[i].PodName]
+		if !ok {
+			statusJSON, ok = cm.Data[gateways[i].Name]
+		}
 		if !ok || statusJSON == "" {
 			continue
 		}
