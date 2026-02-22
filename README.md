@@ -6,7 +6,7 @@
 
 > **stok·er** /ˈstōkər/ — *a person who tends the fire in a furnace, feeding it fuel to keep it burning.*
 
-Stoker tends your Ignition gateways, continuously feeding them configuration from Git to keep them running in the desired state. Named in the tradition of the Ignition community's fire-themed tools — alongside [Kindling](https://github.com/nicklmiller/Kindling), [Flint](https://github.com/mussoninern/flern-ignern), and [Embr Charts](https://embr-charts.nitride.pub/).
+Stoker tends your Ignition gateways, continuously feeding them configuration from Git to keep them running in the desired state.
 
 ## Features
 
