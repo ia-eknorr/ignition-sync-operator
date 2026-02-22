@@ -245,11 +245,7 @@ func injectSidecar(pod *corev1.Pod, stk *stokerv1alpha1.Stoker) {
 			PeriodSeconds:    5,
 			FailureThreshold: 3,
 		},
-		VolumeMounts: []corev1.VolumeMount{
-			{Name: volumeSyncRepo, MountPath: mountRepo},
-			{Name: volumeGitCredentials, MountPath: mountGitCredentials, ReadOnly: true},
-			{Name: volumeAPIKey, MountPath: mountAPIKey, ReadOnly: true},
-		},
+		VolumeMounts: agentVolumeMounts(stk),
 	}
 
 	// Mount the Ignition data volume if it exists on the pod.
@@ -274,34 +270,7 @@ func injectSidecar(pod *corev1.Pod, stk *stokerv1alpha1.Stoker) {
 	pod.Spec.InitContainers = append([]corev1.Container{agentContainer}, pod.Spec.InitContainers...)
 
 	// Add volumes
-	secretMode := int32(0400)
-	newVolumes := []corev1.Volume{
-		{
-			Name: volumeSyncRepo,
-			VolumeSource: corev1.VolumeSource{
-				EmptyDir: &corev1.EmptyDirVolumeSource{},
-			},
-		},
-		{
-			Name: volumeGitCredentials,
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName:  gitCredentialSecretName(stk),
-					DefaultMode: &secretMode,
-				},
-			},
-		},
-		{
-			Name: volumeAPIKey,
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName:  stk.Spec.Gateway.APIKeySecretRef.Name,
-					DefaultMode: &secretMode,
-				},
-			},
-		},
-	}
-	pod.Spec.Volumes = append(pod.Spec.Volumes, newVolumes...)
+	pod.Spec.Volumes = append(pod.Spec.Volumes, agentVolumes(stk)...)
 
 	// Set injected annotation
 	if pod.Annotations == nil {
@@ -429,6 +398,56 @@ func gitCredentialSecretName(stk *stokerv1alpha1.Stoker) string {
 		return stk.Spec.Git.Auth.GitHubApp.PrivateKeySecretRef.Name
 	}
 	return "git-credentials"
+}
+
+// agentVolumeMounts returns the volume mounts for the agent container.
+// The git-credentials mount is only included when auth is configured.
+func agentVolumeMounts(stk *stokerv1alpha1.Stoker) []corev1.VolumeMount {
+	mounts := []corev1.VolumeMount{
+		{Name: volumeSyncRepo, MountPath: mountRepo},
+		{Name: volumeAPIKey, MountPath: mountAPIKey, ReadOnly: true},
+	}
+	if stk.Spec.Git.Auth != nil {
+		mounts = append(mounts, corev1.VolumeMount{
+			Name: volumeGitCredentials, MountPath: mountGitCredentials, ReadOnly: true,
+		})
+	}
+	return mounts
+}
+
+// agentVolumes returns the volumes for the agent sidecar.
+// The git-credentials volume is only included when auth is configured.
+func agentVolumes(stk *stokerv1alpha1.Stoker) []corev1.Volume {
+	secretMode := int32(0400)
+	vols := []corev1.Volume{
+		{
+			Name: volumeSyncRepo,
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
+			},
+		},
+		{
+			Name: volumeAPIKey,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName:  stk.Spec.Gateway.APIKeySecretRef.Name,
+					DefaultMode: &secretMode,
+				},
+			},
+		},
+	}
+	if stk.Spec.Git.Auth != nil {
+		vols = append(vols, corev1.Volume{
+			Name: volumeGitCredentials,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName:  gitCredentialSecretName(stk),
+					DefaultMode: &secretMode,
+				},
+			},
+		})
+	}
+	return vols
 }
 
 // resolveDataVolume finds the Ignition data volume on the pod and returns
