@@ -7,7 +7,7 @@ BASE_URL="${1:?Usage: verify-gateway.sh <base-url> <gateway-name> <project-name>
 EXPECTED_NAME="${2:?Missing gateway name (e.g. ignition-blue)}"
 EXPECTED_PROJECT="${3:?Missing project name (e.g. blue)}"
 EXPECTED_COLOR="${4:?Missing cobranding color (e.g. #00a3d7)}"
-API_TOKEN="${API_TOKEN:-ignition-api-key:CYCSdRgW6MHYkeIXhH-BMqo1oaqfTdFi8tXvHJeCKmY}"
+API_TOKEN="${API_TOKEN:-ignition-api-key:<your-api-token>}"
 
 PASS=0; FAIL=0
 check() {

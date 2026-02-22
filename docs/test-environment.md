@@ -42,7 +42,7 @@ API key stored in operator repo at `secrets/ignition-api-key.txt`.
 
 **Header:**
 ```
-X-Ignition-API-Token: ignition-api-key:CYCSdRgW6MHYkeIXhH-BMqo1oaqfTdFi8tXvHJeCKmY
+X-Ignition-API-Token: ignition-api-key:<your-api-token>
 ```
 
 - Both gateways share the same API key (same `tokenHash` in config)
@@ -50,7 +50,7 @@ X-Ignition-API-Token: ignition-api-key:CYCSdRgW6MHYkeIXhH-BMqo1oaqfTdFi8tXvHJeCK
 
 **Shell variable for curl:**
 ```bash
-TOKEN_HEADER="X-Ignition-API-Token: ignition-api-key:CYCSdRgW6MHYkeIXhH-BMqo1oaqfTdFi8tXvHJeCKmY"
+TOKEN_HEADER="X-Ignition-API-Token: ignition-api-key:<your-api-token>"
 ```
 
 ## 4. Configuration Hierarchy
@@ -138,7 +138,7 @@ JSONEOF
 
 # API key secret (for agent → gateway API calls)
 kubectl create secret generic ignition-api-key -n ignition-test \
-  --from-literal=apiKey="ignition-api-key:CYCSdRgW6MHYkeIXhH-BMqo1oaqfTdFi8tXvHJeCKmY"
+  --from-literal=apiKey="ignition-api-key:<your-api-token>"
 
 # Git token (for cloning the test repo)
 kubectl create secret generic git-token-secret -n ignition-test \
@@ -345,7 +345,7 @@ kubectl -n ignition-test port-forward pod/ignition-red-gateway-0 8089:8088 &
 sleep 5
 
 # Quick checks
-export API_TOKEN="ignition-api-key:CYCSdRgW6MHYkeIXhH-BMqo1oaqfTdFi8tXvHJeCKmY"
+export API_TOKEN="ignition-api-key:<your-api-token>"
 curl -s -H "X-Ignition-API-Token: $API_TOKEN" http://localhost:8088/data/api/v1/gateway-info | jq .name
 curl -s -H "X-Ignition-API-Token: $API_TOKEN" http://localhost:8089/data/api/v1/gateway-info | jq .name
 ```
@@ -373,7 +373,7 @@ export BLUE_URL="http://localhost:8088"
 export RED_URL="http://localhost:8089"
 
 # API token (same for both gateways)
-export API_TOKEN="ignition-api-key:CYCSdRgW6MHYkeIXhH-BMqo1oaqfTdFi8tXvHJeCKmY"
+export API_TOKEN="ignition-api-key:<your-api-token>"
 ```
 
 ### Expected Outcomes
@@ -550,7 +550,7 @@ BASE_URL="${1:?Usage: verify-gateway.sh <base-url> <gateway-name> <project-name>
 EXPECTED_NAME="${2:?Missing gateway name (e.g. ignition-blue)}"
 EXPECTED_PROJECT="${3:?Missing project name (e.g. blue)}"
 EXPECTED_COLOR="${4:?Missing cobranding color (e.g. #00a3d7)}"
-API_TOKEN="${API_TOKEN:-ignition-api-key:CYCSdRgW6MHYkeIXhH-BMqo1oaqfTdFi8tXvHJeCKmY}"
+API_TOKEN="${API_TOKEN:-ignition-api-key:<your-api-token>}"
 
 PASS=0; FAIL=0
 check() {
