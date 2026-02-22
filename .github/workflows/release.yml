@@ -13,7 +13,6 @@ env:
 
 jobs:
   build-images:
-    runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
@@ -23,6 +22,14 @@ jobs:
           - name: agent
             file: Dockerfile.agent
             image_name: stoker-agent
+        platform:
+          - runner: ubuntu-latest
+            arch: linux/amd64
+          - runner: ubuntu-24.04-arm
+            arch: linux/arm64
+    runs-on: ${{ matrix.platform.runner }}
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -40,22 +47,75 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push ${{ matrix.name }} image
+      - name: Build and push by digest
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.file }}
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image_name }}:${{ steps.version.outputs.version }}
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image_name }}:latest
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image_name }}:buildcache
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image_name }}:buildcache,mode=max
+          platforms: ${{ matrix.platform.arch }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image_name }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image_name }}:buildcache-${{ matrix.platform.arch == 'linux/amd64' && 'amd64' || 'arm64' }}
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image_name }}:buildcache-${{ matrix.platform.arch == 'linux/amd64' && 'amd64' || 'arm64' }},mode=max
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests/${{ matrix.image_name }}
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${{ matrix.image_name }}/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.image_name }}-${{ matrix.platform.arch == 'linux/amd64' && 'amd64' || 'arm64' }}
+          path: /tmp/digests/${{ matrix.image_name }}
+          if-no-files-found: error
+          retention-days: 1
+
+  merge-manifests:
+    runs-on: ubuntu-latest
+    needs: build-images
+    strategy:
+      matrix:
+        include:
+          - image_name: stoker-operator
+          - image_name: stoker-agent
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download amd64 digest
+        uses: actions/download-artifact@v4
+        with:
+          name: digest-${{ matrix.image_name }}-amd64
+          path: /tmp/digests
+
+      - name: Download arm64 digest
+        uses: actions/download-artifact@v4
+        with:
+          name: digest-${{ matrix.image_name }}-arm64
+          path: /tmp/digests
+
+      - name: Create multi-arch manifest
+        run: |
+          IMAGE=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image_name }}
+          VERSION=${{ steps.version.outputs.version }}
+          docker buildx imagetools create \
+            -t "${IMAGE}:${VERSION}" \
+            -t "${IMAGE}:latest" \
+            $(printf "${IMAGE}@sha256:%s " $(ls /tmp/digests/))
 
   publish-chart:
     runs-on: ubuntu-latest
-    needs: build-images
+    needs: merge-manifests
     steps:
       - uses: actions/checkout@v4
 
@@ -81,7 +141,7 @@ jobs:
 
   github-release:
     runs-on: ubuntu-latest
-    needs: build-images
+    needs: merge-manifests
     steps:
       - uses: actions/checkout@v4
 
