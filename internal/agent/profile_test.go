@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	syncv1alpha1 "github.com/inductiveautomation/ignition-sync-operator/api/v1alpha1"
+	syncv1alpha1 "github.com/ia-eknorr/ignition-sync-operator/api/v1alpha1"
 )
 
 func TestResolveTemplate_AllFields(t *testing.T) {

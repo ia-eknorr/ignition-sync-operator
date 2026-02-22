@@ -13,8 +13,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	syncv1alpha1 "github.com/inductiveautomation/ignition-sync-operator/api/v1alpha1"
-	synctypes "github.com/inductiveautomation/ignition-sync-operator/pkg/types"
+	syncv1alpha1 "github.com/ia-eknorr/ignition-sync-operator/api/v1alpha1"
+	synctypes "github.com/ia-eknorr/ignition-sync-operator/pkg/types"
 )
 
 const (

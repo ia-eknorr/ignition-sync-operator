@@ -20,10 +20,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	syncv1alpha1 "github.com/inductiveautomation/ignition-sync-operator/api/v1alpha1"
-	"github.com/inductiveautomation/ignition-sync-operator/internal/controller"
-	"github.com/inductiveautomation/ignition-sync-operator/internal/git"
-	iswebhook "github.com/inductiveautomation/ignition-sync-operator/internal/webhook"
+	syncv1alpha1 "github.com/ia-eknorr/ignition-sync-operator/api/v1alpha1"
+	"github.com/ia-eknorr/ignition-sync-operator/internal/controller"
+	"github.com/ia-eknorr/ignition-sync-operator/internal/git"
+	iswebhook "github.com/ia-eknorr/ignition-sync-operator/internal/webhook"
 	// +kubebuilder:scaffold:imports
 )
 

@@ -13,8 +13,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	syncv1alpha1 "github.com/inductiveautomation/ignition-sync-operator/api/v1alpha1"
-	"github.com/inductiveautomation/ignition-sync-operator/internal/syncengine"
+	syncv1alpha1 "github.com/ia-eknorr/ignition-sync-operator/api/v1alpha1"
+	"github.com/ia-eknorr/ignition-sync-operator/internal/syncengine"
 )
 
 // TemplateContext holds the variables available in mapping templates.

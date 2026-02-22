@@ -9,8 +9,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	syncv1alpha1 "github.com/inductiveautomation/ignition-sync-operator/api/v1alpha1"
-	"github.com/inductiveautomation/ignition-sync-operator/pkg/conditions"
+	syncv1alpha1 "github.com/ia-eknorr/ignition-sync-operator/api/v1alpha1"
+	"github.com/ia-eknorr/ignition-sync-operator/pkg/conditions"
 )
 
 func newProfileReconciler() *SyncProfileReconciler {

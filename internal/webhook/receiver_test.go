@@ -12,8 +12,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	syncv1alpha1 "github.com/inductiveautomation/ignition-sync-operator/api/v1alpha1"
-	synctypes "github.com/inductiveautomation/ignition-sync-operator/pkg/types"
+	syncv1alpha1 "github.com/ia-eknorr/ignition-sync-operator/api/v1alpha1"
+	synctypes "github.com/ia-eknorr/ignition-sync-operator/pkg/types"
 )
 
 const testRef = "v2.0.0"

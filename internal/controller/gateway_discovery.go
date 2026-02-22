@@ -14,9 +14,9 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	syncv1alpha1 "github.com/inductiveautomation/ignition-sync-operator/api/v1alpha1"
-	"github.com/inductiveautomation/ignition-sync-operator/pkg/conditions"
-	synctypes "github.com/inductiveautomation/ignition-sync-operator/pkg/types"
+	syncv1alpha1 "github.com/ia-eknorr/ignition-sync-operator/api/v1alpha1"
+	"github.com/ia-eknorr/ignition-sync-operator/pkg/conditions"
+	synctypes "github.com/ia-eknorr/ignition-sync-operator/pkg/types"
 )
 
 // findIgnitionSyncForPod reads the ignition-sync.io/cr-name annotation from a pod

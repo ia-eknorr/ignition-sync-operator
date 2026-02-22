@@ -14,8 +14,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	syncv1alpha1 "github.com/inductiveautomation/ignition-sync-operator/api/v1alpha1"
-	"github.com/inductiveautomation/ignition-sync-operator/internal/agent"
+	syncv1alpha1 "github.com/ia-eknorr/ignition-sync-operator/api/v1alpha1"
+	"github.com/ia-eknorr/ignition-sync-operator/internal/agent"
 )
 
 func main() {

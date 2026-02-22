@@ -13,10 +13,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/inductiveautomation/ignition-sync-operator/internal/git"
-	"github.com/inductiveautomation/ignition-sync-operator/internal/ignition"
-	"github.com/inductiveautomation/ignition-sync-operator/internal/syncengine"
-	synctypes "github.com/inductiveautomation/ignition-sync-operator/pkg/types"
+	"github.com/ia-eknorr/ignition-sync-operator/internal/git"
+	"github.com/ia-eknorr/ignition-sync-operator/internal/ignition"
+	"github.com/ia-eknorr/ignition-sync-operator/internal/syncengine"
+	synctypes "github.com/ia-eknorr/ignition-sync-operator/pkg/types"
 )
 
 const agentVersion = "0.1.0"

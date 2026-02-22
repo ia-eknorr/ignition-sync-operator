@@ -1,4 +1,4 @@
-module github.com/inductiveautomation/ignition-sync-operator
+module github.com/ia-eknorr/ignition-sync-operator
 
 go 1.25.3
 

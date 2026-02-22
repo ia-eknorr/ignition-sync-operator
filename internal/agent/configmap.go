@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	synctypes "github.com/inductiveautomation/ignition-sync-operator/pkg/types"
+	synctypes "github.com/ia-eknorr/ignition-sync-operator/pkg/types"
 )
 
 // MetadataConfigMapName returns the metadata ConfigMap name for a CR.
