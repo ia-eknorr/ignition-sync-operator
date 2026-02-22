@@ -11,19 +11,19 @@ Validate gateway discovery against real Ignition gateway pods deployed via the o
 ## Lab 3.1: Discover the Ignition Gateway Pod
 
 ### Purpose
-The Ignition gateway pod from environment setup already has `ignition-sync.io/cr-name: lab-sync` annotation. Verify the controller discovers it.
+The Ignition gateway pod from environment setup already has `stoker.io/cr-name: lab-sync` annotation. Verify the controller discovers it.
 
 ### Steps
 
 ```bash
 # Verify annotation is on the Ignition pod
 kubectl get pod ignition-0 -n lab -o jsonpath='{.metadata.annotations}' | jq '{
-  "cr-name": .["ignition-sync.io/cr-name"],
-  "gateway-name": .["ignition-sync.io/gateway-name"]
+  "cr-name": .["stoker.io/cr-name"],
+  "gateway-name": .["stoker.io/gateway-name"]
 }'
 
 # Check discovered gateways on the CR
-kubectl get ignitionsync lab-sync -n lab -o json | jq '.status.discoveredGateways'
+kubectl get stoker lab-sync -n lab -o json | jq '.status.discoveredGateways'
 ```
 
 ### Expected
@@ -49,10 +49,10 @@ Verify the three-tier name resolution: annotation > label > pod name.
 ### Steps
 
 **Test 1 — Annotation name takes priority:**
-The Ignition pod has both `ignition-sync.io/gateway-name: lab-gateway` annotation AND `app.kubernetes.io/name: ignition` label. Verify annotation wins:
+The Ignition pod has both `stoker.io/gateway-name: lab-gateway` annotation AND `app.kubernetes.io/name: ignition` label. Verify annotation wins:
 
 ```bash
-kubectl get ignitionsync lab-sync -n lab \
+kubectl get stoker lab-sync -n lab \
   -o jsonpath='{.status.discoveredGateways[0].name}'
 ```
 
@@ -63,14 +63,14 @@ Expected: `lab-gateway` (from annotation, not `ignition` from label).
 ```bash
 # Remove gateway-name annotation from StatefulSet template
 kubectl patch statefulset ignition -n lab --type=json \
-  -p='[{"op": "remove", "path": "/spec/template/metadata/annotations/ignition-sync.io~1gateway-name"}]'
+  -p='[{"op": "remove", "path": "/spec/template/metadata/annotations/stoker.io~1gateway-name"}]'
 
 # Wait for rolling restart
 kubectl rollout status statefulset/ignition -n lab --timeout=300s
 sleep 15
 
 # Check name resolution
-kubectl get ignitionsync lab-sync -n lab \
+kubectl get stoker lab-sync -n lab \
   -o jsonpath='{.status.discoveredGateways[0].name}'
 ```
 
@@ -79,7 +79,7 @@ Expected: `ignition` (from `app.kubernetes.io/name` label, set by helm chart).
 **Restore annotation:**
 ```bash
 kubectl patch statefulset ignition -n lab --type=json \
-  -p='[{"op": "add", "path": "/spec/template/metadata/annotations/ignition-sync.io~1gateway-name", "value": "lab-gateway"}]'
+  -p='[{"op": "add", "path": "/spec/template/metadata/annotations/stoker.io~1gateway-name", "value": "lab-gateway"}]'
 kubectl rollout status statefulset/ignition -n lab --timeout=300s
 sleep 15
 ```
@@ -117,8 +117,8 @@ kubectl rollout status statefulset/ignition-secondary -n lab --timeout=300s
 
 # Add annotations pointing to the same CR
 kubectl patch statefulset ignition-secondary -n lab --type=json -p='[
-  {"op": "add", "path": "/spec/template/metadata/annotations/ignition-sync.io~1cr-name", "value": "lab-sync"},
-  {"op": "add", "path": "/spec/template/metadata/annotations/ignition-sync.io~1gateway-name", "value": "secondary-gateway"}
+  {"op": "add", "path": "/spec/template/metadata/annotations/stoker.io~1cr-name", "value": "lab-sync"},
+  {"op": "add", "path": "/spec/template/metadata/annotations/stoker.io~1gateway-name", "value": "secondary-gateway"}
 ]'
 kubectl rollout status statefulset/ignition-secondary -n lab --timeout=300s
 ```
@@ -130,14 +130,14 @@ kubectl rollout status statefulset/ignition-secondary -n lab --timeout=300s
 sleep 20
 
 # Check discovered gateways
-kubectl get ignitionsync lab-sync -n lab -o json | jq '[.status.discoveredGateways[] | {name, podName, syncStatus}]'
+kubectl get stoker lab-sync -n lab -o json | jq '[.status.discoveredGateways[] | {name, podName, syncStatus}]'
 ```
 
 Expected: Two entries — `lab-gateway` (pod `ignition-0`) and `secondary-gateway` (pod `ignition-secondary-0`).
 
 ```bash
 # Verify kubectl output columns
-kubectl get ignitionsync lab-sync -n lab
+kubectl get stoker lab-sync -n lab
 ```
 
 The `GATEWAYS` column should show `0/2 gateways synced` (neither has an agent yet).
@@ -153,17 +153,17 @@ Simulate agent status reporting by manually creating the status ConfigMap. Verif
 
 ```bash
 # Get the current commit from the CR
-COMMIT=$(kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
+COMMIT=$(kubectl get stoker lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
 
 # Create status ConfigMap as if agents reported
 cat <<EOF | kubectl apply -n lab -f -
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: ignition-sync-status-lab-sync
+  name: stoker-status-lab-sync
   namespace: lab
   labels:
-    ignition-sync.io/cr-name: lab-sync
+    stoker.io/cr-name: lab-sync
 data:
   lab-gateway: |
     {
@@ -194,7 +194,7 @@ EOF
 
 ```bash
 # Full gateway status
-kubectl get ignitionsync lab-sync -n lab -o json | jq '.status.discoveredGateways[] | {
+kubectl get stoker lab-sync -n lab -o json | jq '.status.discoveredGateways[] | {
   name,
   syncStatus,
   syncedCommit,
@@ -218,7 +218,7 @@ Verify the AllGatewaysSynced condition accurately reflects aggregate gateway sta
 **Both synced → AllGatewaysSynced=True:**
 
 ```bash
-kubectl get ignitionsync lab-sync -n lab -o json | jq '.status.conditions[] | select(.type=="AllGatewaysSynced")'
+kubectl get stoker lab-sync -n lab -o json | jq '.status.conditions[] | select(.type=="AllGatewaysSynced")'
 ```
 
 Expected: `status: "True"`, `message: "2/2 gateways synced"`
@@ -226,13 +226,13 @@ Expected: `status: "True"`, `message: "2/2 gateways synced"`
 **Set one to Error → AllGatewaysSynced=False:**
 
 ```bash
-kubectl get configmap ignition-sync-status-lab-sync -n lab -o json | \
+kubectl get configmap stoker-status-lab-sync -n lab -o json | \
   jq '.data["secondary-gateway"] = "{\"syncStatus\":\"Error\",\"errorMessage\":\"simulated failure\"}"' | \
   kubectl apply -n lab -f -
 
 sleep 15
 
-kubectl get ignitionsync lab-sync -n lab -o json | jq '.status.conditions[] | select(.type=="AllGatewaysSynced")'
+kubectl get stoker lab-sync -n lab -o json | jq '.status.conditions[] | select(.type=="AllGatewaysSynced")'
 ```
 
 Expected: `status: "False"`, `message: "1/2 gateways synced"`
@@ -240,13 +240,13 @@ Expected: `status: "False"`, `message: "1/2 gateways synced"`
 **Set to Syncing → still False:**
 
 ```bash
-kubectl get configmap ignition-sync-status-lab-sync -n lab -o json | \
+kubectl get configmap stoker-status-lab-sync -n lab -o json | \
   jq '.data["secondary-gateway"] = "{\"syncStatus\":\"Syncing\"}"' | \
   kubectl apply -n lab -f -
 
 sleep 15
 
-kubectl get ignitionsync lab-sync -n lab -o json | jq '.status.conditions[] | select(.type=="AllGatewaysSynced")'
+kubectl get stoker lab-sync -n lab -o json | jq '.status.conditions[] | select(.type=="AllGatewaysSynced")'
 ```
 
 Expected: Still `False` — only `Synced` counts.
@@ -254,8 +254,8 @@ Expected: Still `False` — only `Synced` counts.
 **Restore both to Synced:**
 
 ```bash
-COMMIT=$(kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
-kubectl get configmap ignition-sync-status-lab-sync -n lab -o json | \
+COMMIT=$(kubectl get stoker lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
+kubectl get configmap stoker-status-lab-sync -n lab -o json | \
   jq --arg c "$COMMIT" '.data["secondary-gateway"] = "{\"syncStatus\":\"Synced\",\"syncedCommit\":\"" + $c + "\"}"' | \
   kubectl apply -n lab -f -
 ```
@@ -272,7 +272,7 @@ Ready=True requires BOTH RefResolved=True AND AllGatewaysSynced=True.
 ```bash
 # With both conditions met
 sleep 15
-kubectl get ignitionsync lab-sync -n lab -o json | jq '[.status.conditions[] | {type, status, reason, message}]'
+kubectl get stoker lab-sync -n lab -o json | jq '[.status.conditions[] | {type, status, reason, message}]'
 ```
 
 ### Expected
@@ -285,7 +285,7 @@ kubectl get ignitionsync lab-sync -n lab -o json | jq '[.status.conditions[] | {
 
 ```bash
 # Verify kubectl columns
-kubectl get ignitionsync lab-sync -n lab
+kubectl get stoker lab-sync -n lab
 ```
 
 Expected: `SYNCED=True`, `READY=True`
@@ -302,8 +302,8 @@ Verify behavior when no annotated pods exist for a CR.
 ```bash
 # Create a CR that no pods reference
 cat <<EOF | kubectl apply -n lab -f -
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: orphan-sync
 spec:
@@ -327,7 +327,7 @@ sleep 30
 ### What to Verify
 
 ```bash
-kubectl get ignitionsync orphan-sync -n lab -o json | jq '{
+kubectl get stoker orphan-sync -n lab -o json | jq '{
   discoveredGateways: (.status.discoveredGateways | length),
   allGatewaysSynced: (.status.conditions[] | select(.type=="AllGatewaysSynced")),
   ready: (.status.conditions[] | select(.type=="Ready"))
@@ -341,7 +341,7 @@ Expected:
 
 ### Cleanup
 ```bash
-kubectl delete ignitionsync orphan-sync -n lab
+kubectl delete stoker orphan-sync -n lab
 ```
 
 ---
@@ -355,7 +355,7 @@ When a gateway pod is deleted (simulating a pod restart or scale-down), verify i
 
 ```bash
 # Record current gateway count
-kubectl get ignitionsync lab-sync -n lab -o json | jq '.status.discoveredGateways | length'
+kubectl get stoker lab-sync -n lab -o json | jq '.status.discoveredGateways | length'
 # Expected: 2
 
 # Scale down the secondary gateway
@@ -363,7 +363,7 @@ kubectl scale statefulset ignition-secondary -n lab --replicas=0
 
 # Wait and check
 sleep 30
-kubectl get ignitionsync lab-sync -n lab -o json | jq '[.status.discoveredGateways[] | .name]'
+kubectl get stoker lab-sync -n lab -o json | jq '[.status.discoveredGateways[] | .name]'
 ```
 
 Expected: Only `["lab-gateway"]` remains.
@@ -374,7 +374,7 @@ kubectl scale statefulset ignition-secondary -n lab --replicas=1
 kubectl rollout status statefulset/ignition-secondary -n lab --timeout=300s
 sleep 20
 
-kubectl get ignitionsync lab-sync -n lab -o json | jq '[.status.discoveredGateways[] | .name]'
+kubectl get stoker lab-sync -n lab -o json | jq '[.status.discoveredGateways[] | .name]'
 ```
 
 Expected: Both `lab-gateway` and `secondary-gateway` present again.
@@ -395,7 +395,7 @@ kubectl get events -n lab --field-selector reason=GatewaysDiscovered --sort-by=.
 ### Expected
 At least one event like:
 ```
-<timestamp>  Normal  GatewaysDiscovered  ignitionsync/lab-sync  Discovered 2 gateway(s) (was 1)
+<timestamp>  Normal  GatewaysDiscovered  stoker/lab-sync  Discovered 2 gateway(s) (was 1)
 ```
 
 ---
@@ -410,8 +410,8 @@ Verify that a second CR only discovers pods annotated for it, not pods for the f
 ```bash
 # Create second CR
 cat <<EOF | kubectl apply -n lab -f -
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: isolated-sync
 spec:
@@ -436,11 +436,11 @@ sleep 30
 
 ```bash
 # isolated-sync should see 0 gateways (no pods annotated for it)
-kubectl get ignitionsync isolated-sync -n lab -o json | jq '.status.discoveredGateways | length'
+kubectl get stoker isolated-sync -n lab -o json | jq '.status.discoveredGateways | length'
 # Expected: 0
 
 # lab-sync should still see 2 gateways
-kubectl get ignitionsync lab-sync -n lab -o json | jq '.status.discoveredGateways | length'
+kubectl get stoker lab-sync -n lab -o json | jq '.status.discoveredGateways | length'
 # Expected: 2
 ```
 
@@ -448,7 +448,7 @@ Now annotate the secondary gateway for the new CR instead:
 
 ```bash
 kubectl patch statefulset ignition-secondary -n lab --type=json -p='[
-  {"op": "replace", "path": "/spec/template/metadata/annotations/ignition-sync.io~1cr-name", "value": "isolated-sync"}
+  {"op": "replace", "path": "/spec/template/metadata/annotations/stoker.io~1cr-name", "value": "isolated-sync"}
 ]'
 kubectl rollout status statefulset/ignition-secondary -n lab --timeout=300s
 sleep 20
@@ -456,11 +456,11 @@ sleep 20
 
 ```bash
 # lab-sync should now see 1 gateway
-kubectl get ignitionsync lab-sync -n lab -o json | jq '[.status.discoveredGateways[] | .name]'
+kubectl get stoker lab-sync -n lab -o json | jq '[.status.discoveredGateways[] | .name]'
 # Expected: ["lab-gateway"]
 
 # isolated-sync should now see 1 gateway
-kubectl get ignitionsync isolated-sync -n lab -o json | jq '[.status.discoveredGateways[] | .name]'
+kubectl get stoker isolated-sync -n lab -o json | jq '[.status.discoveredGateways[] | .name]'
 # Expected: ["secondary-gateway"]
 ```
 
@@ -469,10 +469,10 @@ kubectl get ignitionsync isolated-sync -n lab -o json | jq '[.status.discoveredG
 ```bash
 # Point secondary back to lab-sync
 kubectl patch statefulset ignition-secondary -n lab --type=json -p='[
-  {"op": "replace", "path": "/spec/template/metadata/annotations/ignition-sync.io~1cr-name", "value": "lab-sync"}
+  {"op": "replace", "path": "/spec/template/metadata/annotations/stoker.io~1cr-name", "value": "lab-sync"}
 ]'
 kubectl rollout status statefulset/ignition-secondary -n lab --timeout=300s
-kubectl delete ignitionsync isolated-sync -n lab
+kubectl delete stoker isolated-sync -n lab
 ```
 
 ---
@@ -496,13 +496,13 @@ for pod in ignition-0 ignition-secondary-0; do
 done
 
 # Operator healthy
-kubectl get pods -n ignition-sync-operator-system -o json | jq '.items[0] | {
+kubectl get pods -n stoker-system -o json | jq '.items[0] | {
   phase: .status.phase,
   restarts: .status.containerStatuses[0].restartCount
 }'
 
 # Check operator logs for any errors
-kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manager --tail=50 | grep -i error | head -10
+kubectl logs -n stoker-system -l control-plane=controller-manager --tail=50 | grep -i error | head -10
 ```
 
 ---

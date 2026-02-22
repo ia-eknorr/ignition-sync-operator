@@ -4,7 +4,7 @@
 
 Validate the sync agent binary end-to-end with real Ignition gateways. The agent clones the git repository to a local emptyDir volume (`/repo`), syncs project files to the Ignition data directory using SyncProfile-driven ordered mappings, and reports status via ConfigMap. This lab covers **SyncProfile mode** (ordered mappings with deployment mode overlay, dry-run, paused) and **legacy mode** (SERVICE_PATH flat sync).
 
-**Prerequisite:** Complete [05 — Webhook Receiver](05-webhook-receiver.md). The operator controller should be deployed to `ignition-sync-operator-system`.
+**Prerequisite:** Complete [05 — Webhook Receiver](05-webhook-receiver.md). The operator controller should be deployed to `stoker-system`.
 
 ---
 
@@ -13,14 +13,14 @@ Validate the sync agent binary end-to-end with real Ignition gateways. The agent
 Before running any lab, build the image and load into kind:
 
 ```bash
-docker build -t ignition-sync-operator:dev .
-kind load docker-image ignition-sync-operator:dev --name dev
+docker build -t stoker-operator:dev .
+kind load docker-image stoker-operator:dev --name dev
 
 # Update the controller
-kubectl set image deployment/ignition-sync-operator-controller-manager \
-  manager=ignition-sync-operator:dev -n ignition-sync-operator-system
-kubectl rollout status deployment/ignition-sync-operator-controller-manager \
-  -n ignition-sync-operator-system --timeout=60s
+kubectl set image deployment/stoker-operator-controller-manager \
+  manager=stoker-operator:dev -n stoker-system
+kubectl rollout status deployment/stoker-operator-controller-manager \
+  -n stoker-system --timeout=60s
 ```
 
 ---
@@ -28,7 +28,7 @@ kubectl rollout status deployment/ignition-sync-operator-controller-manager \
 ## Lab 6.1: Environment Setup
 
 ### Purpose
-Deploy two Ignition gateways (blue and red) in the `ignition-test` namespace with the sync operator managing both via a single IgnitionSync CR and per-gateway SyncProfiles.
+Deploy two Ignition gateways (blue and red) in the `ignition-test` namespace with the sync operator managing both via a single Stoker CR and per-gateway SyncProfiles.
 
 ### Steps
 
@@ -36,7 +36,7 @@ Follow the complete setup in [Test Environment — kind Cluster Setup](../test-e
 
 - Namespace `ignition-test` with secrets and API token config
 - Two Ignition gateways via helm (`ignition-blue`, `ignition-red`)
-- IgnitionSync CR `test-sync` and SyncProfile CRs (`blue-profile`, `red-profile`)
+- Stoker CR `test-sync` and SyncProfile CRs (`blue-profile`, `red-profile`)
 - Native sidecar on each gateway with startup probe gating
 
 ### What to Verify
@@ -47,9 +47,9 @@ Follow the complete setup in [Test Environment — kind Cluster Setup](../test-e
    ```
    Expected: `ignition-blue-gateway-0` and `ignition-red-gateway-0` both `2/2 Running`.
 
-2. **IgnitionSync CR shows both gateways synced:**
+2. **Stoker CR shows both gateways synced:**
    ```bash
-   kubectl -n ignition-test get ignitionsync test-sync
+   kubectl -n ignition-test get stoker test-sync
    ```
    Expected: `GATEWAYS: 2/2 gateways synced`, `READY: True`.
 
@@ -81,7 +81,7 @@ export API_TOKEN="ignition-api-key:CYCSdRgW6MHYkeIXhH-BMqo1oaqfTdFi8tXvHJeCKmY"
 
 1. **Native sidecar synced files before gateway started:**
    ```bash
-   kubectl -n ignition-test logs ignition-blue-gateway-0 -c sync-agent | head -15
+   kubectl -n ignition-test logs ignition-blue-gateway-0 -c stoker-agent | head -15
    ```
    Expected:
    - `starting agent`
@@ -96,7 +96,7 @@ export API_TOKEN="ignition-api-key:CYCSdRgW6MHYkeIXhH-BMqo1oaqfTdFi8tXvHJeCKmY"
      jq '{initContainers: [.status.initContainerStatuses[] | {name, started, ready}],
           containers: [.status.containerStatuses[] | {name, ready}]}'
    ```
-   Expected: `sync-agent` has `started: true, ready: true`; `gateway` has `ready: true`.
+   Expected: `stoker-agent` has `started: true, ready: true`; `gateway` has `ready: true`.
 
 3. **Ignition API accessible with token (config loaded before boot):**
    ```bash
@@ -137,10 +137,10 @@ export API_TOKEN="ignition-api-key:CYCSdRgW6MHYkeIXhH-BMqo1oaqfTdFi8tXvHJeCKmY"
 
 7. **Status ConfigMap includes both gateways with profile names:**
    ```bash
-   kubectl -n ignition-test get cm ignition-sync-status-test-sync -o json | jq '.data | keys'
-   kubectl -n ignition-test get cm ignition-sync-status-test-sync -o json | \
+   kubectl -n ignition-test get cm stoker-status-test-sync -o json | jq '.data | keys'
+   kubectl -n ignition-test get cm stoker-status-test-sync -o json | \
      jq -r '.data["ignition-blue"]' | jq '{syncStatus, syncProfileName, projectsSynced}'
-   kubectl -n ignition-test get cm ignition-sync-status-test-sync -o json | \
+   kubectl -n ignition-test get cm stoker-status-test-sync -o json | \
      jq -r '.data["ignition-red"]' | jq '{syncStatus, syncProfileName, projectsSynced}'
    ```
    Expected: Both have `syncStatus: "Synced"`, correct `syncProfileName`, and different `projectsSynced`.
@@ -167,7 +167,7 @@ kubectl -n ignition-test patch syncprofile blue-profile --type=merge \
   -p '{"spec":{"dryRun":true}}'
 
 # Restart the blue pod to get a fresh sync
-kubectl -n ignition-test delete cm ignition-sync-status-test-sync
+kubectl -n ignition-test delete cm stoker-status-test-sync
 kubectl -n ignition-test delete pod ignition-blue-gateway-0
 kubectl -n ignition-test wait --for=condition=Ready pod/ignition-blue-gateway-0 --timeout=180s
 sleep 15
@@ -177,7 +177,7 @@ sleep 15
 
 1. **Agent logs show dry-run execution:**
    ```bash
-   kubectl -n ignition-test logs ignition-blue-gateway-0 -c sync-agent --tail=20
+   kubectl -n ignition-test logs ignition-blue-gateway-0 -c stoker-agent --tail=20
    ```
    Expected:
    - `executing sync plan  mappings=4, dryRun=true`
@@ -185,7 +185,7 @@ sleep 15
 
 2. **Status ConfigMap includes dry-run diff:**
    ```bash
-   kubectl -n ignition-test get cm ignition-sync-status-test-sync -o json | \
+   kubectl -n ignition-test get cm stoker-status-test-sync -o json | \
      jq -r '.data["ignition-blue"]' | jq '{dryRun, dryRunDiffAdded, dryRunDiffModified, dryRunDiffDeleted}'
    ```
    Expected: `dryRun: true` and one or more of `dryRunDiffAdded`, `dryRunDiffModified`, `dryRunDiffDeleted`.
@@ -211,7 +211,7 @@ kubectl -n ignition-test patch syncprofile blue-profile --type=merge \
   -p '{"spec":{"paused":true}}'
 
 # Restart the blue pod
-kubectl -n ignition-test delete cm ignition-sync-status-test-sync
+kubectl -n ignition-test delete cm stoker-status-test-sync
 kubectl -n ignition-test delete pod ignition-blue-gateway-0
 kubectl -n ignition-test wait --for=condition=Ready pod/ignition-blue-gateway-0 --timeout=180s
 sleep 15
@@ -221,13 +221,13 @@ sleep 15
 
 1. **Agent logs show paused state:**
    ```bash
-   kubectl -n ignition-test logs ignition-blue-gateway-0 -c sync-agent --tail=20
+   kubectl -n ignition-test logs ignition-blue-gateway-0 -c stoker-agent --tail=20
    ```
    Expected: `SyncProfile is paused, returning zero-change result`
 
 2. **Zero files changed:**
    ```bash
-   kubectl -n ignition-test get cm ignition-sync-status-test-sync -o json | \
+   kubectl -n ignition-test get cm stoker-status-test-sync -o json | \
      jq -r '.data["ignition-blue"]' | jq .filesChanged
    ```
    Expected: `0`
@@ -243,13 +243,13 @@ sleep 15
 ## Lab 6.5: Agent Status Reporting via ConfigMap
 
 ### Purpose
-Verify the agent writes its sync status to the `ignition-sync-status-{crName}` ConfigMap with the correct JSON structure for both gateways.
+Verify the agent writes its sync status to the `stoker-status-{crName}` ConfigMap with the correct JSON structure for both gateways.
 
 ### Steps
 
 Restart both pods for a fresh sync:
 ```bash
-kubectl -n ignition-test delete cm ignition-sync-status-test-sync 2>/dev/null
+kubectl -n ignition-test delete cm stoker-status-test-sync 2>/dev/null
 kubectl -n ignition-test delete pod ignition-blue-gateway-0 ignition-red-gateway-0
 kubectl -n ignition-test wait --for=condition=Ready pod/ignition-blue-gateway-0 --timeout=180s
 kubectl -n ignition-test wait --for=condition=Ready pod/ignition-red-gateway-0 --timeout=180s
@@ -260,10 +260,10 @@ sleep 15
 
 ```bash
 # Both gateways present in status ConfigMap
-kubectl -n ignition-test get cm ignition-sync-status-test-sync -o json | \
+kubectl -n ignition-test get cm stoker-status-test-sync -o json | \
   jq -r '.data["ignition-blue"]' | jq .
 
-kubectl -n ignition-test get cm ignition-sync-status-test-sync -o json | \
+kubectl -n ignition-test get cm stoker-status-test-sync -o json | \
   jq -r '.data["ignition-red"]' | jq .
 ```
 
@@ -289,15 +289,15 @@ Verify the agent detects changes to the metadata ConfigMap and triggers a re-syn
 
 ```bash
 # Record current logs
-kubectl -n ignition-test logs ignition-blue-gateway-0 -c sync-agent --tail=5
+kubectl -n ignition-test logs ignition-blue-gateway-0 -c stoker-agent --tail=5
 
 # Update the metadata ConfigMap trigger timestamp
-kubectl -n ignition-test patch configmap ignition-sync-metadata-test-sync --type=merge \
+kubectl -n ignition-test patch configmap stoker-metadata-test-sync --type=merge \
   -p "{\"data\":{\"trigger\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}}"
 
 # Wait and check logs
 sleep 15
-kubectl -n ignition-test logs ignition-blue-gateway-0 -c sync-agent --tail=20
+kubectl -n ignition-test logs ignition-blue-gateway-0 -c stoker-agent --tail=20
 ```
 
 Expected: `metadata ConfigMap changed` → `sync triggered`. Since the commit hasn't changed, the agent logs `commit unchanged, skipping sync` (which is correct — no work needed).
@@ -314,7 +314,7 @@ When the Ignition gateway API is unreachable, the agent should report the health
 The initial sync always attempts a health check. Since the native sidecar syncs before the gateway starts, the health check fails (connection refused). Check the agent logs after a fresh pod start:
 
 ```bash
-kubectl -n ignition-test logs ignition-blue-gateway-0 -c sync-agent | head -15
+kubectl -n ignition-test logs ignition-blue-gateway-0 -c stoker-agent | head -15
 ```
 
 Expected: `gateway health check failed (expected on initial sync)` with `error: ...connection refused`, followed by `status written to ConfigMap  status=Synced`.
@@ -322,7 +322,7 @@ Expected: `gateway health check failed (expected on initial sync)` with `error: 
 The pod should remain running and ready:
 ```bash
 kubectl -n ignition-test get pod ignition-blue-gateway-0 \
-  -o jsonpath='{.status.initContainerStatuses[?(@.name=="sync-agent")].ready}'
+  -o jsonpath='{.status.initContainerStatuses[?(@.name=="stoker-agent")].ready}'
 ```
 Expected: `true`
 
@@ -335,10 +335,10 @@ Verify that removing the `SYNC_PROFILE` env var causes the agent to fall back to
 
 ### Steps
 
-Switch from `SYNC_PROFILE` to `SERVICE_PATH` on the blue sync-agent init container:
+Switch from `SYNC_PROFILE` to `SERVICE_PATH` on the blue stoker-agent init container:
 
 ```bash
-# Find the SYNC_PROFILE env var index on the sync-agent init container (index 1)
+# Find the SYNC_PROFILE env var index on the stoker-agent init container (index 1)
 kubectl -n ignition-test get statefulset ignition-blue-gateway -o json | \
   jq '.spec.template.spec.initContainers[1].env | to_entries[] | select(.value.name == "SYNC_PROFILE") | .key'
 
@@ -348,7 +348,7 @@ kubectl -n ignition-test patch statefulset ignition-blue-gateway --type=json -p=
    "value": {"name": "SERVICE_PATH", "value": "services/ignition-blue"}}
 ]'
 
-kubectl -n ignition-test delete cm ignition-sync-status-test-sync
+kubectl -n ignition-test delete cm stoker-status-test-sync
 kubectl -n ignition-test rollout status statefulset/ignition-blue-gateway --timeout=180s
 sleep 15
 ```
@@ -357,13 +357,13 @@ sleep 15
 
 1. **Agent logs show legacy mode (no profile):**
    ```bash
-   kubectl -n ignition-test logs ignition-blue-gateway-0 -c sync-agent --tail=20
+   kubectl -n ignition-test logs ignition-blue-gateway-0 -c stoker-agent --tail=20
    ```
    Expected: `files synced` with `profile: ""` (empty string — no profile fetch, no plan execution).
 
 2. **Status ConfigMap has no profile fields:**
    ```bash
-   kubectl -n ignition-test get cm ignition-sync-status-test-sync -o json | \
+   kubectl -n ignition-test get cm stoker-status-test-sync -o json | \
      jq -r '.data["ignition-blue"]' | jq .
    ```
    Expected: No `syncProfileName` or `dryRun` fields in JSON.
@@ -374,7 +374,7 @@ sleep 15
      {"op": "replace", "path": "/spec/template/spec/initContainers/1/env/7",
       "value": {"name": "SYNC_PROFILE", "value": "blue-profile"}}
    ]'
-   kubectl -n ignition-test delete cm ignition-sync-status-test-sync
+   kubectl -n ignition-test delete cm stoker-status-test-sync
    kubectl -n ignition-test rollout status statefulset/ignition-blue-gateway --timeout=180s
    ```
 
@@ -404,4 +404,4 @@ sleep 15
 | Agent detects metadata ConfigMap change and re-syncs | |
 | Scan API failure → non-fatal warning, agent stays running | |
 | Backward compat: removing SYNC_PROFILE falls back to legacy mode | |
-| IgnitionSync CR shows 2/2 gateways synced, Ready=True | |
+| Stoker CR shows 2/2 gateways synced, Ready=True | |

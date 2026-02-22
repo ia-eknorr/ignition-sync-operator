@@ -19,18 +19,18 @@ Verify the CRD is properly installed with expected schema, short names, and prin
 
 ```bash
 # Verify CRD exists and inspect its spec
-kubectl get crd ignitionsyncs.sync.ignition.io -o yaml | head -30
+kubectl get crd stokers.stoker.io -o yaml | head -30
 
 # Verify short names
-kubectl get isync -n lab
-kubectl get igs -n lab
+kubectl get stk -n lab
+kubectl get stk -n lab
 
 # Verify print columns show in kubectl output
-kubectl get ignitionsyncs -n lab
+kubectl get stokers -n lab
 ```
 
 ### Expected Output
-- Short names `isync` and `igs` both work (empty list is fine)
+- Short name `stk` both work (empty list is fine)
 - Column headers include: `NAME`, `REF`, `SYNCED`, `GATEWAYS`, `READY`, `AGE`
 
 ### Edge Case: Invalid CR Rejection
@@ -38,8 +38,8 @@ kubectl get ignitionsyncs -n lab
 ```bash
 # Attempt to create a CR missing the required `spec.git` field
 cat <<'EOF' | kubectl apply -n lab -f - 2>&1
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: invalid-test
 spec:
@@ -55,12 +55,12 @@ Either the API server rejects it (CRD validation) or the controller catches it a
 
 ### Cleanup
 ```bash
-kubectl delete ignitionsync invalid-test -n lab --ignore-not-found
+kubectl delete stoker invalid-test -n lab --ignore-not-found
 ```
 
 ---
 
-## Lab 2.2: Create First IgnitionSync CR
+## Lab 2.2: Create First Stoker CR
 
 ### Purpose
 Create a valid CR pointing to the GitHub repo and watch the full reconciliation cycle.
@@ -70,8 +70,8 @@ Create a valid CR pointing to the GitHub repo and watch the full reconciliation 
 ```bash
 # Create the CR
 cat <<EOF | kubectl apply -n lab -f -
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: lab-sync
 spec:
@@ -94,50 +94,50 @@ EOF
 
 Open a second terminal and watch the CR status:
 ```bash
-kubectl get ignitionsync lab-sync -n lab -w
+kubectl get stoker lab-sync -n lab -w
 ```
 
 In a third terminal, watch operator logs:
 ```bash
-kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manager -f --tail=50
+kubectl logs -n stoker-system -l control-plane=controller-manager -f --tail=50
 ```
 
 ### What to Verify
 
 1. **Finalizer added** (within ~5s):
    ```bash
-   kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.metadata.finalizers}'
+   kubectl get stoker lab-sync -n lab -o jsonpath='{.metadata.finalizers}'
    ```
-   Expected: `["ignition-sync.io/finalizer"]`
+   Expected: `["stoker.io/finalizer"]`
 
 2. **Ref resolved** (within ~10s):
    ```bash
-   kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.refResolutionStatus}'
+   kubectl get stoker lab-sync -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
    Expected: `Resolved`
 
 3. **RefResolved condition**:
    ```bash
-   kubectl get ignitionsync lab-sync -n lab \
+   kubectl get stoker lab-sync -n lab \
      -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}'
    ```
    Expected: `True`
 
 4. **Commit SHA recorded**:
    ```bash
-   kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}'
+   kubectl get stoker lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}'
    ```
    Expected: Non-empty 40-char hex string
 
 5. **Metadata ConfigMap created**:
    ```bash
-   kubectl get configmap ignition-sync-metadata-lab-sync -n lab -o json | jq '.data'
+   kubectl get configmap stoker-metadata-lab-sync -n lab -o json | jq '.data'
    ```
    Expected: `commit`, `ref`, and `trigger` keys populated
 
 6. **Metadata ConfigMap has valid commit SHA**:
    ```bash
-   kubectl get configmap ignition-sync-metadata-lab-sync -n lab \
+   kubectl get configmap stoker-metadata-lab-sync -n lab \
      -o jsonpath='{.data.commit}' | grep -qE '^[0-9a-f]{40}$' && echo "PASS" || echo "FAIL"
    ```
    Expected: `PASS`
@@ -152,7 +152,7 @@ kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manage
 ### Log Inspection
 
 In the operator logs, you should see (in order):
-1. `reconciling IgnitionSync` with namespace/name
+1. `reconciling Stoker` with namespace/name
 2. `resolving git ref` or `git ls-remote`
 3. `ref resolved` with commit SHA
 4. `created metadata configmap`
@@ -171,7 +171,7 @@ Verify the controller's resolved commit SHA is correct by cross-referencing it a
 
 ```bash
 # Get resolved commit from CR status
-RESOLVED_SHA=$(kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
+RESOLVED_SHA=$(kubectl get stoker lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
 echo "Controller resolved SHA: $RESOLVED_SHA"
 
 # Verify it's a valid 40-character hex string
@@ -196,7 +196,7 @@ echo "Remote SHA: $REMOTE_SHA"
 
 ```bash
 # Dump all data keys
-kubectl get configmap ignition-sync-metadata-lab-sync -n lab -o json | jq '.data'
+kubectl get configmap stoker-metadata-lab-sync -n lab -o json | jq '.data'
 ```
 
 Expected output should contain at minimum:
@@ -212,15 +212,15 @@ Expected output should contain at minimum:
 
 ```bash
 # commit key
-CM_COMMIT=$(kubectl get configmap ignition-sync-metadata-lab-sync -n lab -o jsonpath='{.data.commit}')
+CM_COMMIT=$(kubectl get configmap stoker-metadata-lab-sync -n lab -o jsonpath='{.data.commit}')
 echo "$CM_COMMIT" | grep -qE '^[0-9a-f]{40}$' && echo "PASS: commit is valid SHA" || echo "FAIL: commit invalid"
 
 # ref key
-CM_REF=$(kubectl get configmap ignition-sync-metadata-lab-sync -n lab -o jsonpath='{.data.ref}')
+CM_REF=$(kubectl get configmap stoker-metadata-lab-sync -n lab -o jsonpath='{.data.ref}')
 [ "$CM_REF" = "main" ] && echo "PASS: ref is main" || echo "FAIL: ref is $CM_REF"
 
 # trigger key
-CM_TRIGGER=$(kubectl get configmap ignition-sync-metadata-lab-sync -n lab -o jsonpath='{.data.trigger}')
+CM_TRIGGER=$(kubectl get configmap stoker-metadata-lab-sync -n lab -o jsonpath='{.data.trigger}')
 [ -n "$CM_TRIGGER" ] && echo "PASS: trigger is $CM_TRIGGER" || echo "FAIL: trigger is empty"
 
 # commit in ConfigMap matches CR status
@@ -241,47 +241,47 @@ Verify the controller detects `spec.git.ref` changes and resolves the new ref to
 
 ```bash
 # Record current commit
-COMMIT_BEFORE=$(kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
+COMMIT_BEFORE=$(kubectl get stoker lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
 echo "Current commit: $COMMIT_BEFORE"
 
 # Switch to 0.1.0
-kubectl patch ignitionsync lab-sync -n lab --type=merge \
+kubectl patch stoker lab-sync -n lab --type=merge \
   -p '{"spec":{"git":{"ref":"0.1.0"}}}'
 
 # Watch for commit change
-kubectl get ignitionsync lab-sync -n lab -w
+kubectl get stoker lab-sync -n lab -w
 ```
 
 ### What to Verify
 
 1. **lastSyncRef updates** to `0.1.0`:
    ```bash
-   kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.lastSyncRef}'
+   kubectl get stoker lab-sync -n lab -o jsonpath='{.status.lastSyncRef}'
    ```
 
 2. **lastSyncCommit changes** to a different SHA:
    ```bash
-   COMMIT_V1=$(kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
+   COMMIT_V1=$(kubectl get stoker lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
    echo "0.1.0 commit: $COMMIT_V1"
    [ "$COMMIT_V1" != "$COMMIT_BEFORE" ] && echo "PASS: Commit changed" || echo "FAIL: Commit unchanged"
    ```
 
 3. **Metadata ConfigMap updated with new ref and commit:**
    ```bash
-   kubectl get configmap ignition-sync-metadata-lab-sync -n lab -o json | jq '.data'
+   kubectl get configmap stoker-metadata-lab-sync -n lab -o json | jq '.data'
    ```
    Expected: `ref` is `0.1.0`, `commit` matches `$COMMIT_V1`.
 
 4. **RefResolved condition still True:**
    ```bash
-   kubectl get ignitionsync lab-sync -n lab \
+   kubectl get stoker lab-sync -n lab \
      -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}'
    ```
    Expected: `True`
 
 5. **Now switch to 0.2.0:**
    ```bash
-   kubectl patch ignitionsync lab-sync -n lab --type=merge \
+   kubectl patch stoker lab-sync -n lab --type=merge \
      -p '{"spec":{"git":{"ref":"0.2.0"}}}'
    ```
 
@@ -289,20 +289,20 @@ kubectl get ignitionsync lab-sync -n lab -w
    ```bash
    # Wait for reconcile (~10s)
    sleep 15
-   COMMIT_V2=$(kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
+   COMMIT_V2=$(kubectl get stoker lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
    echo "0.2.0 commit: $COMMIT_V2"
    [ "$COMMIT_V2" != "$COMMIT_V1" ] && echo "PASS: Commit changed for 0.2.0" || echo "FAIL: Commit unchanged"
    ```
 
 7. **Metadata ConfigMap updated:**
    ```bash
-   kubectl get configmap ignition-sync-metadata-lab-sync -n lab -o jsonpath='{.data.ref}'
+   kubectl get configmap stoker-metadata-lab-sync -n lab -o jsonpath='{.data.ref}'
    ```
    Expected: `0.2.0`
 
 ### Restore
 ```bash
-kubectl patch ignitionsync lab-sync -n lab --type=merge \
+kubectl patch stoker lab-sync -n lab --type=merge \
   -p '{"spec":{"git":{"ref":"main"}}}'
 ```
 
@@ -318,8 +318,8 @@ Verify the controller handles ref resolution failures gracefully: sets error con
 ```bash
 # Create a CR with a bad repo URL
 cat <<EOF | kubectl apply -n lab -f -
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: bad-repo-test
 spec:
@@ -342,43 +342,43 @@ EOF
 
 1. **RefResolved=False** (within ~30s):
    ```bash
-   kubectl get ignitionsync bad-repo-test -n lab \
+   kubectl get stoker bad-repo-test -n lab \
      -o jsonpath='{.status.conditions[?(@.type=="RefResolved")]}'  | jq .
    ```
    Expected: `status: "False"`, `reason: "RefResolutionFailed"`
 
 2. **refResolutionStatus is Error:**
    ```bash
-   kubectl get ignitionsync bad-repo-test -n lab -o jsonpath='{.status.refResolutionStatus}'
+   kubectl get stoker bad-repo-test -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
    Expected: `Error`
 
 3. **Controller still running** (didn't crash):
    ```bash
-   kubectl get pods -n ignition-sync-operator-system
+   kubectl get pods -n stoker-system
    ```
    Expected: Controller pod Running with restart count `0`.
 
 4. **Original CR unaffected:**
    ```bash
-   kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.refResolutionStatus}'
+   kubectl get stoker lab-sync -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
    Expected: Still `Resolved`
 
 5. **Fix the URL and verify recovery:**
    ```bash
-   kubectl patch ignitionsync bad-repo-test -n lab --type=merge \
+   kubectl patch stoker bad-repo-test -n lab --type=merge \
      -p '{"spec":{"git":{"repo":"https://github.com/ia-eknorr/test-ignition-project.git"}}}'
    ```
    Wait ~30s, then:
    ```bash
-   kubectl get ignitionsync bad-repo-test -n lab -o jsonpath='{.status.refResolutionStatus}'
+   kubectl get stoker bad-repo-test -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
    Expected: `Resolved` — the controller recovered.
 
 ### Cleanup
 ```bash
-kubectl delete ignitionsync bad-repo-test -n lab
+kubectl delete stoker bad-repo-test -n lab
 ```
 
 ---
@@ -393,8 +393,8 @@ Verify behavior when the referenced API key secret doesn't exist, and that the c
 ```bash
 # Create CR referencing a secret that doesn't exist
 cat <<EOF | kubectl apply -n lab -f -
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: missing-secret-test
 spec:
@@ -417,18 +417,18 @@ EOF
 
 1. **Check conditions** (within ~15s):
    ```bash
-   kubectl get ignitionsync missing-secret-test -n lab -o json | jq '.status.conditions'
+   kubectl get stoker missing-secret-test -n lab -o json | jq '.status.conditions'
    ```
    Look for Ready=False with a message mentioning the missing secret.
 
 2. **Check operator logs** for the error:
    ```bash
-   kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manager --tail=20 | grep -i secret
+   kubectl logs -n stoker-system -l control-plane=controller-manager --tail=20 | grep -i secret
    ```
 
 3. **Controller still running:**
    ```bash
-   kubectl get pods -n ignition-sync-operator-system -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}'
+   kubectl get pods -n stoker-system -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}'
    ```
    Expected: `0`
 
@@ -436,13 +436,13 @@ EOF
    ```bash
    kubectl create secret generic nonexistent-secret -n lab --from-literal=apiKey=test-key
    sleep 15
-   kubectl get ignitionsync missing-secret-test -n lab -o jsonpath='{.status.refResolutionStatus}'
+   kubectl get stoker missing-secret-test -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
    Expected: Eventually reaches `Resolved`.
 
 ### Cleanup
 ```bash
-kubectl delete ignitionsync missing-secret-test -n lab
+kubectl delete stoker missing-secret-test -n lab
 kubectl delete secret nonexistent-secret -n lab
 ```
 
@@ -457,8 +457,8 @@ Verify `spec.paused: true` halts all operations — no ref resolution, no metada
 
 ```bash
 cat <<EOF | kubectl apply -n lab -f -
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: paused-test
 spec:
@@ -482,41 +482,41 @@ EOF
 
 1. **No metadata ConfigMap created:**
    ```bash
-   kubectl get configmap ignition-sync-metadata-paused-test -n lab 2>&1
+   kubectl get configmap stoker-metadata-paused-test -n lab 2>&1
    ```
    Expected: `NotFound`
 
 2. **refResolutionStatus is not Resolved:**
    ```bash
-   kubectl get ignitionsync paused-test -n lab -o jsonpath='{.status.refResolutionStatus}'
+   kubectl get stoker paused-test -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
    Expected: Empty or not `Resolved`.
 
 3. **Ready=False with reason Paused:**
    ```bash
-   kubectl get ignitionsync paused-test -n lab \
+   kubectl get stoker paused-test -n lab \
      -o jsonpath='{.status.conditions[?(@.type=="Ready")].reason}'
    ```
    Expected: `Paused`
 
 4. **Unpause and verify it starts working:**
    ```bash
-   kubectl patch ignitionsync paused-test -n lab --type=merge \
+   kubectl patch stoker paused-test -n lab --type=merge \
      -p '{"spec":{"paused":false}}'
    sleep 30
-   kubectl get ignitionsync paused-test -n lab -o jsonpath='{.status.refResolutionStatus}'
+   kubectl get stoker paused-test -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
    Expected: `Resolved`
 
 5. **Metadata ConfigMap now exists:**
    ```bash
-   kubectl get configmap ignition-sync-metadata-paused-test -n lab -o jsonpath='{.data.commit}'
+   kubectl get configmap stoker-metadata-paused-test -n lab -o jsonpath='{.data.commit}'
    ```
    Expected: A valid 40-char hex SHA.
 
 ### Cleanup
 ```bash
-kubectl delete ignitionsync paused-test -n lab
+kubectl delete stoker paused-test -n lab
 ```
 
 ---
@@ -531,8 +531,8 @@ Verify the full cleanup chain when a CR is deleted: finalizer runs, metadata Con
 ```bash
 # Create a fresh CR
 cat <<EOF | kubectl apply -n lab -f -
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: cleanup-test
 spec:
@@ -552,41 +552,41 @@ EOF
 
 # Wait for full reconciliation
 sleep 30
-kubectl get ignitionsync cleanup-test -n lab -o jsonpath='{.status.refResolutionStatus}'
+kubectl get stoker cleanup-test -n lab -o jsonpath='{.status.refResolutionStatus}'
 # Should be: Resolved
 ```
 
 ### Record resources before deletion:
 ```bash
 echo "=== Before Deletion ==="
-kubectl get configmap ignition-sync-metadata-cleanup-test -n lab 2>&1
-kubectl get ignitionsync cleanup-test -n lab -o jsonpath='{.metadata.finalizers}'
+kubectl get configmap stoker-metadata-cleanup-test -n lab 2>&1
+kubectl get stoker cleanup-test -n lab -o jsonpath='{.metadata.finalizers}'
 ```
 
 ### Delete and observe:
 ```bash
-kubectl delete ignitionsync cleanup-test -n lab &
+kubectl delete stoker cleanup-test -n lab &
 # Watch in real-time
-kubectl get ignitionsync,configmap -n lab -w
+kubectl get stoker,configmap -n lab -w
 ```
 
 ### What to Verify
 
 1. **CR deletion completes** (not stuck on finalizer):
    ```bash
-   kubectl get ignitionsync cleanup-test -n lab 2>&1
+   kubectl get stoker cleanup-test -n lab 2>&1
    ```
    Expected: `Error from server (NotFound)`
 
 2. **Metadata ConfigMap deleted** (controller cleanup):
    ```bash
-   kubectl get configmap ignition-sync-metadata-cleanup-test -n lab 2>&1
+   kubectl get configmap stoker-metadata-cleanup-test -n lab 2>&1
    ```
    Expected: `NotFound`
 
 3. **Operator logs show cleanup:**
    ```bash
-   kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manager --tail=20 | grep -i "cleanup\|finalizer\|deleting"
+   kubectl logs -n stoker-system -l control-plane=controller-manager --tail=20 | grep -i "cleanup\|finalizer\|deleting"
    ```
 
 ---
@@ -601,8 +601,8 @@ Verify two CRs in the same namespace don't interfere with each other. Each shoul
 ```bash
 # Create two CRs pointing to different refs
 cat <<EOF | kubectl apply -n lab -f -
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: multi-a
 spec:
@@ -619,8 +619,8 @@ spec:
       name: ignition-api-key
       key: apiKey
 ---
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: multi-b
 spec:
@@ -646,20 +646,20 @@ sleep 45
 
 1. **Both CRs resolved successfully:**
    ```bash
-   kubectl get ignitionsyncs -n lab
+   kubectl get stokers -n lab
    ```
    Expected: Both show `REF` (0.1.0 / 0.2.0) and status fields populated.
 
 2. **Separate metadata ConfigMaps:**
    ```bash
-   kubectl get configmap -n lab -l ignition-sync.io/cr-name
+   kubectl get configmap -n lab -l stoker.io/cr-name
    ```
-   Expected: `ignition-sync-metadata-multi-a` and `ignition-sync-metadata-multi-b`
+   Expected: `stoker-metadata-multi-a` and `stoker-metadata-multi-b`
 
 3. **Different commits:**
    ```bash
-   COMMIT_A=$(kubectl get ignitionsync multi-a -n lab -o jsonpath='{.status.lastSyncCommit}')
-   COMMIT_B=$(kubectl get ignitionsync multi-b -n lab -o jsonpath='{.status.lastSyncCommit}')
+   COMMIT_A=$(kubectl get stoker multi-a -n lab -o jsonpath='{.status.lastSyncCommit}')
+   COMMIT_B=$(kubectl get stoker multi-b -n lab -o jsonpath='{.status.lastSyncCommit}')
    echo "A: $COMMIT_A"
    echo "B: $COMMIT_B"
    [ "$COMMIT_A" != "$COMMIT_B" ] && echo "PASS: Different commits" || echo "FAIL: Same commit"
@@ -667,22 +667,22 @@ sleep 45
 
 4. **Delete one, verify other unaffected:**
    ```bash
-   kubectl delete ignitionsync multi-a -n lab
+   kubectl delete stoker multi-a -n lab
    sleep 10
-   kubectl get ignitionsync multi-b -n lab -o jsonpath='{.status.refResolutionStatus}'
+   kubectl get stoker multi-b -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
    Expected: Still `Resolved`
 
 5. **Deleted CR's ConfigMap cleaned up, other still exists:**
    ```bash
-   kubectl get configmap ignition-sync-metadata-multi-a -n lab 2>&1
-   kubectl get configmap ignition-sync-metadata-multi-b -n lab 2>&1
+   kubectl get configmap stoker-metadata-multi-a -n lab 2>&1
+   kubectl get configmap stoker-metadata-multi-b -n lab 2>&1
    ```
    Expected: multi-a `NotFound`, multi-b still exists.
 
 ### Cleanup
 ```bash
-kubectl delete ignitionsync multi-a multi-b -n lab --ignore-not-found
+kubectl delete stoker multi-a multi-b -n lab --ignore-not-found
 ```
 
 ---
@@ -696,11 +696,11 @@ Verify the controller handles rapid spec changes without getting confused or lea
 
 ```bash
 # Ensure lab-sync exists and is resolved
-kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.refResolutionStatus}'
+kubectl get stoker lab-sync -n lab -o jsonpath='{.status.refResolutionStatus}'
 
 # Flip refs rapidly
 for ref in 0.1.0 0.2.0 main 0.1.0 0.2.0 main; do
-  kubectl patch ignitionsync lab-sync -n lab --type=merge \
+  kubectl patch stoker lab-sync -n lab --type=merge \
     -p "{\"spec\":{\"git\":{\"ref\":\"$ref\"}}}"
   sleep 2
 done
@@ -713,7 +713,7 @@ sleep 30
 
 1. **Final state is consistent:**
    ```bash
-   kubectl get ignitionsync lab-sync -n lab -o json | jq '{
+   kubectl get stoker lab-sync -n lab -o json | jq '{
      ref: .spec.git.ref,
      lastSyncRef: .status.lastSyncRef,
      refResolutionStatus: .status.refResolutionStatus,
@@ -724,13 +724,13 @@ sleep 30
 
 2. **Controller pod healthy** (no restarts, no OOM):
    ```bash
-   kubectl get pods -n ignition-sync-operator-system -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}'
+   kubectl get pods -n stoker-system -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}'
    ```
    Expected: `0`
 
 3. **No goroutine leaks** — check memory usage hasn't spiked:
    ```bash
-   kubectl top pod -n ignition-sync-operator-system 2>/dev/null || echo "metrics-server not installed (skip)"
+   kubectl top pod -n stoker-system 2>/dev/null || echo "metrics-server not installed (skip)"
    ```
 
 ---
@@ -754,14 +754,14 @@ kubectl get pod ignition-0 -n lab -o json | jq '{
 # Gateway HTTP health
 curl -s http://localhost:8088/StatusPing
 
-# Check for any errors in Ignition logs that mention "sync" or "ignition-sync"
+# Check for any errors in Ignition logs that mention "sync" or "stoker"
 kubectl logs ignition-0 -n lab --tail=200 | grep -i "sync\|error\|exception" | head -20
 ```
 
 ### Expected
 - Pod Running, Ready, 0 restarts
 - StatusPing returns `200`
-- No Ignition log entries mentioning "ignition-sync" (the operator hasn't pushed any files to the gateway yet — that's phase 5)
+- No Ignition log entries mentioning "stoker" (the operator hasn't pushed any files to the gateway yet — that's phase 5)
 
 ---
 

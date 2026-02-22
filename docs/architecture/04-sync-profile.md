@@ -1,11 +1,11 @@
-<!-- Part of: Ignition Sync Operator Architecture (v3) -->
-<!-- See also: 00-overview.md, 01-crd.md, 02-controller.md, 06-sync-agent.md, 08-deployment-operations.md, 09-security-testing-roadmap.md, 10-enterprise-examples.md -->
+<!-- Part of: Stoker Architecture (v3) -->
+<!-- See also: 00-overview.md, 01-crd.md, 02-controller.md, 06-stoker-agent.md, 08-deployment-operations.md, 09-security-testing-roadmap.md, 10-enterprise-examples.md -->
 
-# Ignition Sync Operator — SyncProfile CRD
+# Stoker — SyncProfile CRD
 
 ## Motivation
 
-The v1alpha1 `IgnitionSync` CRD bundles Ignition-specific file mapping opinions directly into the infrastructure spec:
+The v1alpha1 `Stoker` CRD bundles Ignition-specific file mapping opinions directly into the infrastructure spec:
 
 ```yaml
 # Current: opinionated, Ignition-specific fields
@@ -34,16 +34,16 @@ Problems:
 
 1. **Tightly coupled** — `shared.scripts`, `shared.udts`, `shared.externalResources` assume a specific Ignition project structure. Non-standard layouts require `additionalFiles` workarounds.
 2. **Not reusable** — Two gateways with the same role (e.g., all area gateways) duplicate the same mapping configuration in annotations.
-3. **Mixed concerns** — The IgnitionSync CR mixes infrastructure (git, webhook) with file routing (what goes where on each gateway).
+3. **Mixed concerns** — The Stoker CR mixes infrastructure (git, webhook) with file routing (what goes where on each gateway).
 4. **Flat annotation model** — Per-gateway overrides via 6+ annotations per pod are verbose and error-prone.
 
 ## Design Decision: Git Ref Does NOT Belong in SyncProfile
 
-A natural question is whether `SyncProfile` should include a `ref` field to allow per-profile (and therefore per-gateway-role) version pinning. After architectural review, **the ref stays exclusively in `IgnitionSync.spec.git.ref`**. SyncProfile contains no git ref field.
+A natural question is whether `SyncProfile` should include a `ref` field to allow per-profile (and therefore per-gateway-role) version pinning. After architectural review, **the ref stays exclusively in `Stoker.spec.git.ref`**. SyncProfile contains no git ref field.
 
 ### Rationale
 
-1. **Separation of concerns.** The 3-tier model has a clean boundary: IgnitionSync handles infrastructure ("what version, from where, how to connect"), SyncProfile handles file routing ("what files go where on the gateway"). The ref answers "which version of the whole repository" — that is infrastructure, not routing. Adding ref to SyncProfile collapses two tiers into an incoherent hybrid.
+1. **Separation of concerns.** The 3-tier model has a clean boundary: Stoker handles infrastructure ("what version, from where, how to connect"), SyncProfile handles file routing ("what files go where on the gateway"). The ref answers "which version of the whole repository" — that is infrastructure, not routing. Adding ref to SyncProfile collapses two tiers into an incoherent hybrid.
 
 2. **SCADA safety.** Mixed config versions within a single Ignition site create silent failures that produce no alarms:
    - **Tag inheritance breaks** — parent UDT definitions at v2.0 and child at v2.1 cause tag quality to degrade to "bad" on mismatched members. No alarm, no error — just missing values flowing upward through tag inheritance.
@@ -51,7 +51,7 @@ A natural question is whether `SyncProfile` should include a `ref` field to allo
    - **Historian data integrity degrades** — inconsistent tag paths produce split timeseries in the historian, requiring manual SQL cleanup.
    - **Regulatory compliance** (FDA 21 CFR Part 11, IEC 62443, NERC CIP) requires a single documented version baseline per site.
 
-3. **Precedence ambiguity.** If both the CR and the profile define a ref, every answer to "which wins?" is bad. The CR's ref becomes decorative (misleading), or operators must cross-reference two resources to determine actual state. The current model — one ref per CR, visible in `kubectl get isync` — is unambiguous.
+3. **Precedence ambiguity.** If both the CR and the profile define a ref, every answer to "which wins?" is bad. The CR's ref becomes decorative (misleading), or operators must cross-reference two resources to determine actual state. The current model — one ref per CR, visible in `kubectl get stk` — is unambiguous.
 
 4. **Controller complexity.** Currently: 1 `ls-remote` per CR, 1 metadata ConfigMap, 1 `RefResolved` condition. With per-profile refs: N+1 resolutions, N+1 ConfigMaps, N+1 conditions, fragmented webhook targeting. All for a pattern that real-world SCADA sites rarely need.
 
@@ -60,9 +60,9 @@ A natural question is whether `SyncProfile` should include a `ref` field to allo
 | Scenario | Mechanism |
 |----------|-----------|
 | Staged rollout within a site (~70% of upgrades) | `spec.deployment.strategy: canary` with `stages[]` — same ref, ordered delivery with health checks |
-| Multi-site rollout (~25%) | Separate IgnitionSync CRs per namespace — each site advances independently |
-| Dev/test gateway on feature branch (~5%) | Pod annotation `ignition-sync.io/ref-override` — agent-side only, generates `RefSkew` warning (see [08-deployment-operations.md](08-deployment-operations.md#ref-override-escape-valve)) |
-| Permanent multi-version within a site (rare) | Separate IgnitionSync CRs — explicit, auditable, independent status |
+| Multi-site rollout (~25%) | Separate Stoker CRs per namespace — each site advances independently |
+| Dev/test gateway on feature branch (~5%) | Pod annotation `stoker.io/ref-override` — agent-side only, generates `RefSkew` warning (see [08-deployment-operations.md](08-deployment-operations.md#ref-override-escape-valve)) |
+| Permanent multi-version within a site (rare) | Separate Stoker CRs — explicit, auditable, independent status |
 
 ---
 
@@ -74,7 +74,7 @@ A natural question is whether `SyncProfile` should include a `ref` field to allo
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  Tier 1: IgnitionSync CR (namespace defaults)                │
+│  Tier 1: Stoker CR (namespace defaults)                │
 │  git, gateway API, webhook, polling, global excludes          │
 │  agent image — pure infrastructure                           │
 ├──────────────────────────────────────────────────────────────┤
@@ -87,7 +87,7 @@ A natural question is whether `SyncProfile` should include a `ref` field to allo
 │  highest priority — per-pod tweaks                           │
 └──────────────────────────────────────────────────────────────┘
 
-Precedence: annotation > profile > IgnitionSync > defaults
+Precedence: annotation > profile > Stoker > defaults
 ```
 
 **Key benefit:** Pods reference a profile by name instead of carrying 6+ mapping annotations. Two area gateways with identical roles reference the same `SyncProfile`:
@@ -97,26 +97,26 @@ Precedence: annotation > profile > IgnitionSync > defaults
 area1:
   gateway:
     podAnnotations:
-      ignition-sync.io/inject: "true"
-      ignition-sync.io/cr-name: "proveit-sync"
-      ignition-sync.io/service-path: "services/area"
-      ignition-sync.io/tag-provider: "edge"
-      ignition-sync.io/system-name-template: "site{{.SiteNumber}}-{{.GatewayName}}"
-      ignition-sync.io/deployment-mode: "prd-cloud"
+      stoker.io/inject: "true"
+      stoker.io/cr-name: "proveit-sync"
+      stoker.io/service-path: "services/area"
+      stoker.io/tag-provider: "edge"
+      stoker.io/system-name-template: "site{{.SiteNumber}}-{{.GatewayName}}"
+      stoker.io/deployment-mode: "prd-cloud"
 
 # After: 3 annotations + a shared profile
 area1:
   gateway:
     podAnnotations:
-      ignition-sync.io/inject: "true"
-      ignition-sync.io/cr-name: "proveit-sync"
-      ignition-sync.io/sync-profile: "proveit-area"
+      stoker.io/inject: "true"
+      stoker.io/cr-name: "proveit-sync"
+      stoker.io/sync-profile: "proveit-area"
 ```
 
 ### CRD Specification
 
 ```yaml
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: proveit-site
@@ -165,7 +165,7 @@ spec:
     source: "services/site/overlays/prd-cloud"
 
   # ============================================================
-  # Exclude Patterns (merged with IgnitionSync global excludes)
+  # Exclude Patterns (merged with Stoker global excludes)
   # ============================================================
   excludePatterns:
     - "**/tag-*/MQTT Engine/"
@@ -228,7 +228,7 @@ type SyncProfileSpec struct {
     DeploymentMode *DeploymentModeSpec `json:"deploymentMode,omitempty"`
 
     // excludePatterns are glob patterns for files to exclude.
-    // Merged with IgnitionSync global excludePatterns (additive).
+    // Merged with Stoker global excludePatterns (additive).
     // +optional
     ExcludePatterns []string `json:"excludePatterns,omitempty"`
 
@@ -383,9 +383,9 @@ The SyncProfile controller manages the following conditions:
 | `DependenciesMet` | All profiles listed in `dependsOn` exist and their gateways report `Synced`. Not set if `dependsOn` is empty. |
 | `DryRunCompleted` | Set when `dryRun: true` and the agent has completed a staging sync. Message includes diff summary. |
 
-The `gatewayCount` status field is updated by the IgnitionSync controller whenever it reconciles and discovers pods referencing this profile.
+The `gatewayCount` status field is updated by the Stoker controller whenever it reconciles and discovers pods referencing this profile.
 
-**Note:** The `RefSkew` warning condition lives on the **IgnitionSync** CR (not SyncProfile). It is set when any gateway's `syncedRef` differs from the CR's `lastSyncRef`, which happens when a pod uses the `ignition-sync.io/ref-override` annotation.
+**Note:** The `RefSkew` warning condition lives on the **Stoker** CR (not SyncProfile). It is set when any gateway's `syncedRef` differs from the CR's `lastSyncRef`, which happens when a pod uses the `stoker.io/ref-override` annotation.
 
 ---
 
@@ -403,7 +403,7 @@ The sync agent clones the git repo to a local emptyDir volume (`/repo`) and uses
 3. If deploymentMode specified:
    a. Overlay source onto /ignition-data/config/resources/core/
    b. Always recomposed — even if overlay unchanged (core changes need re-overlay)
-4. Apply exclude patterns (profile excludes + IgnitionSync global excludes)
+4. Apply exclude patterns (profile excludes + Stoker global excludes)
 5. Walk destination and delete orphans except protected dirs (.resources/)
 6. Verify no .resources/ in staging (safety check)
 ```
@@ -481,7 +481,7 @@ In Ignition, parent gateways (site) must sync before child gateways (area) becau
 
 ```yaml
 # Area profile waits for site profile to sync
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: proveit-area
@@ -534,7 +534,7 @@ When `dryRun: true` is set on a SyncProfile, the agent performs a full sync to t
 
 - **Validating a new profile** before assigning gateways to it.
 - **Testing mapping changes** — see which files would move before committing.
-- **Pre-upgrade verification** — create a dry-run profile pointing at the same mappings but let operators inspect the diff before flipping the IgnitionSync CR to the new ref.
+- **Pre-upgrade verification** — create a dry-run profile pointing at the same mappings but let operators inspect the diff before flipping the Stoker CR to the new ref.
 
 ---
 
@@ -549,7 +549,7 @@ These behaviors are enforced by the agent regardless of profile or CR configurat
 | **Path traversal prevention** | Agent rejects any resolved path containing `..` or an absolute path. Sync fails with `PathTraversalBlocked` error. |
 | **`.resources/` protection** | The pattern `**/.resources/**` is always excluded from sync, even if omitted from `excludePatterns`. The agent also verifies that the staging directory does not contain `.resources/` before merging. |
 | **JSON syntax validation** | Before writing any `config.json` to the gateway, the agent validates JSON syntax. Invalid JSON fails the sync for that file with condition `ConfigSyntaxError`. |
-| **Mapping overlap warning** | When two mappings write to the same destination directory, the agent emits a Kubernetes `Warning` event on the IgnitionSync CR. Last-write-wins behavior is documented but the warning helps catch accidental overlaps. |
+| **Mapping overlap warning** | When two mappings write to the same destination directory, the agent emits a Kubernetes `Warning` event on the Stoker CR. Last-write-wins behavior is documented but the warning helps catch accidental overlaps. |
 | **Concurrent sync prevention** | Only one sync cycle runs at a time per agent. If a new trigger arrives while a sync is in progress, it is queued (not dropped). |
 
 ### Post-Sync Health Checks
@@ -560,7 +560,7 @@ After every non-dry-run sync, the agent verifies:
 2. **Projects loaded** — `GET /data/api/v1/projects/list` returns expected project count (compared against the mappings that target `projects/`).
 3. **Tag providers intact** — `GET /data/api/v1/resources/list/ignition/tag-provider` returns expected providers.
 
-If any check fails, the gateway is reported as `SyncStatus: Error` in the status ConfigMap. The IgnitionSync CR's `AllGatewaysSynced` condition reflects this.
+If any check fails, the gateway is reported as `SyncStatus: Error` in the status ConfigMap. The Stoker CR's `AllGatewaysSynced` condition reflects this.
 
 ### Maximum Version Skew
 
@@ -598,7 +598,7 @@ spec:
       destination: "config/resources/core/ignition/mqtt-engine"
       condition:
         podLabel:
-          ignition-sync.io/has-mqtt: "true"
+          stoker.io/has-mqtt: "true"
 ```
 
 Reduces the need for separate profiles when gateways differ by a single mapping.
@@ -628,11 +628,11 @@ spec:
 
 ### Immutable Profiles
 
-An annotation `ignition-sync.io/immutable: "true"` prevents spec edits after creation. Operators create a new profile version (e.g., `proveit-area-v4`) and update pod annotations. Supports regulated environments where change control requires explicit versioned artifacts.
+An annotation `stoker.io/immutable: "true"` prevents spec edits after creation. Operators create a new profile version (e.g., `proveit-area-v4`) and update pod annotations. Supports regulated environments where change control requires explicit versioned artifacts.
 
 ### Maintenance Windows
 
-A field on the **IgnitionSync CR** (not SyncProfile) that restricts when syncs can occur:
+A field on the **Stoker CR** (not SyncProfile) that restricts when syncs can occur:
 
 ```yaml
 spec:
@@ -646,11 +646,11 @@ When `enforced: true` and the current time is outside the window, the controller
 
 ---
 
-## IgnitionSync Simplification
+## Stoker Simplification
 
-With SyncProfile absorbing file routing, the IgnitionSync CR becomes pure infrastructure:
+With SyncProfile absorbing file routing, the Stoker CR becomes pure infrastructure:
 
-### Fields Removed from IgnitionSyncSpec
+### Fields Removed from StokerSpec
 
 | Field | Replacement |
 |-------|-------------|
@@ -665,10 +665,10 @@ With SyncProfile absorbing file routing, the IgnitionSync CR becomes pure infras
 - `AdditionalFile`
 - `NormalizeSpec`, `FieldReplacement`
 
-### What Stays in IgnitionSync
+### What Stays in Stoker
 
 ```go
-type IgnitionSyncSpec struct {
+type StokerSpec struct {
     // Stable — infrastructure concerns
     Git             GitSpec             `json:"git"`
     // Deprecated: Storage is no longer used. Agent clones to local emptyDir.
@@ -697,7 +697,7 @@ type IgnitionSyncSpec struct {
 
 **This is a breaking CRD change**, acceptable at v1alpha1:
 
-1. **Pods without `sync-profile` annotation** still work in 2-tier mode (IgnitionSync + annotations). This is backward-compatible for existing deployments that haven't adopted SyncProfile yet.
+1. **Pods without `sync-profile` annotation** still work in 2-tier mode (Stoker + annotations). This is backward-compatible for existing deployments that haven't adopted SyncProfile yet.
 2. **All existing pod annotations remain valid** — `service-path`, `tag-provider`, `deployment-mode`, `system-name-template` continue to function.
 3. **Profile deletion** triggers graceful degradation — gateways fall back to annotation-based config. The agent logs a warning and continues with whatever annotations are present.
 4. **Migration path:** During the transition, users can run without SyncProfile (2-tier) and adopt it incrementally per gateway role.
@@ -706,7 +706,7 @@ type IgnitionSyncSpec struct {
 
 | Phase | Action |
 |-------|--------|
-| v1alpha1 (current) | Remove `shared`, `additionalFiles`, `normalize`, `siteNumber` from IgnitionSyncSpec. Add SyncProfile CRD. |
+| v1alpha1 (current) | Remove `shared`, `additionalFiles`, `normalize`, `siteNumber` from StokerSpec. Add SyncProfile CRD. |
 | v1alpha1 (transition) | Pods without `sync-profile` annotation use `service-path` + other annotations (2-tier mode). |
 | v1beta1 | SyncProfile is the recommended approach. `service-path` annotation still works but docs guide toward profiles. |
 | v1 | Full 3-tier model is the standard. |
@@ -719,23 +719,23 @@ With SyncProfile, the per-pod annotation set simplifies:
 
 | Annotation | Required | Description |
 |---|---|---|
-| `ignition-sync.io/inject` | Yes | `"true"` to enable sidecar injection |
-| `ignition-sync.io/cr-name` | No* | Name of the `IgnitionSync` CR. *Auto-derived if exactly one CR exists. |
-| `ignition-sync.io/sync-profile` | No | Name of the `SyncProfile` to use. If omitted, falls back to `service-path` annotation. |
-| `ignition-sync.io/gateway-name` | No | Override gateway identity (defaults to pod label `app.kubernetes.io/name`) |
-| `ignition-sync.io/ref-override` | No | Override the git ref for this pod only. Read by the agent, not the controller. Generates a `RefSkew` warning condition on the IgnitionSync CR. See [08-deployment-operations.md](08-deployment-operations.md#ref-override-escape-valve). |
+| `stoker.io/inject` | Yes | `"true"` to enable sidecar injection |
+| `stoker.io/cr-name` | No* | Name of the `Stoker` CR. *Auto-derived if exactly one CR exists. |
+| `stoker.io/sync-profile` | No | Name of the `SyncProfile` to use. If omitted, falls back to `service-path` annotation. |
+| `stoker.io/gateway-name` | No | Override gateway identity (defaults to pod label `app.kubernetes.io/name`) |
+| `stoker.io/ref-override` | No | Override the git ref for this pod only. Read by the agent, not the controller. Generates a `RefSkew` warning condition on the Stoker CR. See [08-deployment-operations.md](08-deployment-operations.md#ref-override-escape-valve). |
 
 Annotations that become **unnecessary when using SyncProfile** (but still work for 2-tier mode):
 
 | Annotation | Replaced By |
 |---|---|
-| `ignition-sync.io/service-path` | `SyncProfile.spec.mappings` |
-| `ignition-sync.io/deployment-mode` | `SyncProfile.spec.deploymentMode` |
-| `ignition-sync.io/tag-provider` | `SyncProfile.spec.mappings` (explicit UDT destination) |
-| `ignition-sync.io/sync-period` | `SyncProfile.spec.syncPeriod` |
-| `ignition-sync.io/exclude-patterns` | `SyncProfile.spec.excludePatterns` |
-| `ignition-sync.io/system-name` | Future: pre/post-sync hooks |
-| `ignition-sync.io/system-name-template` | Future: pre/post-sync hooks |
+| `stoker.io/service-path` | `SyncProfile.spec.mappings` |
+| `stoker.io/deployment-mode` | `SyncProfile.spec.deploymentMode` |
+| `stoker.io/tag-provider` | `SyncProfile.spec.mappings` (explicit UDT destination) |
+| `stoker.io/sync-period` | `SyncProfile.spec.syncPeriod` |
+| `stoker.io/exclude-patterns` | `SyncProfile.spec.excludePatterns` |
+| `stoker.io/system-name` | Future: pre/post-sync hooks |
+| `stoker.io/system-name-template` | Future: pre/post-sync hooks |
 
 ---
 
@@ -744,7 +744,7 @@ Annotations that become **unnecessary when using SyncProfile** (but still work f
 ### ProveIt 2026 — Site Gateway
 
 ```yaml
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: proveit-site
@@ -780,7 +780,7 @@ spec:
 ### ProveIt 2026 — Area Gateway (shared by area1, area2, area3, area4)
 
 ```yaml
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: proveit-area
@@ -806,9 +806,9 @@ All four area gateways reference the same profile:
 area1:
   gateway:
     podAnnotations:
-      ignition-sync.io/inject: "true"
-      ignition-sync.io/cr-name: "proveit-sync"
-      ignition-sync.io/sync-profile: "proveit-area"
+      stoker.io/inject: "true"
+      stoker.io/cr-name: "proveit-sync"
+      stoker.io/sync-profile: "proveit-area"
 
 # area2, area3, area4 — identical annotations
 ```
@@ -821,15 +821,15 @@ For a single gateway where the repo root IS the gateway data, SyncProfile is opt
 ignition:
   gateway:
     podAnnotations:
-      ignition-sync.io/inject: "true"
-      ignition-sync.io/cr-name: "my-sync"
-      ignition-sync.io/service-path: "."   # 2-tier mode, no profile
+      stoker.io/inject: "true"
+      stoker.io/cr-name: "my-sync"
+      stoker.io/service-path: "."   # 2-tier mode, no profile
 ```
 
 Or with a minimal profile:
 
 ```yaml
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: single-gateway
@@ -848,14 +848,14 @@ The SyncProfile controller is lightweight:
 
 1. **Validate** on create/update — check mappings non-empty, paths valid (no `..` traversal, no absolute paths), source and destination are non-empty.
 2. **Set `Accepted` condition** — `True` if validation passes, `False` with reason if it fails.
-3. **No reconciliation loop** — SyncProfile is a passive config object. The IgnitionSync controller and agents read it; the SyncProfile controller only validates.
-4. **Watch for changes** — When a SyncProfile is updated, the IgnitionSync controller is notified to re-reconcile affected gateways (via watch with `EnqueueRequestsFromMapFunc`).
+3. **No reconciliation loop** — SyncProfile is a passive config object. The Stoker controller and agents read it; the SyncProfile controller only validates.
+4. **Watch for changes** — When a SyncProfile is updated, the Stoker controller is notified to re-reconcile affected gateways (via watch with `EnqueueRequestsFromMapFunc`).
 
 ---
 
 ## Related Documents
 
-- [01-crd.md](01-crd.md) — IgnitionSync CRD (simplified after SyncProfile extraction)
+- [01-crd.md](01-crd.md) — Stoker CRD (simplified after SyncProfile extraction)
 - [02-controller.md](02-controller.md) — Controller Manager reconciliation loop
-- [06-sync-agent.md](06-sync-agent.md) — Sync agent uses SyncProfile for file mapping
+- [06-stoker-agent.md](06-stoker-agent.md) — Sync agent uses SyncProfile for file mapping
 - [10-enterprise-examples.md](10-enterprise-examples.md) — Enterprise examples updated for SyncProfile

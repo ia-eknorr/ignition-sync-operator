@@ -1,7 +1,7 @@
-<!-- Part of: Ignition Sync Operator Architecture (v3) -->
-<!-- See also: 00-overview.md, 01-crd.md, 04-sync-profile.md, 06-sync-agent.md, 08-deployment-operations.md, 09-security-testing-roadmap.md, 10-enterprise-examples.md -->
+<!-- Part of: Stoker Architecture (v3) -->
+<!-- See also: 00-overview.md, 01-crd.md, 04-sync-profile.md, 06-stoker-agent.md, 08-deployment-operations.md, 09-security-testing-roadmap.md, 10-enterprise-examples.md -->
 
-# Ignition Sync Operator — Controller Manager & Ref Resolution
+# Stoker — Controller Manager & Ref Resolution
 
 ## Controller Manager
 
@@ -25,19 +25,19 @@ This is the standard for Kubernetes operators used by cert-manager, external-sec
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ignition-sync-controller-manager
-  namespace: ignition-sync-system     # operator's own namespace
+  name: stoker-controller-manager
+  namespace: stoker-system     # operator's own namespace
 spec:
   replicas: 2                          # HA — leader election ensures 1 active
   selector:
     matchLabels:
-      app.kubernetes.io/name: ignition-sync-controller
+      app.kubernetes.io/name: stoker-controller
   template:
     spec:
-      serviceAccountName: ignition-sync-controller
+      serviceAccountName: stoker-controller
       containers:
         - name: manager
-          image: ghcr.io/ia-eknorr/ignition-sync-controller:1.0.0
+          image: ghcr.io/ia-eknorr/stoker-controller:1.0.0
           args:
             - --leader-elect=true
             - --health-probe-bind-address=:8081
@@ -75,19 +75,19 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ignition-sync-webhook
-  namespace: ignition-sync-system
+  name: stoker-webhook
+  namespace: stoker-system
 spec:
   replicas: 2       # HA — both active (no leader election needed)
   selector:
     matchLabels:
-      app.kubernetes.io/name: ignition-sync-webhook
+      app.kubernetes.io/name: stoker-webhook
   template:
     spec:
-      serviceAccountName: ignition-sync-webhook
+      serviceAccountName: stoker-webhook
       containers:
         - name: webhook
-          image: ghcr.io/ia-eknorr/ignition-sync-controller:1.0.0
+          image: ghcr.io/ia-eknorr/stoker-controller:1.0.0
           args:
             - --mode=webhook
             - --webhook-port=9443
@@ -101,7 +101,7 @@ spec:
       volumes:
         - name: tls
           secret:
-            secretName: ignition-sync-webhook-tls    # managed by cert-manager
+            secretName: stoker-webhook-tls    # managed by cert-manager
 ```
 
 Separating the webhook from the controller follows the cert-manager pattern. The webhook must be highly available (pod creation depends on it), while the controller can tolerate brief leader-election failovers.
@@ -112,17 +112,17 @@ Separating the webhook from the controller follows the cert-manager pattern. The
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: ignition-sync-controller
+  name: stoker-controller
 rules:
-  # IgnitionSync CRs — spec, status, and finalizers
-  - apiGroups: ["sync.ignition.io"]
-    resources: ["ignitionsyncs"]
+  # Stoker CRs — spec, status, and finalizers
+  - apiGroups: ["stoker.io"]
+    resources: ["stokers"]
     verbs: ["get", "list", "watch", "update", "patch"]
-  - apiGroups: ["sync.ignition.io"]
-    resources: ["ignitionsyncs/status"]
+  - apiGroups: ["stoker.io"]
+    resources: ["stokers/status"]
     verbs: ["update", "patch"]
-  - apiGroups: ["sync.ignition.io"]
-    resources: ["ignitionsyncs/finalizers"]
+  - apiGroups: ["stoker.io"]
+    resources: ["stokers/finalizers"]
     verbs: ["update"]
 
   # Pods — for gateway discovery (read-only)
@@ -153,20 +153,20 @@ rules:
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ```
 
-For restricted environments, the Helm chart supports a `--watch-namespaces` flag that limits the controller to specific namespaces. When set, the chart generates namespace-scoped `Role` + `RoleBinding` per watched namespace instead of the `ClusterRole` shown above. This restricts Secret read access to only the namespaces that contain `IgnitionSync` CRs.
+For restricted environments, the Helm chart supports a `--watch-namespaces` flag that limits the controller to specific namespaces. When set, the chart generates namespace-scoped `Role` + `RoleBinding` per watched namespace instead of the `ClusterRole` shown above. This restricts Secret read access to only the namespaces that contain `Stoker` CRs.
 
 ### Reconciliation Loop
 
 **Controller Setup:**
 - `MaxConcurrentReconciles: 5` (configurable) to prevent a single slow ref resolution from blocking all CRs
 - `GenerationChangedPredicate` on the primary watch — prevents reconciliation storms from status-only updates
-- Pod watch filtered to only pods with `ignition-sync.io/cr-name` annotation
+- Pod watch filtered to only pods with `stoker.io/cr-name` annotation
 - Context timeout on all git operations (default: 30s)
 
 ```
-Watch: IgnitionSync CRs (all namespaces, or filtered)
+Watch: Stoker CRs (all namespaces, or filtered)
   Predicate: GenerationChangedPredicate (skip status-only updates)
-Watch: Pods with annotation ignition-sync.io/cr-name (for gateway discovery)
+Watch: Pods with annotation stoker.io/cr-name (for gateway discovery)
   Predicate: filter to only annotated pods
 Owns: ConfigMaps (for sync metadata)
        ↓
@@ -192,24 +192,24 @@ Owns: ConfigMaps (for sync metadata)
 ├──────────────────────────────────────────────────────────────────┤
 │  3. Create/update metadata ConfigMap                             │
 │     - Write resolved commit SHA, ref, and trigger timestamp to   │
-│       ConfigMap ignition-sync-metadata-{crName}                  │
+│       ConfigMap stoker-metadata-{crName}                  │
 │     - Agents watch for changes and act on new commits            │
 ├──────────────────────────────────────────────────────────────────┤
 │  4. Discover gateways                                            │
 │     - List pods in CR's namespace with annotation:               │
-│       ignition-sync.io/cr-name == {crName}                       │
+│       stoker.io/cr-name == {crName}                       │
 │     - Populate status.discoveredGateways from live pod list      │
 │     - Remove entries for pods that no longer exist               │
 ├──────────────────────────────────────────────────────────────────┤
 │  5. Collect gateway sync status                                  │
 │     - Read sync status from ConfigMap                            │
-│       ignition-sync-status-{crName} (written by agents)          │
+│       stoker-status-{crName} (written by agents)          │
 │     - Update discoveredGateways[].syncStatus                     │
 │     - Update condition: AllGatewaysSynced                        │
 ├──────────────────────────────────────────────────────────────────┤
 │  6. Process bi-directional changes (if enabled)                  │
 │     - Read change manifests from ConfigMap                       │
-│       ignition-sync-changes-{crName} (written by agents)         │
+│       stoker-changes-{crName} (written by agents)         │
 │     - Apply conflict resolution strategy                         │
 │     - git checkout -b {targetBranch}                             │
 │     - Apply changes, commit, push                                │
@@ -265,9 +265,9 @@ Response:
 ```yaml
 metadata:
   annotations:
-    sync.ignition.io/requested-ref: "2.0.0"
-    sync.ignition.io/requested-at: "2026-02-12T10:30:00Z"
-    sync.ignition.io/requested-by: "webhook"
+    stoker.io/requested-ref: "2.0.0"
+    stoker.io/requested-at: "2026-02-12T10:30:00Z"
+    stoker.io/requested-by: "webhook"
 ```
 
 The controller reads the annotation, compares against `spec.git.ref`, and acts on the requested ref. The `spec.git.ref` remains under user/GitOps control — users update it via `kubectl`, Helm values, or ArgoCD Application manifests.
@@ -289,24 +289,24 @@ The controller resolves `spec.git.ref` to a commit SHA using `git ls-remote` —
 ### Communication via ConfigMap
 
 **Controller → Agents: Metadata ConfigMap**
-- Controller creates ConfigMap `ignition-sync-metadata-{crName}` with resolved commit SHA, ref, and trigger timestamp
+- Controller creates ConfigMap `stoker-metadata-{crName}` with resolved commit SHA, ref, and trigger timestamp
 - Agents watch the ConfigMap via K8s informer (fast, event-driven)
 - When agent sees a new commit, it fetches/checks out that commit from git
 
 **Agents → Controller: Status ConfigMap**
-- Agents write sync results to ConfigMap `ignition-sync-status-{crName}`
+- Agents write sync results to ConfigMap `stoker-status-{crName}`
 - Controller reads agent status from ConfigMap during reconciliation
 - Each agent writes its status as a key (`{gatewayName}`) in the ConfigMap data
 
 **Bidirectional: Change Manifests ConfigMap**
-- When bidirectional sync is enabled, agents write change manifests to ConfigMap `ignition-sync-changes-{crName}`
+- When bidirectional sync is enabled, agents write change manifests to ConfigMap `stoker-changes-{crName}`
 - Controller reads and processes change manifests during reconciliation
 
 ```
-ConfigMaps per IgnitionSync CR:
-  ignition-sync-metadata-{crName}    # Controller → Agents (commit SHA, ref, trigger timestamp)
-  ignition-sync-status-{crName}      # Agents → Controller (per-gateway sync results)
-  ignition-sync-changes-{crName}     # Agents → Controller (bidirectional change manifests)
+ConfigMaps per Stoker CR:
+  stoker-metadata-{crName}    # Controller → Agents (commit SHA, ref, trigger timestamp)
+  stoker-status-{crName}      # Agents → Controller (per-gateway sync results)
+  stoker-changes-{crName}     # Agents → Controller (bidirectional change manifests)
 ```
 
 **Why no shared PVC:**
@@ -320,20 +320,20 @@ ConfigMaps per IgnitionSync CR:
 
 ## Multi-Repo Support
 
-A single controller instance handles any number of `IgnitionSync` CRs across any number of namespaces. Each CR references its own git repository.
+A single controller instance handles any number of `Stoker` CRs across any number of namespaces. Each CR references its own git repository.
 
 ```
 Namespace: site1
-  IgnitionSync/proveit-sync  →  repo: conf-proveit26-app.git
-  IgnitionSync/modules-sync  →  repo: ignition-custom-modules.git
+  Stoker/proveit-sync  →  repo: conf-proveit26-app.git
+  Stoker/modules-sync  →  repo: ignition-custom-modules.git
 
 Namespace: site2
-  IgnitionSync/proveit-sync  →  repo: conf-proveit26-app.git
+  Stoker/proveit-sync  →  repo: conf-proveit26-app.git
 
 Namespace: public-demo
-  IgnitionSync/demo-sync     →  repo: publicdemo-all.git
+  Stoker/demo-sync     →  repo: publicdemo-all.git
 ```
 
-Pods reference a specific CR via `ignition-sync.io/cr-name`, so there's no ambiguity when multiple CRs exist in the same namespace. A gateway pod always syncs from exactly one repository.
+Pods reference a specific CR via `stoker.io/cr-name`, so there's no ambiguity when multiple CRs exist in the same namespace. A gateway pod always syncs from exactly one repository.
 
 ---

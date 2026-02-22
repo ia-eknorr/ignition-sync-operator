@@ -29,7 +29,7 @@ FIXTURES_DIR="${SCRIPT_DIR}/fixtures"
 
 # ── Defaults ───────────────────────────────────────────────────────
 TEST_NAMESPACE="${TEST_NAMESPACE:-func-test}"
-KIND_CLUSTER="${KIND_CLUSTER:-ignition-sync-func-test}"
+KIND_CLUSTER="${KIND_CLUSTER:-stoker-func-test}"
 KUBECTL="${KUBECTL:-kubectl}"
 GIT_REPO_URL="${GIT_REPO_URL:-https://github.com/ia-eknorr/test-ignition-project.git}"
 GIT_REPO_URL_SSH="${GIT_REPO_URL_SSH:-git@github.com:ia-eknorr/test-ignition-project.git}"
@@ -371,13 +371,13 @@ port_forward_bg() {
 # Leaves infrastructure (git server, controller) intact.
 phase_cleanup() {
     log_info "Cleaning up test resources..."
-    # Delete all IgnitionSync CRs in test namespace
-    $KUBECTL delete ignitionsyncs --all -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
+    # Delete all Stoker CRs in test namespace
+    $KUBECTL delete stokers --all -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
     # Wait for CRs to be gone (finalizers need to run)
     local deadline=$((SECONDS + 30))
     while [[ $SECONDS -lt $deadline ]]; do
         local count
-        count=$($KUBECTL get ignitionsyncs -n "$TEST_NAMESPACE" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+        count=$($KUBECTL get stokers -n "$TEST_NAMESPACE" --no-headers 2>/dev/null | wc -l | tr -d ' ')
         if [[ "$count" == "0" ]]; then
             break
         fi
@@ -385,7 +385,7 @@ phase_cleanup() {
     done
     # Clean up remaining test resources
     $KUBECTL delete pods -n "$TEST_NAMESPACE" -l app=gateway-test --ignore-not-found 2>/dev/null || true
-    $KUBECTL delete configmaps -n "$TEST_NAMESPACE" -l ignition-sync.io/cr-name --ignore-not-found 2>/dev/null || true
+    $KUBECTL delete configmaps -n "$TEST_NAMESPACE" -l stoker.io/cr-name --ignore-not-found 2>/dev/null || true
     $KUBECTL delete secrets -n "$TEST_NAMESPACE" -l app=func-test --ignore-not-found 2>/dev/null || true
     sleep 2
 }

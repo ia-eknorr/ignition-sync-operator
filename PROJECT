@@ -3,19 +3,19 @@
 # and allow the plugins properly work.
 # More info: https://book.kubebuilder.io/reference/project-config.html
 cliVersion: 4.11.1
-domain: ignition.io
+domain: stoker.io
 layout:
 - go.kubebuilder.io/v4
-projectName: ignition-sync-operator
-repo: github.com/ia-eknorr/ignition-sync-operator
+projectName: stoker-operator
+repo: github.com/ia-eknorr/stoker-operator
 resources:
 - api:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: ignition.io
-  group: sync
-  kind: IgnitionSync
-  path: github.com/ia-eknorr/ignition-sync-operator/api/v1alpha1
+  domain: stoker.io
+  group: ""
+  kind: Stoker
+  path: github.com/ia-eknorr/stoker-operator/api/v1alpha1
   version: v1alpha1
 version: "3"

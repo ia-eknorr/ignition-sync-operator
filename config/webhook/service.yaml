@@ -10,4 +10,4 @@ spec:
       targetPort: 9443
   selector:
     control-plane: controller-manager
-    app.kubernetes.io/name: ignition-sync-operator
+    app.kubernetes.io/name: stoker-operator

@@ -13,15 +13,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	syncv1alpha1 "github.com/ia-eknorr/ignition-sync-operator/api/v1alpha1"
-	synctypes "github.com/ia-eknorr/ignition-sync-operator/pkg/types"
+	stokerv1alpha1 "github.com/ia-eknorr/stoker-operator/api/v1alpha1"
+	stokertypes "github.com/ia-eknorr/stoker-operator/pkg/types"
 )
 
 const testNamespace = "test-ns"
 
 func newScheme() *runtime.Scheme {
 	s := runtime.NewScheme()
-	_ = syncv1alpha1.AddToScheme(s)
+	_ = stokerv1alpha1.AddToScheme(s)
 	_ = corev1.AddToScheme(s)
 	return s
 }
@@ -37,28 +37,28 @@ func newInjector(objects ...runtime.Object) *PodInjector {
 	}
 }
 
-func testIgnitionSync() *syncv1alpha1.IgnitionSync {
-	return &syncv1alpha1.IgnitionSync{
+func testStoker() *stokerv1alpha1.Stoker {
+	return &stokerv1alpha1.Stoker{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-sync",
 			Namespace: testNamespace,
 		},
-		Spec: syncv1alpha1.IgnitionSyncSpec{
-			Git: syncv1alpha1.GitSpec{
+		Spec: stokerv1alpha1.StokerSpec{
+			Git: stokerv1alpha1.GitSpec{
 				Repo: "git@github.com:example/test.git",
 				Ref:  "main",
-				Auth: &syncv1alpha1.GitAuthSpec{
-					Token: &syncv1alpha1.TokenAuth{
-						SecretRef: syncv1alpha1.SecretKeyRef{
+				Auth: &stokerv1alpha1.GitAuthSpec{
+					Token: &stokerv1alpha1.TokenAuth{
+						SecretRef: stokerv1alpha1.SecretKeyRef{
 							Name: "git-token-secret",
 							Key:  "token",
 						},
 					},
 				},
 			},
-			Gateway: syncv1alpha1.GatewaySpec{
+			Gateway: stokerv1alpha1.GatewaySpec{
 				Port: 8043,
-				APIKeySecretRef: syncv1alpha1.SecretKeyRef{
+				APIKeySecretRef: stokerv1alpha1.SecretKeyRef{
 					Name: "api-key-secret",
 					Key:  "apiKey",
 				},
@@ -67,14 +67,14 @@ func testIgnitionSync() *syncv1alpha1.IgnitionSync {
 	}
 }
 
-func testSyncProfile() *syncv1alpha1.SyncProfile {
-	return &syncv1alpha1.SyncProfile{
+func testSyncProfile() *stokerv1alpha1.SyncProfile {
+	return &stokerv1alpha1.SyncProfile{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-profile",
 			Namespace: testNamespace,
 		},
-		Spec: syncv1alpha1.SyncProfileSpec{
-			Mappings: []syncv1alpha1.SyncMapping{
+		Spec: stokerv1alpha1.SyncProfileSpec{
+			Mappings: []stokerv1alpha1.SyncMapping{
 				{Source: "config/", Destination: "config/"},
 			},
 		},
@@ -109,15 +109,15 @@ func basePod(annotations map[string]string) *corev1.Pod {
 // --- Test Cases ---
 
 func TestInject_WithAllAnnotations(t *testing.T) {
-	isync := testIgnitionSync()
+	stk := testStoker()
 	profile := testSyncProfile()
-	injector := newInjector(isync, profile)
+	injector := newInjector(stk, profile)
 
 	pod := basePod(map[string]string{
-		synctypes.AnnotationInject:      "true",
-		synctypes.AnnotationCRName:      "my-sync",
-		synctypes.AnnotationSyncProfile: "my-profile",
-		synctypes.AnnotationGatewayName: "blue-gw",
+		stokertypes.AnnotationInject:      "true",
+		stokertypes.AnnotationCRName:      "my-sync",
+		stokertypes.AnnotationSyncProfile: "my-profile",
+		stokertypes.AnnotationGatewayName: "blue-gw",
 	})
 	resp := injector.Handle(context.Background(), makeAdmissionRequest(pod))
 
@@ -129,16 +129,16 @@ func TestInject_WithAllAnnotations(t *testing.T) {
 	}
 
 	// Verify mutation content via direct injection
-	patched := injectDirect(t, pod, isync)
+	patched := injectDirect(t, pod, stk)
 	assertHasInitContainer(t, patched, agentContainerName)
 	assertHasVolume(t, patched, volumeSyncRepo)
 	assertHasVolume(t, patched, volumeGitCredentials)
 	assertHasVolume(t, patched, volumeAPIKey)
-	assertAnnotation(t, patched, synctypes.AnnotationInjected, "true")
+	assertAnnotation(t, patched, stokertypes.AnnotationInjected, "true")
 }
 
 func TestInject_WithoutInjectAnnotation(t *testing.T) {
-	injector := newInjector(testIgnitionSync())
+	injector := newInjector(testStoker())
 
 	pod := basePod(map[string]string{})
 	resp := injector.Handle(context.Background(), makeAdmissionRequest(pod))
@@ -155,8 +155,8 @@ func TestInject_MissingCR(t *testing.T) {
 	injector := newInjector() // no CRs
 
 	pod := basePod(map[string]string{
-		synctypes.AnnotationInject: "true",
-		synctypes.AnnotationCRName: "nonexistent",
+		stokertypes.AnnotationInject: "true",
+		stokertypes.AnnotationCRName: "nonexistent",
 	})
 	resp := injector.Handle(context.Background(), makeAdmissionRequest(pod))
 
@@ -167,13 +167,13 @@ func TestInject_MissingCR(t *testing.T) {
 }
 
 func TestInject_PausedCR(t *testing.T) {
-	isync := testIgnitionSync()
-	isync.Spec.Paused = true
-	injector := newInjector(isync)
+	stk := testStoker()
+	stk.Spec.Paused = true
+	injector := newInjector(stk)
 
 	pod := basePod(map[string]string{
-		synctypes.AnnotationInject: "true",
-		synctypes.AnnotationCRName: "my-sync",
+		stokertypes.AnnotationInject: "true",
+		stokertypes.AnnotationCRName: "my-sync",
 	})
 	resp := injector.Handle(context.Background(), makeAdmissionRequest(pod))
 
@@ -184,12 +184,12 @@ func TestInject_PausedCR(t *testing.T) {
 }
 
 func TestInject_InvalidSyncProfile(t *testing.T) {
-	injector := newInjector(testIgnitionSync()) // no profile
+	injector := newInjector(testStoker()) // no profile
 
 	pod := basePod(map[string]string{
-		synctypes.AnnotationInject:      "true",
-		synctypes.AnnotationCRName:      "my-sync",
-		synctypes.AnnotationSyncProfile: "nonexistent-profile",
+		stokertypes.AnnotationInject:      "true",
+		stokertypes.AnnotationCRName:      "my-sync",
+		stokertypes.AnnotationSyncProfile: "nonexistent-profile",
 	})
 	resp := injector.Handle(context.Background(), makeAdmissionRequest(pod))
 
@@ -200,12 +200,12 @@ func TestInject_InvalidSyncProfile(t *testing.T) {
 }
 
 func TestInject_AlreadyInjected(t *testing.T) {
-	injector := newInjector(testIgnitionSync())
+	injector := newInjector(testStoker())
 
 	restartAlways := corev1.ContainerRestartPolicyAlways
 	pod := basePod(map[string]string{
-		synctypes.AnnotationInject: "true",
-		synctypes.AnnotationCRName: "my-sync",
+		stokertypes.AnnotationInject: "true",
+		stokertypes.AnnotationCRName: "my-sync",
 	})
 	pod.Spec.InitContainers = []corev1.Container{
 		{Name: agentContainerName, Image: "test:latest", RestartPolicy: &restartAlways},
@@ -221,10 +221,10 @@ func TestInject_AlreadyInjected(t *testing.T) {
 }
 
 func TestInject_AutoDeriveCRName_SingleCR(t *testing.T) {
-	injector := newInjector(testIgnitionSync())
+	injector := newInjector(testStoker())
 
 	pod := basePod(map[string]string{
-		synctypes.AnnotationInject: "true",
+		stokertypes.AnnotationInject: "true",
 		// No cr-name annotation — should auto-derive
 	})
 	resp := injector.Handle(context.Background(), makeAdmissionRequest(pod))
@@ -241,48 +241,48 @@ func TestInject_AutoDeriveCRName_NoCRs(t *testing.T) {
 	injector := newInjector() // no CRs
 
 	pod := basePod(map[string]string{
-		synctypes.AnnotationInject: "true",
+		stokertypes.AnnotationInject: "true",
 	})
 	resp := injector.Handle(context.Background(), makeAdmissionRequest(pod))
 
 	if resp.Allowed {
 		t.Fatal("expected denied when no CRs in namespace")
 	}
-	assertContains(t, resp.Result.Message, "no IgnitionSync CR found")
+	assertContains(t, resp.Result.Message, "no Stoker CR found")
 }
 
 func TestInject_AutoDeriveCRName_MultipleCRs(t *testing.T) {
-	cr1 := testIgnitionSync()
-	cr2 := testIgnitionSync()
+	cr1 := testStoker()
+	cr2 := testStoker()
 	cr2.Name = "other-sync"
 	injector := newInjector(cr1, cr2)
 
 	pod := basePod(map[string]string{
-		synctypes.AnnotationInject: "true",
+		stokertypes.AnnotationInject: "true",
 	})
 	resp := injector.Handle(context.Background(), makeAdmissionRequest(pod))
 
 	if resp.Allowed {
 		t.Fatal("expected denied with multiple CRs")
 	}
-	assertContains(t, resp.Result.Message, "multiple IgnitionSync CRs")
+	assertContains(t, resp.Result.Message, "multiple Stoker CRs")
 }
 
 func TestInject_SSHAuth(t *testing.T) {
-	isync := testIgnitionSync()
-	isync.Spec.Git.Auth = &syncv1alpha1.GitAuthSpec{
-		SSHKey: &syncv1alpha1.SSHKeyAuth{
-			SecretRef: syncv1alpha1.SecretKeyRef{
+	stk := testStoker()
+	stk.Spec.Git.Auth = &stokerv1alpha1.GitAuthSpec{
+		SSHKey: &stokerv1alpha1.SSHKeyAuth{
+			SecretRef: stokerv1alpha1.SecretKeyRef{
 				Name: "ssh-key-secret",
 				Key:  "ssh-privatekey",
 			},
 		},
 	}
-	injector := newInjector(isync)
+	injector := newInjector(stk)
 
 	pod := basePod(map[string]string{
-		synctypes.AnnotationInject: "true",
-		synctypes.AnnotationCRName: "my-sync",
+		stokertypes.AnnotationInject: "true",
+		stokertypes.AnnotationCRName: "my-sync",
 	})
 	resp := injector.Handle(context.Background(), makeAdmissionRequest(pod))
 
@@ -290,22 +290,22 @@ func TestInject_SSHAuth(t *testing.T) {
 		t.Fatalf("expected allowed, got: %s", resp.Result.Message)
 	}
 
-	patched := injectDirect(t, pod, isync)
+	patched := injectDirect(t, pod, stk)
 	agent := findInitContainer(patched)
 	if agent == nil {
-		t.Fatal("sync-agent not found")
+		t.Fatal("stoker-agent not found")
 	}
 	assertEnvVar(t, agent, "GIT_SSH_KEY_FILE", mountGitCredentials+"/ssh-privatekey")
 	assertVolumeSecret(t, patched, volumeGitCredentials, "ssh-key-secret")
 }
 
 func TestInject_TokenAuth(t *testing.T) {
-	isync := testIgnitionSync()
-	injector := newInjector(isync)
+	stk := testStoker()
+	injector := newInjector(stk)
 
 	pod := basePod(map[string]string{
-		synctypes.AnnotationInject: "true",
-		synctypes.AnnotationCRName: "my-sync",
+		stokertypes.AnnotationInject: "true",
+		stokertypes.AnnotationCRName: "my-sync",
 	})
 	resp := injector.Handle(context.Background(), makeAdmissionRequest(pod))
 
@@ -313,23 +313,23 @@ func TestInject_TokenAuth(t *testing.T) {
 		t.Fatalf("expected allowed, got: %s", resp.Result.Message)
 	}
 
-	patched := injectDirect(t, pod, isync)
+	patched := injectDirect(t, pod, stk)
 	agent := findInitContainer(patched)
 	if agent == nil {
-		t.Fatal("sync-agent not found")
+		t.Fatal("stoker-agent not found")
 	}
 	assertEnvVar(t, agent, "GIT_TOKEN_FILE", mountGitCredentials+"/token")
 	assertVolumeSecret(t, patched, volumeGitCredentials, "git-token-secret")
 }
 
 func TestInject_AgentImageOverrideViaAnnotation(t *testing.T) {
-	isync := testIgnitionSync()
-	injector := newInjector(isync)
+	stk := testStoker()
+	injector := newInjector(stk)
 
 	pod := basePod(map[string]string{
-		synctypes.AnnotationInject:     "true",
-		synctypes.AnnotationCRName:     "my-sync",
-		synctypes.AnnotationAgentImage: "custom-registry.io/agent:debug",
+		stokertypes.AnnotationInject:     "true",
+		stokertypes.AnnotationCRName:     "my-sync",
+		stokertypes.AnnotationAgentImage: "custom-registry.io/agent:debug",
 	})
 	resp := injector.Handle(context.Background(), makeAdmissionRequest(pod))
 
@@ -339,10 +339,10 @@ func TestInject_AgentImageOverrideViaAnnotation(t *testing.T) {
 
 	// Verify via direct injection — annotation image takes priority
 	patched := pod.DeepCopy()
-	injectSidecar(patched, isync)
+	injectSidecar(patched, stk)
 	agent := findInitContainer(patched)
 	if agent == nil {
-		t.Fatal("sync-agent not found")
+		t.Fatal("stoker-agent not found")
 	}
 	if agent.Image != "custom-registry.io/agent:debug" {
 		t.Fatalf("expected custom image, got %s", agent.Image)
@@ -350,8 +350,8 @@ func TestInject_AgentImageOverrideViaAnnotation(t *testing.T) {
 }
 
 func TestInject_AgentResourcesFromCR(t *testing.T) {
-	isync := testIgnitionSync()
-	isync.Spec.Agent.Resources = &corev1.ResourceRequirements{
+	stk := testStoker()
+	stk.Spec.Agent.Resources = &corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("100m"),
 			corev1.ResourceMemory: resource.MustParse("128Mi"),
@@ -361,11 +361,11 @@ func TestInject_AgentResourcesFromCR(t *testing.T) {
 			corev1.ResourceMemory: resource.MustParse("512Mi"),
 		},
 	}
-	injector := newInjector(isync)
+	injector := newInjector(stk)
 
 	pod := basePod(map[string]string{
-		synctypes.AnnotationInject: "true",
-		synctypes.AnnotationCRName: "my-sync",
+		stokertypes.AnnotationInject: "true",
+		stokertypes.AnnotationCRName: "my-sync",
 	})
 	resp := injector.Handle(context.Background(), makeAdmissionRequest(pod))
 
@@ -373,10 +373,10 @@ func TestInject_AgentResourcesFromCR(t *testing.T) {
 		t.Fatalf("expected allowed, got: %s", resp.Result.Message)
 	}
 
-	patched := injectDirect(t, pod, isync)
+	patched := injectDirect(t, pod, stk)
 	agent := findInitContainer(patched)
 	if agent == nil {
-		t.Fatal("sync-agent not found")
+		t.Fatal("stoker-agent not found")
 	}
 
 	cpuReq := agent.Resources.Requests[corev1.ResourceCPU]
@@ -392,10 +392,10 @@ func TestInject_AgentResourcesFromCR(t *testing.T) {
 // --- Helpers ---
 
 // injectDirect calls injectSidecar on a pod copy with the given CR for testing.
-func injectDirect(t *testing.T, pod *corev1.Pod, isync *syncv1alpha1.IgnitionSync) *corev1.Pod {
+func injectDirect(t *testing.T, pod *corev1.Pod, stk *stokerv1alpha1.Stoker) *corev1.Pod {
 	t.Helper()
 	p := pod.DeepCopy()
-	injectSidecar(p, isync)
+	injectSidecar(p, stk)
 	return p
 }
 

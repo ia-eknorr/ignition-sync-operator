@@ -46,8 +46,8 @@ create_status_cm() {
 # Setup: create API key secret and a CR for discovery tests
 apply_fixture "api-key-secret.yaml"
 apply_fixture "test-cr.yaml"
-wait_for_typed_condition "ignitionsync/test-sync" "RefResolved" "True" 90
-RESOLVED_COMMIT=$(kubectl_json "ignitionsync/test-sync" '{.status.lastSyncCommit}')
+wait_for_typed_condition "stoker/test-sync" "RefResolved" "True" 90
+RESOLVED_COMMIT=$(kubectl_json "stoker/test-sync" '{.status.lastSyncCommit}')
 
 # ────────────────────────────────────────────────────────────────────
 # Test 3.1: Discover Annotated Pods
@@ -65,7 +65,7 @@ wait_for_named_pod_phase "gateway-test-2" "Running" 60
 deadline=$((SECONDS + 30))
 gw_count=0
 while [[ $SECONDS -lt $deadline ]]; do
-    gw_count=$(kubectl_jq "ignitionsync/test-sync" '.status.discoveredGateways | length')
+    gw_count=$(kubectl_jq "stoker/test-sync" '.status.discoveredGateways | length')
     if [[ "$gw_count" == "2" ]]; then
         break
     fi
@@ -74,7 +74,7 @@ done
 assert_eq "2" "$gw_count" "Two gateways discovered"
 
 # Verify names
-gw_names=$(kubectl_jq "ignitionsync/test-sync" '[.status.discoveredGateways[].name] | sort | join(",")')
+gw_names=$(kubectl_jq "stoker/test-sync" '[.status.discoveredGateways[].name] | sort | join(",")')
 assert_eq "gateway-alpha,gateway-beta" "$gw_names" "Gateway names match annotations"
 
 # ────────────────────────────────────────────────────────────────────
@@ -91,8 +91,8 @@ metadata:
   labels:
     app: gateway-test
   annotations:
-    ignition-sync.io/cr-name: "test-sync"
-    ignition-sync.io/gateway-name: "gateway-pending"
+    stoker.io/cr-name: "test-sync"
+    stoker.io/gateway-name: "gateway-pending"
 spec:
   containers:
     - name: bad
@@ -108,11 +108,11 @@ EOF
 sleep 10
 
 # Verify it's NOT in discoveredGateways (only running pods counted)
-gw_count=$(kubectl_jq "ignitionsync/test-sync" '.status.discoveredGateways | length')
+gw_count=$(kubectl_jq "stoker/test-sync" '.status.discoveredGateways | length')
 assert_eq "2" "$gw_count" "Pending pod not counted in discoveredGateways"
 
 # Check that gateway-pending is not in the list
-pending_found=$(kubectl_jq "ignitionsync/test-sync" '[.status.discoveredGateways[].name] | map(select(. == "gateway-pending")) | length')
+pending_found=$(kubectl_jq "stoker/test-sync" '[.status.discoveredGateways[].name] | map(select(. == "gateway-pending")) | length')
 assert_eq "0" "$pending_found" "gateway-pending not in discovered list"
 
 # Clean up pending pod
@@ -125,8 +125,8 @@ log_test "3.3: Multi-CR Isolation"
 
 # Create a second CR
 cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f -
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: test-sync-b
 spec:
@@ -146,7 +146,7 @@ spec:
       key: apiKey
 EOF
 
-wait_for_typed_condition "ignitionsync/test-sync-b" "RefResolved" "True" 90
+wait_for_typed_condition "stoker/test-sync-b" "RefResolved" "True" 90
 
 # Create a pod for test-sync-b
 create_gateway_pod "b1" "test-sync-b" "gateway-bravo"
@@ -154,20 +154,20 @@ wait_for_named_pod_phase "gateway-test-b1" "Running" 60
 sleep 10
 
 # test-sync should still see 2 gateways
-gw_count_a=$(kubectl_jq "ignitionsync/test-sync" '.status.discoveredGateways | length')
+gw_count_a=$(kubectl_jq "stoker/test-sync" '.status.discoveredGateways | length')
 assert_eq "2" "$gw_count_a" "test-sync still sees 2 gateways"
 
 # test-sync-b should see 1 gateway
-gw_count_b=$(kubectl_jq "ignitionsync/test-sync-b" '.status.discoveredGateways | length')
+gw_count_b=$(kubectl_jq "stoker/test-sync-b" '.status.discoveredGateways | length')
 assert_eq "1" "$gw_count_b" "test-sync-b sees 1 gateway"
 
-gw_name_b=$(kubectl_jq "ignitionsync/test-sync-b" '.status.discoveredGateways[0].name')
+gw_name_b=$(kubectl_jq "stoker/test-sync-b" '.status.discoveredGateways[0].name')
 assert_eq "gateway-bravo" "$gw_name_b" "test-sync-b gateway is gateway-bravo"
 
 # Clean up CR-B and its pod
 $KUBECTL delete pod gateway-test-b1 -n "$TEST_NAMESPACE" --ignore-not-found 2>/dev/null || true
-$KUBECTL delete ignitionsync test-sync-b -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
-wait_for_deletion ignitionsync test-sync-b 30 2>/dev/null || true
+$KUBECTL delete stoker test-sync-b -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
+wait_for_deletion stoker test-sync-b 30 2>/dev/null || true
 
 # ────────────────────────────────────────────────────────────────────
 # Test 3.4: Gateway Name Fallback Chain
@@ -188,8 +188,8 @@ metadata:
     app: gateway-test
     app.kubernetes.io/name: label-name
   annotations:
-    ignition-sync.io/cr-name: "test-sync"
-    ignition-sync.io/gateway-name: "annotation-name"
+    stoker.io/cr-name: "test-sync"
+    stoker.io/gateway-name: "annotation-name"
 spec:
   containers:
     - name: pause
@@ -206,7 +206,7 @@ metadata:
     app: gateway-test
     app.kubernetes.io/name: label-gateway
   annotations:
-    ignition-sync.io/cr-name: "test-sync"
+    stoker.io/cr-name: "test-sync"
 spec:
   containers:
     - name: pause
@@ -222,7 +222,7 @@ metadata:
   labels:
     app: gateway-test
   annotations:
-    ignition-sync.io/cr-name: "test-sync"
+    stoker.io/cr-name: "test-sync"
 spec:
   containers:
     - name: pause
@@ -235,7 +235,7 @@ wait_for_named_pod_phase "gw-fallback-bare" "Running" 60
 sleep 10
 
 # Verify names
-gw_names=$(kubectl_jq "ignitionsync/test-sync" '[.status.discoveredGateways[].name] | sort | join(",")')
+gw_names=$(kubectl_jq "stoker/test-sync" '[.status.discoveredGateways[].name] | sort | join(",")')
 assert_contains "$gw_names" "annotation-name" "Annotation name takes priority"
 assert_contains "$gw_names" "label-gateway" "Label name used when no annotation"
 assert_contains "$gw_names" "gw-fallback-bare" "Pod name used as fallback"
@@ -259,19 +259,19 @@ create_status_cm "test-sync" "gw-status-test" "Synced" "$RESOLVED_COMMIT"
 sleep 15
 
 # Verify status fields are populated
-gw_sync=$(kubectl_jq "ignitionsync/test-sync" '.status.discoveredGateways[] | select(.name=="gw-status-test") | .syncStatus')
+gw_sync=$(kubectl_jq "stoker/test-sync" '.status.discoveredGateways[] | select(.name=="gw-status-test") | .syncStatus')
 assert_eq "Synced" "$gw_sync" "syncStatus is Synced"
 
-gw_commit=$(kubectl_jq "ignitionsync/test-sync" '.status.discoveredGateways[] | select(.name=="gw-status-test") | .syncedCommit')
+gw_commit=$(kubectl_jq "stoker/test-sync" '.status.discoveredGateways[] | select(.name=="gw-status-test") | .syncedCommit')
 assert_eq "$RESOLVED_COMMIT" "$gw_commit" "syncedCommit matches"
 
-gw_agent=$(kubectl_jq "ignitionsync/test-sync" '.status.discoveredGateways[] | select(.name=="gw-status-test") | .agentVersion')
+gw_agent=$(kubectl_jq "stoker/test-sync" '.status.discoveredGateways[] | select(.name=="gw-status-test") | .agentVersion')
 assert_eq "0.1.0" "$gw_agent" "agentVersion populated"
 
-gw_files=$(kubectl_jq "ignitionsync/test-sync" '.status.discoveredGateways[] | select(.name=="gw-status-test") | .filesChanged')
+gw_files=$(kubectl_jq "stoker/test-sync" '.status.discoveredGateways[] | select(.name=="gw-status-test") | .filesChanged')
 assert_eq "5" "$gw_files" "filesChanged populated"
 
-gw_projects=$(kubectl_jq "ignitionsync/test-sync" '.status.discoveredGateways[] | select(.name=="gw-status-test") | .projectsSynced | join(",")')
+gw_projects=$(kubectl_jq "stoker/test-sync" '.status.discoveredGateways[] | select(.name=="gw-status-test") | .projectsSynced | join(",")')
 assert_eq "MyProject,SharedScripts" "$gw_projects" "projectsSynced populated"
 
 # ────────────────────────────────────────────────────────────────────
@@ -280,9 +280,9 @@ assert_eq "MyProject,SharedScripts" "$gw_projects" "projectsSynced populated"
 log_test "3.6: AllGatewaysSynced Condition"
 
 # With one gateway synced, AllGatewaysSynced should be True (1/1)
-all_synced=$(kubectl_json "ignitionsync/test-sync" \
+all_synced=$(kubectl_json "stoker/test-sync" \
     '{.status.conditions[?(@.type=="AllGatewaysSynced")].status}')
-all_synced_msg=$(kubectl_json "ignitionsync/test-sync" \
+all_synced_msg=$(kubectl_json "stoker/test-sync" \
     '{.status.conditions[?(@.type=="AllGatewaysSynced")].message}')
 assert_eq "True" "$all_synced" "AllGatewaysSynced=True when all gateways synced"
 assert_contains "$all_synced_msg" "1/1" "Message shows 1/1 gateways synced"
@@ -293,32 +293,32 @@ wait_for_named_pod_phase "gateway-test-s2" "Running" 60
 sleep 10
 
 # Second gateway has no status yet (Pending) → AllGatewaysSynced=False
-all_synced=$(kubectl_json "ignitionsync/test-sync" \
+all_synced=$(kubectl_json "stoker/test-sync" \
     '{.status.conditions[?(@.type=="AllGatewaysSynced")].status}')
-all_synced_msg=$(kubectl_json "ignitionsync/test-sync" \
+all_synced_msg=$(kubectl_json "stoker/test-sync" \
     '{.status.conditions[?(@.type=="AllGatewaysSynced")].message}')
 assert_eq "False" "$all_synced" "AllGatewaysSynced=False when not all synced"
 assert_contains "$all_synced_msg" "1/2" "Message shows 1/2 gateways synced"
 
 # Update status CM to include second gateway as Synced
-$KUBECTL get configmap "ignition-sync-status-test-sync" -n "$TEST_NAMESPACE" -o json | \
+$KUBECTL get configmap "stoker-status-test-sync" -n "$TEST_NAMESPACE" -o json | \
     jq --arg name "gw-status-test-2" --arg commit "$RESOLVED_COMMIT" \
     '.data[$name] = "{\"syncStatus\":\"Synced\",\"syncedCommit\":\"" + $commit + "\",\"syncedRef\":\"main\",\"lastSyncTime\":\"2025-01-01T00:00:00Z\",\"agentVersion\":\"0.1.0\",\"filesChanged\":3,\"projectsSynced\":[\"MyProject\"]}"' | \
     $KUBECTL apply -n "$TEST_NAMESPACE" -f -
 sleep 15
 
-all_synced=$(kubectl_json "ignitionsync/test-sync" \
+all_synced=$(kubectl_json "stoker/test-sync" \
     '{.status.conditions[?(@.type=="AllGatewaysSynced")].status}')
 assert_eq "True" "$all_synced" "AllGatewaysSynced=True after both synced"
 
 # Now simulate one gateway with Error status
-$KUBECTL get configmap "ignition-sync-status-test-sync" -n "$TEST_NAMESPACE" -o json | \
+$KUBECTL get configmap "stoker-status-test-sync" -n "$TEST_NAMESPACE" -o json | \
     jq --arg name "gw-status-test-2" \
     '.data[$name] = "{\"syncStatus\":\"Error\",\"errorMessage\":\"test error\"}"' | \
     $KUBECTL apply -n "$TEST_NAMESPACE" -f -
 sleep 15
 
-all_synced=$(kubectl_json "ignitionsync/test-sync" \
+all_synced=$(kubectl_json "stoker/test-sync" \
     '{.status.conditions[?(@.type=="AllGatewaysSynced")].status}')
 assert_eq "False" "$all_synced" "AllGatewaysSynced=False when one gateway has Error"
 
@@ -328,22 +328,22 @@ assert_eq "False" "$all_synced" "AllGatewaysSynced=False when one gateway has Er
 log_test "3.7: Ready Condition (Full Stack)"
 
 # RefResolved=True + AllGatewaysSynced=False → Ready=False
-wait_for_typed_condition "ignitionsync/test-sync" "RefResolved" "True" 30
+wait_for_typed_condition "stoker/test-sync" "RefResolved" "True" 30
 log_pass "RefResolved=True"
 
-ready_status=$(kubectl_json "ignitionsync/test-sync" \
+ready_status=$(kubectl_json "stoker/test-sync" \
     '{.status.conditions[?(@.type=="Ready")].status}')
 assert_eq "False" "$ready_status" "Ready=False when AllGatewaysSynced=False"
 
 # Fix the error gateway
-$KUBECTL get configmap "ignition-sync-status-test-sync" -n "$TEST_NAMESPACE" -o json | \
+$KUBECTL get configmap "stoker-status-test-sync" -n "$TEST_NAMESPACE" -o json | \
     jq --arg name "gw-status-test-2" --arg commit "$RESOLVED_COMMIT" \
     '.data[$name] = "{\"syncStatus\":\"Synced\",\"syncedCommit\":\"" + $commit + "\",\"syncedRef\":\"main\",\"lastSyncTime\":\"2025-01-01T00:00:00Z\",\"agentVersion\":\"0.1.0\",\"filesChanged\":3,\"projectsSynced\":[\"MyProject\"]}"' | \
     $KUBECTL apply -n "$TEST_NAMESPACE" -f -
 sleep 15
 
 # Now RefResolved=True + AllGatewaysSynced=True → Ready=True
-ready_status=$(kubectl_json "ignitionsync/test-sync" \
+ready_status=$(kubectl_json "stoker/test-sync" \
     '{.status.conditions[?(@.type=="Ready")].status}')
 assert_eq "True" "$ready_status" "Ready=True when RefResolved and AllGatewaysSynced are True"
 
@@ -355,12 +355,12 @@ log_test "3.8: No Gateways → NoGatewaysDiscovered"
 # Delete all gateway pods
 $KUBECTL delete pods -n "$TEST_NAMESPACE" -l app=gateway-test --ignore-not-found 2>/dev/null || true
 # Delete status ConfigMap
-$KUBECTL delete configmap "ignition-sync-status-test-sync" -n "$TEST_NAMESPACE" --ignore-not-found 2>/dev/null || true
+$KUBECTL delete configmap "stoker-status-test-sync" -n "$TEST_NAMESPACE" --ignore-not-found 2>/dev/null || true
 sleep 15
 
-all_synced=$(kubectl_json "ignitionsync/test-sync" \
+all_synced=$(kubectl_json "stoker/test-sync" \
     '{.status.conditions[?(@.type=="AllGatewaysSynced")].status}')
-all_reason=$(kubectl_json "ignitionsync/test-sync" \
+all_reason=$(kubectl_json "stoker/test-sync" \
     '{.status.conditions[?(@.type=="AllGatewaysSynced")].reason}')
 assert_eq "False" "$all_synced" "AllGatewaysSynced=False with no gateways"
 assert_eq "NoGatewaysDiscovered" "$all_reason" "Reason is NoGatewaysDiscovered"
@@ -375,14 +375,14 @@ create_gateway_pod "del1" "test-sync" "gw-deleteme"
 wait_for_named_pod_phase "gateway-test-del1" "Running" 60
 sleep 10
 
-gw_count=$(kubectl_jq "ignitionsync/test-sync" '.status.discoveredGateways | length')
+gw_count=$(kubectl_jq "stoker/test-sync" '.status.discoveredGateways | length')
 assert_eq "1" "$gw_count" "Gateway appears after pod creation"
 
 # Delete the pod
 $KUBECTL delete pod gateway-test-del1 -n "$TEST_NAMESPACE" --wait=true
 sleep 15
 
-gw_count=$(kubectl_jq "ignitionsync/test-sync" '.status.discoveredGateways | length')
+gw_count=$(kubectl_jq "stoker/test-sync" '.status.discoveredGateways | length')
 assert_eq "0" "$gw_count" "Gateway removed after pod deletion"
 
 # ────────────────────────────────────────────────────────────────────

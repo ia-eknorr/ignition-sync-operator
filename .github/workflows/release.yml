@@ -19,10 +19,10 @@ jobs:
         include:
           - name: controller
             file: Dockerfile
-            image_name: ignition-sync-operator
+            image_name: stoker-operator
           - name: agent
             file: Dockerfile.agent
-            image_name: ignition-sync-agent
+            image_name: stoker-agent
     steps:
       - uses: actions/checkout@v4
 
@@ -71,13 +71,13 @@ jobs:
 
       - name: Update Chart.yaml version
         run: |
-          sed -i "s/^version:.*/version: ${{ steps.version.outputs.version }}/" charts/ignition-sync-operator/Chart.yaml
-          sed -i "s/^appVersion:.*/appVersion: \"${{ steps.version.outputs.version }}\"/" charts/ignition-sync-operator/Chart.yaml
+          sed -i "s/^version:.*/version: ${{ steps.version.outputs.version }}/" charts/stoker-operator/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${{ steps.version.outputs.version }}\"/" charts/stoker-operator/Chart.yaml
 
       - name: Package and push Helm chart
         run: |
-          helm package charts/ignition-sync-operator
-          helm push ignition-sync-operator-${{ steps.version.outputs.version }}.tgz oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts
+          helm package charts/stoker-operator
+          helm push stoker-operator-${{ steps.version.outputs.version }}.tgz oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts
 
   github-release:
     runs-on: ubuntu-latest

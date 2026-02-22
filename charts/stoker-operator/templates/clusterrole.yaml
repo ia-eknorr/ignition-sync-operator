@@ -1,0 +1,61 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "stoker-operator.fullname" . }}-manager-role
+  labels:
+    {{- include "stoker-operator.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - stoker.io
+    resources:
+      - stokers
+      - syncprofiles
+    verbs:
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - stoker.io
+    resources:
+      - stokers/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - stoker.io
+    resources:
+      - stokers/status
+      - syncprofiles/status
+    verbs:
+      - get
+      - patch
+      - update

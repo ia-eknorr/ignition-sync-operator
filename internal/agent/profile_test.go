@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	syncv1alpha1 "github.com/ia-eknorr/ignition-sync-operator/api/v1alpha1"
+	stokerv1alpha1 "github.com/ia-eknorr/stoker-operator/api/v1alpha1"
 )
 
 func TestResolveTemplate_AllFields(t *testing.T) {
@@ -85,8 +85,8 @@ func TestBuildSyncPlan_Basic(t *testing.T) {
 	writeFile(t, filepath.Join(repoPath, "shared", "config.json"), "shared")
 	writeFile(t, filepath.Join(repoPath, "site", "us-east", "override.json"), "override")
 
-	profile := &syncv1alpha1.SyncProfileSpec{
-		Mappings: []syncv1alpha1.SyncMapping{
+	profile := &stokerv1alpha1.SyncProfileSpec{
+		Mappings: []stokerv1alpha1.SyncMapping{
 			{Source: "shared", Destination: "config/resources/core", Type: "dir"},
 			{Source: "site/{{.Vars.region}}", Destination: "config/resources/core", Type: "dir"},
 		},
@@ -124,11 +124,11 @@ func TestBuildSyncPlan_WithDeploymentMode(t *testing.T) {
 	writeFile(t, filepath.Join(repoPath, "shared", "a.txt"), "a")
 	writeFile(t, filepath.Join(repoPath, "modes", "dev", "b.txt"), "b")
 
-	profile := &syncv1alpha1.SyncProfileSpec{
-		Mappings: []syncv1alpha1.SyncMapping{
+	profile := &stokerv1alpha1.SyncProfileSpec{
+		Mappings: []stokerv1alpha1.SyncMapping{
 			{Source: "shared", Destination: "config/resources/core", Type: "dir"},
 		},
-		DeploymentMode: &syncv1alpha1.DeploymentModeSpec{
+		DeploymentMode: &stokerv1alpha1.DeploymentModeSpec{
 			Name:   "dev",
 			Source: "modes/dev",
 		},
@@ -164,8 +164,8 @@ func TestBuildSyncPlan_RequiredMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	profile := &syncv1alpha1.SyncProfileSpec{
-		Mappings: []syncv1alpha1.SyncMapping{
+	profile := &stokerv1alpha1.SyncProfileSpec{
+		Mappings: []stokerv1alpha1.SyncMapping{
 			{Source: "nonexistent", Destination: "config", Type: "dir", Required: true},
 		},
 	}
@@ -185,8 +185,8 @@ func TestBuildSyncPlan_ExcludeMerging(t *testing.T) {
 
 	writeFile(t, filepath.Join(repoPath, "src", "a.txt"), "a")
 
-	profile := &syncv1alpha1.SyncProfileSpec{
-		Mappings: []syncv1alpha1.SyncMapping{
+	profile := &stokerv1alpha1.SyncProfileSpec{
+		Mappings: []stokerv1alpha1.SyncMapping{
 			{Source: "src", Destination: "dst", Type: "dir"},
 		},
 		ExcludePatterns: []string{"**/*.bak"},

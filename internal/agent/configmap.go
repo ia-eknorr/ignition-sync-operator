@@ -11,17 +11,17 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	synctypes "github.com/ia-eknorr/ignition-sync-operator/pkg/types"
+	stokertypes "github.com/ia-eknorr/stoker-operator/pkg/types"
 )
 
 // MetadataConfigMapName returns the metadata ConfigMap name for a CR.
 func MetadataConfigMapName(crName string) string {
-	return fmt.Sprintf("ignition-sync-metadata-%s", crName)
+	return fmt.Sprintf("stoker-metadata-%s", crName)
 }
 
 // StatusConfigMapName returns the status ConfigMap name for a CR.
 func StatusConfigMapName(crName string) string {
-	return fmt.Sprintf("ignition-sync-status-%s", crName)
+	return fmt.Sprintf("stoker-status-%s", crName)
 }
 
 // Metadata holds the data read from the metadata ConfigMap.
@@ -58,7 +58,7 @@ func ReadMetadataConfigMap(ctx context.Context, c client.Client, namespace, crNa
 
 // WriteStatusConfigMap writes the agent's status to the status ConfigMap.
 // Uses optimistic concurrency with retry on conflict.
-func WriteStatusConfigMap(ctx context.Context, c client.Client, namespace, crName, gatewayName string, status *synctypes.GatewayStatus) error {
+func WriteStatusConfigMap(ctx context.Context, c client.Client, namespace, crName, gatewayName string, status *stokertypes.GatewayStatus) error {
 	cmName := StatusConfigMapName(crName)
 	key := types.NamespacedName{Name: cmName, Namespace: namespace}
 
@@ -78,8 +78,8 @@ func WriteStatusConfigMap(ctx context.Context, c client.Client, namespace, crNam
 					Name:      cmName,
 					Namespace: namespace,
 					Labels: map[string]string{
-						"app.kubernetes.io/managed-by": "ignition-sync-agent",
-						synctypes.LabelCRName:          crName,
+						"app.kubernetes.io/managed-by": "stoker-agent",
+						stokertypes.LabelCRName:        crName,
 					},
 				},
 				Data: map[string]string{

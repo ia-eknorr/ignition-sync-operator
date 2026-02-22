@@ -1,15 +1,15 @@
 package types
 
 const (
-	// AnnotationPrefix is the base prefix for all ignition-sync annotations.
-	AnnotationPrefix = "ignition-sync.io"
+	// AnnotationPrefix is the base prefix for all stoker annotations.
+	AnnotationPrefix = "stoker.io"
 
 	// Pod annotations — set by users on gateway pods to trigger sidecar injection.
 
 	// AnnotationInject enables sidecar injection when set to "true".
 	AnnotationInject = AnnotationPrefix + "/inject"
 
-	// AnnotationCRName identifies which IgnitionSync CR in this namespace to use.
+	// AnnotationCRName identifies which Stoker CR in this namespace to use.
 	// Auto-derived if exactly one CR exists in the namespace.
 	AnnotationCRName = AnnotationPrefix + "/cr-name"
 
@@ -27,7 +27,7 @@ const (
 	// Intended for dev/test gateways in production namespaces.
 	AnnotationRefOverride = AnnotationPrefix + "/ref-override"
 
-	// CR annotations — set by the webhook receiver on the IgnitionSync CR (not by users).
+	// CR annotations — set by the webhook receiver on the Stoker CR (not by users).
 
 	// AnnotationRequestedRef is set by the webhook receiver to request a ref update.
 	// The controller reads this and initiates a sync to the requested ref.
@@ -54,12 +54,12 @@ const (
 	LabelCRName = AnnotationPrefix + "/cr-name"
 
 	// LabelNamespaceInjection enables webhook injection for a namespace via namespaceSelector.
-	// Applied to namespaces: kubectl label namespace site1 ignition-sync.io/injection=enabled
+	// Applied to namespaces: kubectl label namespace site1 stoker.io/injection=enabled
 	LabelNamespaceInjection = AnnotationPrefix + "/injection"
 
 	// Finalizer
 
-	// Finalizer is added to IgnitionSync CRs to ensure cleanup on deletion.
+	// Finalizer is added to Stoker CRs to ensure cleanup on deletion.
 	Finalizer = AnnotationPrefix + "/finalizer"
 
 	// Sync status values for missing sidecar detection.

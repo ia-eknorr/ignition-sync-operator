@@ -6,8 +6,8 @@ metadata:
     app: gateway-test
     app.kubernetes.io/name: GATEWAY_NAME
   annotations:
-    ignition-sync.io/cr-name: "CR_NAME"
-    ignition-sync.io/gateway-name: "GATEWAY_NAME"
+    stoker.io/cr-name: "CR_NAME"
+    stoker.io/gateway-name: "GATEWAY_NAME"
 spec:
   containers:
     - name: pause

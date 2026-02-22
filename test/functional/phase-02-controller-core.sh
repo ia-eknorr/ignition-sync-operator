@@ -16,12 +16,11 @@ phase_cleanup
 log_test "2.1: CRD Installation & Validation"
 
 # Verify CRD exists
-crd_name=$($KUBECTL get crd ignitionsyncs.sync.ignition.io -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
-assert_eq "ignitionsyncs.sync.ignition.io" "$crd_name" "CRD should exist"
+crd_name=$($KUBECTL get crd stokers.stoker.io -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+assert_eq "stokers.stoker.io" "$crd_name" "CRD should exist"
 
 # Verify short names work (just check exit code)
-assert_exit_code 0 "kubectl get isync works" $KUBECTL get isync -n "$TEST_NAMESPACE"
-assert_exit_code 0 "kubectl get igs works" $KUBECTL get igs -n "$TEST_NAMESPACE"
+assert_exit_code 0 "kubectl get stk works" $KUBECTL get stk -n "$TEST_NAMESPACE"
 
 # Apply invalid CR (missing spec.git)
 set +e
@@ -33,7 +32,7 @@ if [[ $invalid_rc -ne 0 ]]; then
 else
     # Some CRD validation happens in webhook, not admission — check if controller catches it
     log_info "Invalid CR accepted by API server (validation may be controller-side)"
-    $KUBECTL delete ignitionsync test-sync-invalid -n "$TEST_NAMESPACE" --ignore-not-found 2>/dev/null || true
+    $KUBECTL delete stoker test-sync-invalid -n "$TEST_NAMESPACE" --ignore-not-found 2>/dev/null || true
     log_pass "Invalid CR handled"
 fi
 
@@ -42,11 +41,11 @@ apply_fixture "api-key-secret.yaml"
 
 # Apply valid CR
 apply_fixture "test-cr.yaml"
-assert_exit_code 0 "Valid CR accepted" $KUBECTL get ignitionsync test-sync -n "$TEST_NAMESPACE"
+assert_exit_code 0 "Valid CR accepted" $KUBECTL get stoker test-sync -n "$TEST_NAMESPACE"
 
 # Clean up for next tests
-$KUBECTL delete ignitionsync test-sync -n "$TEST_NAMESPACE" --wait=true 2>/dev/null || true
-wait_for_deletion ignitionsync test-sync 30 2>/dev/null || true
+$KUBECTL delete stoker test-sync -n "$TEST_NAMESPACE" --wait=true 2>/dev/null || true
+wait_for_deletion stoker test-sync 30 2>/dev/null || true
 sleep 2
 
 # ────────────────────────────────────────────────────────────────────
@@ -60,17 +59,17 @@ apply_fixture "test-cr.yaml"
 finalizer=""
 deadline=$((SECONDS + 15))
 while [[ $SECONDS -lt $deadline ]]; do
-    finalizer=$(kubectl_json "ignitionsync/test-sync" '{.metadata.finalizers[0]}')
+    finalizer=$(kubectl_json "stoker/test-sync" '{.metadata.finalizers[0]}')
     if [[ -n "$finalizer" ]]; then
         break
     fi
     sleep 1
 done
-assert_eq "ignition-sync.io/finalizer" "$finalizer" "Finalizer should be added"
+assert_eq "stoker.io/finalizer" "$finalizer" "Finalizer should be added"
 
 # Delete CR and verify it's fully removed
-$KUBECTL delete ignitionsync test-sync -n "$TEST_NAMESPACE" --wait=false
-wait_for_deletion ignitionsync test-sync 30
+$KUBECTL delete stoker test-sync -n "$TEST_NAMESPACE" --wait=false
+wait_for_deletion stoker test-sync 30
 log_pass "CR deleted cleanly (finalizer removed)"
 
 sleep 2
@@ -86,8 +85,8 @@ sleep 1
 
 # Create CR with reference to non-existent secret
 cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f -
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: test-sync-nosecret
 spec:
@@ -107,9 +106,9 @@ EOF
 
 # Wait for Ready=False with reason containing "not found" or similar
 sleep 10
-ready_status=$(kubectl_json "ignitionsync/test-sync-nosecret" \
+ready_status=$(kubectl_json "stoker/test-sync-nosecret" \
     '{.status.conditions[?(@.type=="Ready")].status}')
-ready_msg=$(kubectl_json "ignitionsync/test-sync-nosecret" \
+ready_msg=$(kubectl_json "stoker/test-sync-nosecret" \
     '{.status.conditions[?(@.type=="Ready")].message}')
 
 if [[ "$ready_status" == "False" ]]; then
@@ -120,7 +119,7 @@ else
 fi
 
 # Verify controller is still running
-controller_ns="ignition-sync-operator-system"
+controller_ns="stoker-system"
 ctrl_phase=$($KUBECTL get pods -n "$controller_ns" -l control-plane=controller-manager \
     -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
 assert_eq "Running" "$ctrl_phase" "Controller still running after missing secret"
@@ -130,8 +129,8 @@ apply_fixture "api-key-secret.yaml"
 sleep 5
 
 # Clean up
-$KUBECTL delete ignitionsync test-sync-nosecret -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
-wait_for_deletion ignitionsync test-sync-nosecret 30 2>/dev/null || true
+$KUBECTL delete stoker test-sync-nosecret -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
+wait_for_deletion stoker test-sync-nosecret 30 2>/dev/null || true
 sleep 2
 
 # ────────────────────────────────────────────────────────────────────
@@ -143,17 +142,17 @@ apply_fixture "api-key-secret.yaml"
 apply_fixture "test-cr.yaml"
 
 # Wait for metadata ConfigMap to exist
-cm_name="ignition-sync-metadata-test-sync"
+cm_name="stoker-metadata-test-sync"
 wait_for_resource configmap "$cm_name" 30
 log_pass "Metadata ConfigMap created: $cm_name"
 
 # Verify ConfigMap labels
-cm_label=$(kubectl_json "configmap/$cm_name" '{.metadata.labels.ignition-sync\.io/cr-name}')
+cm_label=$(kubectl_json "configmap/$cm_name" '{.metadata.labels.stoker\.io/cr-name}')
 assert_eq "test-sync" "$cm_label" "Metadata ConfigMap has cr-name label"
 
 # Verify owner reference
 owner_kind=$(kubectl_json "configmap/$cm_name" '{.metadata.ownerReferences[0].kind}')
-assert_eq "IgnitionSync" "$owner_kind" "Metadata ConfigMap has IgnitionSync owner reference"
+assert_eq "Stoker" "$owner_kind" "Metadata ConfigMap has Stoker owner reference"
 
 # Verify commit key exists and is a valid SHA
 commit_hash=$(kubectl_json "configmap/$cm_name" '{.data.commit}')
@@ -165,24 +164,24 @@ assert_not_empty "$commit_hash" "Metadata ConfigMap has commit key"
 log_test "2.5: Ref Resolution (Happy Path)"
 
 # CR from 2.4 is still active — wait for ref resolution
-wait_for_typed_condition "ignitionsync/test-sync" "RefResolved" "True" 90
+wait_for_typed_condition "stoker/test-sync" "RefResolved" "True" 90
 log_pass "RefResolved=True"
 
 # Verify status fields
-ref_status=$(kubectl_json "ignitionsync/test-sync" '{.status.refResolutionStatus}')
+ref_status=$(kubectl_json "stoker/test-sync" '{.status.refResolutionStatus}')
 assert_eq "Resolved" "$ref_status" "refResolutionStatus is Resolved"
 
-commit=$(kubectl_json "ignitionsync/test-sync" '{.status.lastSyncCommit}')
+commit=$(kubectl_json "stoker/test-sync" '{.status.lastSyncCommit}')
 assert_not_empty "$commit" "lastSyncCommit is set"
 
-ref=$(kubectl_json "ignitionsync/test-sync" '{.status.lastSyncRef}')
+ref=$(kubectl_json "stoker/test-sync" '{.status.lastSyncRef}')
 assert_eq "main" "$ref" "lastSyncRef is main"
 
-sync_time=$(kubectl_json "ignitionsync/test-sync" '{.status.lastSyncTime}')
+sync_time=$(kubectl_json "stoker/test-sync" '{.status.lastSyncTime}')
 assert_not_empty "$sync_time" "lastSyncTime is set"
 
 # Verify metadata ConfigMap
-cm_name="ignition-sync-metadata-test-sync"
+cm_name="stoker-metadata-test-sync"
 wait_for_resource configmap "$cm_name" 10
 cm_commit=$(kubectl_json "configmap/$cm_name" '{.data.commit}')
 assert_not_empty "$cm_commit" "Metadata ConfigMap has commit key"
@@ -191,8 +190,8 @@ cm_ref=$(kubectl_json "configmap/$cm_name" '{.data.ref}')
 assert_eq "main" "$cm_ref" "Metadata ConfigMap has ref=main"
 
 # Clean up
-$KUBECTL delete ignitionsync test-sync -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
-wait_for_deletion ignitionsync test-sync 30 2>/dev/null || true
+$KUBECTL delete stoker test-sync -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
+wait_for_deletion stoker test-sync 30 2>/dev/null || true
 sleep 3
 
 # ────────────────────────────────────────────────────────────────────
@@ -201,8 +200,8 @@ sleep 3
 log_test "2.6: Ref Resolution Error Handling"
 
 cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f -
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: test-sync-badrepo
 spec:
@@ -221,10 +220,10 @@ spec:
 EOF
 
 # Wait for refResolutionStatus=Error (ls-remote to nonexistent repo takes time over network)
-wait_for_condition "ignitionsync/test-sync-badrepo" '{.status.refResolutionStatus}' "Error" 90
+wait_for_condition "stoker/test-sync-badrepo" '{.status.refResolutionStatus}' "Error" 90
 log_pass "refResolutionStatus is Error for bad repo"
 
-ref_resolved=$(kubectl_json "ignitionsync/test-sync-badrepo" \
+ref_resolved=$(kubectl_json "stoker/test-sync-badrepo" \
     '{.status.conditions[?(@.type=="RefResolved")].status}')
 assert_eq "False" "$ref_resolved" "RefResolved=False for bad repo"
 
@@ -234,8 +233,8 @@ ctrl_phase=$($KUBECTL get pods -n "$controller_ns" -l control-plane=controller-m
 assert_eq "Running" "$ctrl_phase" "Controller still running after ref resolution error"
 
 # Clean up
-$KUBECTL delete ignitionsync test-sync-badrepo -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
-wait_for_deletion ignitionsync test-sync-badrepo 30 2>/dev/null || true
+$KUBECTL delete stoker test-sync-badrepo -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
+wait_for_deletion stoker test-sync-badrepo 30 2>/dev/null || true
 sleep 2
 
 # ────────────────────────────────────────────────────────────────────
@@ -247,14 +246,14 @@ apply_fixture "test-cr-paused.yaml"
 sleep 15
 
 # Verify no metadata ConfigMap was created
-cm_exists=$($KUBECTL get configmap "ignition-sync-metadata-test-sync-paused" -n "$TEST_NAMESPACE" 2>/dev/null && echo "yes" || echo "no")
+cm_exists=$($KUBECTL get configmap "stoker-metadata-test-sync-paused" -n "$TEST_NAMESPACE" 2>/dev/null && echo "yes" || echo "no")
 assert_eq "no" "$cm_exists" "No metadata ConfigMap created for paused CR"
 
 # Check Ready=False with Paused reason
-ready_status=$(kubectl_json "ignitionsync/test-sync-paused" \
+ready_status=$(kubectl_json "stoker/test-sync-paused" \
     '{.status.conditions[?(@.type=="Ready")].status}')
 if [[ "$ready_status" == "False" ]]; then
-    ready_reason=$(kubectl_json "ignitionsync/test-sync-paused" \
+    ready_reason=$(kubectl_json "stoker/test-sync-paused" \
         '{.status.conditions[?(@.type=="Ready")].reason}')
     assert_eq "Paused" "$ready_reason" "Ready reason is Paused"
 else
@@ -263,8 +262,8 @@ else
 fi
 
 # Clean up
-$KUBECTL delete ignitionsync test-sync-paused -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
-wait_for_deletion ignitionsync test-sync-paused 30 2>/dev/null || true
+$KUBECTL delete stoker test-sync-paused -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
+wait_for_deletion stoker test-sync-paused 30 2>/dev/null || true
 sleep 2
 
 # ────────────────────────────────────────────────────────────────────
@@ -273,8 +272,8 @@ sleep 2
 log_test "2.8: Ref Tracking (tag switch)"
 
 cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f -
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: test-sync-ref
 spec:
@@ -293,17 +292,17 @@ spec:
 EOF
 
 # Wait for ref resolution at 0.1.0
-wait_for_typed_condition "ignitionsync/test-sync-ref" "RefResolved" "True" 90
-commit_v1=$(kubectl_json "ignitionsync/test-sync-ref" '{.status.lastSyncCommit}')
+wait_for_typed_condition "stoker/test-sync-ref" "RefResolved" "True" 90
+commit_v1=$(kubectl_json "stoker/test-sync-ref" '{.status.lastSyncCommit}')
 assert_not_empty "$commit_v1" "0.1.0 commit recorded"
 log_info "0.1.0 commit: $commit_v1"
 
 # Patch to 0.2.0
-$KUBECTL patch ignitionsync test-sync-ref -n "$TEST_NAMESPACE" \
+$KUBECTL patch stoker test-sync-ref -n "$TEST_NAMESPACE" \
     --type=merge -p '{"spec":{"git":{"ref":"0.2.0"}}}'
 
 # Wait for commit to change
-commit_v2=$(wait_for_change "ignitionsync/test-sync-ref" '{.status.lastSyncCommit}' "$commit_v1" 90)
+commit_v2=$(wait_for_change "stoker/test-sync-ref" '{.status.lastSyncCommit}' "$commit_v1" 90)
 if [[ -n "$commit_v2" && "$commit_v2" != "$commit_v1" ]]; then
     log_pass "Commit changed after ref update (v1=$commit_v1, v2=$commit_v2)"
 else
@@ -311,8 +310,8 @@ else
 fi
 
 # Clean up
-$KUBECTL delete ignitionsync test-sync-ref -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
-wait_for_deletion ignitionsync test-sync-ref 30 2>/dev/null || true
+$KUBECTL delete stoker test-sync-ref -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
+wait_for_deletion stoker test-sync-ref 30 2>/dev/null || true
 sleep 2
 
 # ────────────────────────────────────────────────────────────────────
@@ -321,15 +320,15 @@ sleep 2
 log_test "2.9: Cleanup on Deletion"
 
 apply_fixture "test-cr.yaml"
-wait_for_typed_condition "ignitionsync/test-sync" "RefResolved" "True" 90
+wait_for_typed_condition "stoker/test-sync" "RefResolved" "True" 90
 
 # Verify metadata ConfigMap exists before deletion
-cm_name="ignition-sync-metadata-test-sync"
+cm_name="stoker-metadata-test-sync"
 wait_for_resource configmap "$cm_name" 10
 log_info "Metadata ConfigMap exists before deletion"
 
 # Delete the CR
-$KUBECTL delete ignitionsync test-sync -n "$TEST_NAMESPACE" --wait=true --timeout=30s
+$KUBECTL delete stoker test-sync -n "$TEST_NAMESPACE" --wait=true --timeout=30s
 
 # Verify metadata ConfigMap is deleted (controller cleanup or GC)
 wait_for_deletion configmap "$cm_name" 30
@@ -343,8 +342,8 @@ sleep 2
 log_test "2.10: Multiple CRs in Same Namespace"
 
 cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f -
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: test-multi-a
 spec:
@@ -361,8 +360,8 @@ spec:
       name: ignition-api-key
       key: apiKey
 ---
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: test-multi-b
 spec:
@@ -381,26 +380,26 @@ spec:
 EOF
 
 # Wait for both to resolve
-wait_for_typed_condition "ignitionsync/test-multi-a" "RefResolved" "True" 90
-wait_for_typed_condition "ignitionsync/test-multi-b" "RefResolved" "True" 90
+wait_for_typed_condition "stoker/test-multi-a" "RefResolved" "True" 90
+wait_for_typed_condition "stoker/test-multi-b" "RefResolved" "True" 90
 log_pass "Both CRs reached RefResolved=True"
 
 # Verify separate metadata ConfigMaps
-wait_for_resource configmap "ignition-sync-metadata-test-multi-a" 10
-wait_for_resource configmap "ignition-sync-metadata-test-multi-b" 10
+wait_for_resource configmap "stoker-metadata-test-multi-a" 10
+wait_for_resource configmap "stoker-metadata-test-multi-b" 10
 log_pass "Each CR has its own metadata ConfigMap"
 
 # Delete one and verify other is unaffected
-$KUBECTL delete ignitionsync test-multi-a -n "$TEST_NAMESPACE" --wait=false
-wait_for_deletion ignitionsync test-multi-a 30
+$KUBECTL delete stoker test-multi-a -n "$TEST_NAMESPACE" --wait=false
+wait_for_deletion stoker test-multi-a 30
 
 # Verify test-multi-b is still good
-b_status=$(kubectl_json "ignitionsync/test-multi-b" '{.status.refResolutionStatus}')
+b_status=$(kubectl_json "stoker/test-multi-b" '{.status.refResolutionStatus}')
 assert_eq "Resolved" "$b_status" "test-multi-b unaffected by test-multi-a deletion"
 
 # Clean up
-$KUBECTL delete ignitionsync test-multi-b -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
-wait_for_deletion ignitionsync test-multi-b 30 2>/dev/null || true
+$KUBECTL delete stoker test-multi-b -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
+wait_for_deletion stoker test-multi-b 30 2>/dev/null || true
 
 # ────────────────────────────────────────────────────────────────────
 # Test 2.11: SSH Auth Ref Resolution
@@ -409,18 +408,18 @@ log_test "2.11: SSH Auth Ref Resolution"
 
 apply_fixture "test-cr-ssh.yaml"
 
-wait_for_typed_condition "ignitionsync/test-sync-ssh" "RefResolved" "True" 90
+wait_for_typed_condition "stoker/test-sync-ssh" "RefResolved" "True" 90
 log_pass "RefResolved=True via SSH auth"
 
-ssh_commit=$(kubectl_json "ignitionsync/test-sync-ssh" '{.status.lastSyncCommit}')
+ssh_commit=$(kubectl_json "stoker/test-sync-ssh" '{.status.lastSyncCommit}')
 assert_not_empty "$ssh_commit" "SSH ref resolution has lastSyncCommit"
 
-ssh_ref=$(kubectl_json "ignitionsync/test-sync-ssh" '{.status.lastSyncRef}')
+ssh_ref=$(kubectl_json "stoker/test-sync-ssh" '{.status.lastSyncRef}')
 assert_eq "main" "$ssh_ref" "SSH ref resolution ref is main"
 
 # Clean up
-$KUBECTL delete ignitionsync test-sync-ssh -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
-wait_for_deletion ignitionsync test-sync-ssh 30 2>/dev/null || true
+$KUBECTL delete stoker test-sync-ssh -n "$TEST_NAMESPACE" --wait=false 2>/dev/null || true
+wait_for_deletion stoker test-sync-ssh 30 2>/dev/null || true
 sleep 2
 
 # ────────────────────────────────────────────────────────────────────

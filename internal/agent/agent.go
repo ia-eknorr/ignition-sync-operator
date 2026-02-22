@@ -15,12 +15,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	syncv1alpha1 "github.com/ia-eknorr/ignition-sync-operator/api/v1alpha1"
-	"github.com/ia-eknorr/ignition-sync-operator/internal/git"
-	"github.com/ia-eknorr/ignition-sync-operator/internal/ignition"
-	"github.com/ia-eknorr/ignition-sync-operator/internal/syncengine"
-	"github.com/ia-eknorr/ignition-sync-operator/pkg/conditions"
-	synctypes "github.com/ia-eknorr/ignition-sync-operator/pkg/types"
+	stokerv1alpha1 "github.com/ia-eknorr/stoker-operator/api/v1alpha1"
+	"github.com/ia-eknorr/stoker-operator/internal/git"
+	"github.com/ia-eknorr/stoker-operator/internal/ignition"
+	"github.com/ia-eknorr/stoker-operator/internal/syncengine"
+	"github.com/ia-eknorr/stoker-operator/pkg/conditions"
+	stokertypes "github.com/ia-eknorr/stoker-operator/pkg/types"
 )
 
 const agentVersion = "0.1.0"
@@ -36,7 +36,7 @@ type Agent struct {
 	Watcher      *Watcher
 	Recorder     record.EventRecorder // may be nil
 
-	isyncRef         *syncv1alpha1.IgnitionSync // cached for event target
+	stkRef           *stokerv1alpha1.Stoker // cached for event target
 	lastSyncedCommit string
 	initialSyncDone  bool
 }
@@ -88,7 +88,7 @@ func (a *Agent) Run(ctx context.Context) error {
 
 	log.Info("metadata loaded", "gitURL", meta.GitURL, "commit", meta.Commit, "ref", meta.Ref)
 
-	// Cache IgnitionSync CR reference for event emission.
+	// Cache Stoker CR reference for event emission.
 	a.fetchISyncRef(ctx)
 
 	// Resolve git auth from mounted files.
@@ -329,8 +329,8 @@ func (a *Agent) checkDesignerSessions(ctx context.Context, policy, commit, ref s
 
 // setDesignerBlocked updates the DesignerSessionsBlocked field in the status ConfigMap.
 func (a *Agent) setDesignerBlocked(ctx context.Context, blocked bool) {
-	status := &synctypes.GatewayStatus{
-		SyncStatus:              synctypes.SyncStatusPending,
+	status := &stokertypes.GatewayStatus{
+		SyncStatus:              stokertypes.SyncStatusPending,
 		AgentVersion:            agentVersion,
 		LastSyncTime:            time.Now().UTC().Format(time.RFC3339),
 		DesignerSessionsBlocked: blocked,
@@ -397,16 +397,16 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 	}
 
 	// Determine status.
-	syncStatus := synctypes.SyncStatusSynced
+	syncStatus := stokertypes.SyncStatusSynced
 	var errorMsg string
 	if scanResultStr != "" && strings.Contains(scanResultStr, "error") {
-		syncStatus = synctypes.SyncStatusError
+		syncStatus = stokertypes.SyncStatusError
 		errorMsg = scanResultStr
 	}
 
 	// Report status to ConfigMap.
 	filesChanged := int32(syncResult.FilesAdded + syncResult.FilesModified + syncResult.FilesDeleted)
-	status := &synctypes.GatewayStatus{
+	status := &stokertypes.GatewayStatus{
 		SyncStatus:       syncStatus,
 		SyncedCommit:     commit,
 		SyncedRef:        ref,
@@ -496,8 +496,8 @@ func (a *Agent) syncWithProfile(ctx context.Context) (*syncengine.SyncResult, st
 // reportError writes an error status to the status ConfigMap.
 func (a *Agent) reportError(ctx context.Context, commit, ref, errMsg string) {
 	a.event(corev1.EventTypeWarning, conditions.ReasonSyncFailed, "%s", errMsg)
-	status := &synctypes.GatewayStatus{
-		SyncStatus:   synctypes.SyncStatusError,
+	status := &stokertypes.GatewayStatus{
+		SyncStatus:   stokertypes.SyncStatusError,
 		SyncedCommit: commit,
 		SyncedRef:    ref,
 		LastSyncTime: time.Now().UTC().Format(time.RFC3339),
@@ -507,24 +507,24 @@ func (a *Agent) reportError(ctx context.Context, commit, ref, errMsg string) {
 	_ = WriteStatusConfigMap(ctx, a.K8sClient, a.Config.CRNamespace, a.Config.CRName, a.Config.GatewayName, status)
 }
 
-// event emits a K8s event on the cached IgnitionSync CR. No-op if recorder or
-// isyncRef is nil (e.g. during tests or when recorder setup failed).
+// event emits a K8s event on the cached Stoker CR. No-op if recorder or
+// stkRef is nil (e.g. during tests or when recorder setup failed).
 func (a *Agent) event(eventType, reason, msgFmt string, args ...any) {
-	if a.Recorder == nil || a.isyncRef == nil {
+	if a.Recorder == nil || a.stkRef == nil {
 		return
 	}
-	a.Recorder.Eventf(a.isyncRef, eventType, reason, msgFmt, args...)
+	a.Recorder.Eventf(a.stkRef, eventType, reason, msgFmt, args...)
 }
 
-// fetchISyncRef fetches the IgnitionSync CR once and caches it as event target.
+// fetchISyncRef fetches the Stoker CR once and caches it as event target.
 func (a *Agent) fetchISyncRef(ctx context.Context) {
-	var isync syncv1alpha1.IgnitionSync
+	var stk stokerv1alpha1.Stoker
 	key := client.ObjectKey{Namespace: a.Config.CRNamespace, Name: a.Config.CRName}
-	if err := a.K8sClient.Get(ctx, key, &isync); err != nil {
-		logf.FromContext(ctx).Info("could not fetch IgnitionSync for events (non-fatal)", "error", err)
+	if err := a.K8sClient.Get(ctx, key, &stk); err != nil {
+		logf.FromContext(ctx).Info("could not fetch Stoker for events (non-fatal)", "error", err)
 		return
 	}
-	a.isyncRef = &isync
+	a.stkRef = &stk
 }
 
 // resolveFileAuth builds a go-git transport.AuthMethod from mounted credential files.

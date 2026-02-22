@@ -1,18 +1,18 @@
-<!-- Part of: Ignition Sync Operator Architecture (v3) -->
-<!-- See also: 00-overview.md, 01-crd.md, 02-controller.md, 04-sync-profile.md, 06-sync-agent.md, 09-security-testing-roadmap.md, 10-enterprise-examples.md -->
+<!-- Part of: Stoker Architecture (v3) -->
+<!-- See also: 00-overview.md, 01-crd.md, 02-controller.md, 04-sync-profile.md, 06-stoker-agent.md, 09-security-testing-roadmap.md, 10-enterprise-examples.md -->
 
-# Ignition Sync Operator — Deployment, Operations & Observability
+# Stoker — Deployment, Operations & Observability
 
 ## Helm Chart
 
 The operator ships as a standard Helm chart:
 
 ```
-charts/ignition-sync/
+charts/stoker/
 ├── Chart.yaml                    # type: application
 ├── values.yaml
 ├── crds/
-│   └── sync.ignition.io_ignitionsyncs.yaml
+│   └── stoker.io_stokers.yaml
 ├── templates/
 │   ├── deployment-controller.yaml
 │   ├── deployment-webhook.yaml
@@ -33,8 +33,8 @@ charts/ignition-sync/
 
 ```bash
 helm repo add ia https://charts.ia.io
-helm install ignition-sync ia/ignition-sync \
-  --namespace ignition-sync-system \
+helm install stoker ia/stoker \
+  --namespace stoker-system \
   --create-namespace
 ```
 
@@ -44,7 +44,7 @@ helm install ignition-sync ia/ignition-sync \
 controller:
   replicas: 2
   image:
-    repository: ghcr.io/ia-eknorr/ignition-sync-controller
+    repository: ghcr.io/ia-eknorr/stoker-controller
     tag: "1.0.0"
   # Restrict to specific namespaces (empty = all)
   watchNamespaces: []
@@ -54,7 +54,7 @@ controller:
 webhook:
   replicas: 2
   image:
-    repository: ghcr.io/ia-eknorr/ignition-sync-controller
+    repository: ghcr.io/ia-eknorr/stoker-controller
     tag: "1.0.0"
   # cert-manager issuer for webhook TLS
   certManager:
@@ -64,10 +64,10 @@ webhook:
 
 agent:
   image:
-    repository: ghcr.io/ia-eknorr/ignition-sync-agent
+    repository: ghcr.io/ia-eknorr/stoker-agent
     tag: "1.0.0"
 
-# Global defaults applied to all IgnitionSync CRs (overridable per CR)
+# Global defaults applied to all Stoker CRs (overridable per CR)
 defaults:
   polling:
     interval: 60s
@@ -105,7 +105,7 @@ When enabled:
 spec:
   validation:
     webhook:
-      url: "https://validate.example.com/ignition-sync"
+      url: "https://validate.example.com/stoker"
       timeout: 10s
 ```
 
@@ -126,7 +126,7 @@ spec:
       type: "pvc"  # or "s3", "gcs"
       s3:
         bucket: "my-ignition-backups"
-        keyPrefix: "ignition-sync/"
+        keyPrefix: "stoker/"
 ```
 
 Before every sync:
@@ -139,7 +139,7 @@ Before every sync:
 **Instant Rollback**
 ```bash
 # CLI tool or webhook endpoint
-kubectl patch ignitionsync proveit-sync -n site1 -p \
+kubectl patch stoker proveit-sync -n site1 -p \
   '{"spec":{"rollback":{"toSnapshot":"site-20260212-102000.tar.gz"}}}'
 ```
 
@@ -193,10 +193,10 @@ For the ~5% of cases where a dev or test gateway in a production namespace needs
 ```yaml
 # On a dev/test gateway pod only
 podAnnotations:
-  ignition-sync.io/inject: "true"
-  ignition-sync.io/cr-name: "proveit-sync"
-  ignition-sync.io/sync-profile: "proveit-site"
-  ignition-sync.io/ref-override: "v2.1.0-rc1"    # escape valve
+  stoker.io/inject: "true"
+  stoker.io/cr-name: "proveit-sync"
+  stoker.io/sync-profile: "proveit-site"
+  stoker.io/ref-override: "v2.1.0-rc1"    # escape valve
 ```
 
 **How it works:**
@@ -205,10 +205,10 @@ podAnnotations:
 2. The **agent** sidecar reads the `ref-override` annotation from its own pod (via the Kubernetes downward API or direct pod metadata lookup).
 3. If present, the agent uses that ref instead of the metadata ConfigMap's ref when calling `CloneOrFetch`. The agent resolves the ref to a commit SHA independently via its own `ls-remote` call.
 4. The agent writes `syncedRef: "v2.1.0-rc1"` (and the resolved commit) to the status ConfigMap, as it would for any sync.
-5. The controller detects the skew during its next reconcile: gateway's `syncedRef` differs from `lastSyncRef`. It sets a `RefSkew` warning condition on the IgnitionSync CR:
+5. The controller detects the skew during its next reconcile: gateway's `syncedRef` differs from `lastSyncRef`. It sets a `RefSkew` warning condition on the Stoker CR:
 
 ```text
-Warning  RefSkew  IgnitionSync/proveit-sync  Gateway dev-gw running v2.1.0-rc1, expected 2.0.0
+Warning  RefSkew  Stoker/proveit-sync  Gateway dev-gw running v2.1.0-rc1, expected 2.0.0
 ```
 
 **When to use:**
@@ -220,12 +220,12 @@ Warning  RefSkew  IgnitionSync/proveit-sync  Gateway dev-gw running v2.1.0-rc1, 
 **When NOT to use:**
 
 - Production canary rollouts — use `spec.deployment.strategy: canary` with stages instead.
-- Permanent multi-version setups — use separate IgnitionSync CRs.
+- Permanent multi-version setups — use separate Stoker CRs.
 - Multi-site rollouts — use separate namespaces with separate CRs.
 
 **Removing the override:**
 
-Delete the annotation (via Helm values change or `kubectl annotate pod ... ignition-sync.io/ref-override-`). On the next sync cycle, the agent falls back to the metadata ConfigMap's ref, and the gateway converges to the CR's version. The `RefSkew` condition clears on the next reconcile.
+Delete the annotation (via Helm values change or `kubectl annotate pod ... stoker.io/ref-override-`). On the next sync cycle, the agent falls back to the metadata ConfigMap's ref, and the gateway converges to the CR's version. The `RefSkew` condition clears on the next reconcile.
 
 **Interaction with deployment stages:**
 
@@ -234,7 +234,7 @@ The ref-override annotation bypasses deployment stage ordering. A pod with `ref-
 **Security and audit:**
 
 - The annotation is visible in `kubectl describe pod` and in the Kubernetes audit log.
-- The `RefSkew` warning condition ensures the skew is not silent — it appears in `kubectl get isync` and in any alerting configured on IgnitionSync conditions.
+- The `RefSkew` warning condition ensures the skew is not silent — it appears in `kubectl get stk` and in any alerting configured on Stoker conditions.
 - RBAC can restrict who can set pod annotations in production namespaces.
 
 ---
@@ -353,38 +353,38 @@ The controller exposes `/metrics` on port 8080:
 
 | Metric | Type | Description |
 |---|---|---|
-| `ignition_sync_reconcile_total` | Counter | Total reconciliations by CR and result |
-| `ignition_sync_reconcile_duration_seconds` | Histogram | Time per reconciliation |
-| `ignition_sync_ref_resolve_duration_seconds` | Histogram | Time for git ls-remote ref resolution |
-| `ignition_sync_agent_clone_duration_seconds` | Histogram | Time for agent git clone/fetch operations |
-| `ignition_sync_webhook_received_total` | Counter | Webhooks received by source type |
-| `ignition_sync_gateways_discovered` | Gauge | Number of gateways per CR |
-| `ignition_sync_gateways_synced` | Gauge | Number of synced gateways per CR |
-| `ignition_sync_last_sync_timestamp` | Gauge | Unix timestamp of last successful sync |
-| `ignition_sync_sync_duration_seconds` | Histogram | Time to complete sync per gateway |
-| `ignition_sync_files_changed_total` | Counter | Total files changed per CR |
-| `ignition_sync_bidirectional_prs_created` | Counter | PRs created for gateway changes |
-| `ignition_sync_scan_api_duration_seconds` | Histogram | Time for Ignition scan API completion |
-| `ignition_sync_rollback_triggered_total` | Counter | Number of auto-rollbacks performed |
+| `stoker_reconcile_total` | Counter | Total reconciliations by CR and result |
+| `stoker_reconcile_duration_seconds` | Histogram | Time per reconciliation |
+| `stoker_ref_resolve_duration_seconds` | Histogram | Time for git ls-remote ref resolution |
+| `stoker_agent_clone_duration_seconds` | Histogram | Time for agent git clone/fetch operations |
+| `stoker_webhook_received_total` | Counter | Webhooks received by source type |
+| `stoker_gateways_discovered` | Gauge | Number of gateways per CR |
+| `stoker_gateways_synced` | Gauge | Number of synced gateways per CR |
+| `stoker_last_sync_timestamp` | Gauge | Unix timestamp of last successful sync |
+| `stoker_sync_duration_seconds` | Histogram | Time to complete sync per gateway |
+| `stoker_files_changed_total` | Counter | Total files changed per CR |
+| `stoker_bidirectional_prs_created` | Counter | PRs created for gateway changes |
+| `stoker_scan_api_duration_seconds` | Histogram | Time for Ignition scan API completion |
+| `stoker_rollback_triggered_total` | Counter | Number of auto-rollbacks performed |
 
 ### Events
 
-The controller emits Kubernetes Events on the IgnitionSync CR:
+The controller emits Kubernetes Events on the Stoker CR:
 
 ```
-Normal   RefResolved      IgnitionSync/proveit-sync   Resolved ref 2.0.0 to abc123f
-Normal   RefUpdated       IgnitionSync/proveit-sync   Updated ref from 1.9.0 to 2.0.0 (via webhook)
-Normal   SyncCompleted    IgnitionSync/proveit-sync   All 5 gateways synced successfully
-Warning  SyncFailed       IgnitionSync/proveit-sync   Gateway area2 failed to sync: rsync error code 23
-Normal   PRCreated        IgnitionSync/proveit-sync   Created PR #42 for gateway changes on site
-Warning  ConflictDetected IgnitionSync/proveit-sync   File config.json modified in both git and gateway site
+Normal   RefResolved      Stoker/proveit-sync   Resolved ref 2.0.0 to abc123f
+Normal   RefUpdated       Stoker/proveit-sync   Updated ref from 1.9.0 to 2.0.0 (via webhook)
+Normal   SyncCompleted    Stoker/proveit-sync   All 5 gateways synced successfully
+Warning  SyncFailed       Stoker/proveit-sync   Gateway area2 failed to sync: rsync error code 23
+Normal   PRCreated        Stoker/proveit-sync   Created PR #42 for gateway changes on site
+Warning  ConflictDetected Stoker/proveit-sync   File config.json modified in both git and gateway site
 ```
 
 ### kubectl Integration
 
 ```bash
 # List all syncs across the cluster
-kubectl get ignitionsyncs -A
+kubectl get stokers -A
 
 # NAMESPACE     NAME            REF     GATEWAYS   SYNCED   AGE
 # site1         proveit-sync    2.0.0   5          5        2d
@@ -392,10 +392,10 @@ kubectl get ignitionsyncs -A
 # public-demo   demo-sync       main    6          6        30d
 
 # Describe for detailed status
-kubectl describe ignitionsync proveit-sync -n site1
+kubectl describe stoker proveit-sync -n site1
 
 # Quick status check
-kubectl get ignitionsync proveit-sync -n site1 -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+kubectl get stoker proveit-sync -n site1 -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
 # True
 ```
 
@@ -423,24 +423,24 @@ Helm chart includes a ConfigMap with Grafana dashboard JSON:
 ```yaml
 kind: ConfigMap
 metadata:
-  name: ignition-sync-grafana-dashboard
+  name: stoker-grafana-dashboard
 data:
   dashboard.json: |
     {
       "dashboard": {
-        "title": "Ignition Sync Operator",
+        "title": "Stoker",
         "panels": [
           {
             "title": "Sync Status by Gateway",
-            "targets": [{"expr": "ignition_sync_gateways_synced / ignition_sync_gateways_discovered"}]
+            "targets": [{"expr": "stoker_gateways_synced / stoker_gateways_discovered"}]
           },
           {
             "title": "Sync Duration Trend",
-            "targets": [{"expr": "ignition_sync_sync_duration_seconds"}]
+            "targets": [{"expr": "stoker_sync_duration_seconds"}]
           },
           {
             "title": "Webhook Received Rate",
-            "targets": [{"expr": "rate(ignition_sync_webhook_received_total[5m])"}]
+            "targets": [{"expr": "rate(stoker_webhook_received_total[5m])"}]
           }
         ]
       }
@@ -454,7 +454,7 @@ Users can import this dashboard directly into their Grafana instance.
 Agent generates structured diff reports after each sync:
 ```bash
 # Find all diffs for a gateway
-kubectl get igs proveit-sync -n site1 -o json | \
+kubectl get stk proveit-sync -n site1 -o json | \
   jq '.status.discoveredGateways[] | select(.name=="site")'
 
 # Output includes:

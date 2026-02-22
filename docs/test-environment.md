@@ -1,6 +1,6 @@
 # Test Environment Reference
 
-This document covers the Ignition test environment used for validating the ignition-sync-operator: gateway access, API authentication, repository structure, and a verification plan using the Ignition 8.3 REST API.
+This document covers the Ignition test environment used for validating the stoker-operator: gateway access, API authentication, repository structure, and a verification plan using the Ignition 8.3 REST API.
 
 ---
 
@@ -32,9 +32,9 @@ This document covers the Ignition test environment used for validating the ignit
 
 - **Cluster:** `kind-dev`, namespace `ignition-test`
 - Both run **Ignition 8.3.3**, deployed via `inductiveautomation/ignition` helm chart
-- Each gateway has a **native sidecar** (`sync-agent`) that syncs config before gateway startup
+- Each gateway has a **native sidecar** (`stoker-agent`) that syncs config before gateway startup
 - Each gateway uses its own **SyncProfile** (`blue-profile`, `red-profile`)
-- Single **IgnitionSync CR** (`test-sync`) manages both gateways
+- Single **Stoker CR** (`test-sync`) manages both gateways
 
 ## 3. API Authentication
 
@@ -93,8 +93,8 @@ Complete setup for deploying both gateways with the sync operator in the kind cl
 ### Prerequisites
 
 - `kind-dev` cluster running (3 nodes)
-- Operator image built and loaded: `docker build -t ignition-sync-operator:dev . && kind load docker-image ignition-sync-operator:dev --name dev`
-- Controller deployed to `ignition-sync-operator-system`
+- Operator image built and loaded: `docker build -t stoker-operator:dev . && kind load docker-image stoker-operator:dev --name dev`
+- Controller deployed to `stoker-system`
 
 ### Step 1: Create namespace and secrets
 
@@ -183,12 +183,12 @@ helm install ignition-red inductiveautomation/ignition -n ignition-test \
   --set service.nodePorts.https=30044
 ```
 
-### Step 3: Create IgnitionSync CR and SyncProfiles
+### Step 3: Create Stoker CR and SyncProfiles
 
 ```bash
 cat <<'EOF' | kubectl apply -f -
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: test-sync
   namespace: ignition-test
@@ -208,7 +208,7 @@ spec:
     port: 8088
     tls: false
 ---
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: blue-profile
@@ -233,7 +233,7 @@ spec:
     environment: "test"
     gateway: "blue"
 ---
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: red-profile
@@ -262,9 +262,9 @@ EOF
 
 ### Step 4: Annotate StatefulSets for sidecar injection
 
-The sync-agent is injected automatically by the MutatingWebhook as a **native sidecar** (K8s init container with `restartPolicy: Always`). Add the required annotations and the webhook handles container injection, volume mounts, and environment variables.
+The stoker-agent is injected automatically by the MutatingWebhook as a **native sidecar** (K8s init container with `restartPolicy: Always`). Add the required annotations and the webhook handles container injection, volume mounts, and environment variables.
 
-> **Note:** If the webhook is not running when pods are created, the controller detects the `MissingSidecar` condition and reports it on the IgnitionSync status. Restart the pods after the webhook is available to trigger injection.
+> **Note:** If the webhook is not running when pods are created, the controller detects the `MissingSidecar` condition and reports it on the Stoker status. Restart the pods after the webhook is available to trigger injection.
 
 ```bash
 # Function to annotate a gateway for sidecar injection
@@ -273,10 +273,10 @@ patch_gateway() {
 
   # Add pod template annotations for gateway discovery + injection
   kubectl -n ignition-test patch sts ${GW_NAME}-gateway --type=json -p="[
-    {\"op\": \"add\", \"path\": \"/spec/template/metadata/annotations/ignition-sync.io~1inject\", \"value\": \"true\"},
-    {\"op\": \"add\", \"path\": \"/spec/template/metadata/annotations/ignition-sync.io~1cr-name\", \"value\": \"test-sync\"},
-    {\"op\": \"add\", \"path\": \"/spec/template/metadata/annotations/ignition-sync.io~1gateway-name\", \"value\": \"${GW_NAME}\"},
-    {\"op\": \"add\", \"path\": \"/spec/template/metadata/annotations/ignition-sync.io~1sync-profile\", \"value\": \"${PROFILE}\"}
+    {\"op\": \"add\", \"path\": \"/spec/template/metadata/annotations/stoker.io~1inject\", \"value\": \"true\"},
+    {\"op\": \"add\", \"path\": \"/spec/template/metadata/annotations/stoker.io~1cr-name\", \"value\": \"test-sync\"},
+    {\"op\": \"add\", \"path\": \"/spec/template/metadata/annotations/stoker.io~1gateway-name\", \"value\": \"${GW_NAME}\"},
+    {\"op\": \"add\", \"path\": \"/spec/template/metadata/annotations/stoker.io~1sync-profile\", \"value\": \"${PROFILE}\"}
   ]"
 }
 
@@ -291,8 +291,8 @@ kubectl -n ignition-test wait --for=condition=Ready pod/ignition-red-gateway-0 -
 
 For manual sidecar patching (e.g., when the webhook is unavailable), the agent expects:
 - Volumes: `sync-repo` (emptyDir), `api-key` (secret → `ignition-api-key`), `git-credentials` (secret → `git-token-secret`)
-- Mount paths: `/etc/ignition-sync/api-key`, `/etc/ignition-sync/git-credentials`
-- Env: `API_KEY_FILE=/etc/ignition-sync/api-key/apiKey`, `GIT_TOKEN_FILE=/etc/ignition-sync/git-credentials/token`
+- Mount paths: `/etc/stoker/api-key`, `/etc/stoker/git-credentials`
+- Env: `API_KEY_FILE=/etc/stoker/api-key/apiKey`, `GIT_TOKEN_FILE=/etc/stoker/git-credentials/token`
 - Memory limit: `256Mi`
 
 ### Step 5: Verify
@@ -301,8 +301,8 @@ For manual sidecar patching (e.g., when the webhook is unavailable), the agent e
 # Both gateways should be 2/2 Running (gateway + native sidecar)
 kubectl -n ignition-test get pods
 
-# IgnitionSync should show 2/2 gateways synced
-kubectl -n ignition-test get ignitionsync test-sync
+# Stoker should show 2/2 gateways synced
+kubectl -n ignition-test get stoker test-sync
 
 # Port-forward for API verification
 kubectl -n ignition-test port-forward pod/ignition-blue-gateway-0 8088:8088 &
@@ -596,7 +596,7 @@ When ready, the following auth methods will be configured for the operator to cl
 
 ```bash
 # Generate key
-ssh-keygen -t ed25519 -f secrets/deploy-key -N "" -C "ignition-sync-test"
+ssh-keygen -t ed25519 -f secrets/deploy-key -N "" -C "stoker-test"
 
 # Add to repo
 gh repo deploy-key add secrets/deploy-key.pub -R ia-eknorr/test-ignition-project

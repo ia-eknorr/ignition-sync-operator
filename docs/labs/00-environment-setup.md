@@ -9,7 +9,7 @@ Create a kind cluster with the Ignition helm chart and operator. Git content is 
 Create a cluster with extra port mappings so we can access the Ignition web UI from the host:
 
 ```bash
-cat <<'EOF' | kind create cluster --name ignition-sync-lab --config=-
+cat <<'EOF' | kind create cluster --name stoker-lab --config=-
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
@@ -26,7 +26,7 @@ EOF
 
 **Verify:**
 ```bash
-kubectl cluster-info --context kind-ignition-sync-lab
+kubectl cluster-info --context kind-stoker-lab
 kubectl get nodes
 ```
 
@@ -102,8 +102,8 @@ The operator discovers gateways via annotations. Add them to the Ignition Statef
 
 ```bash
 kubectl patch statefulset ignition -n lab --type=json -p='[
-  {"op": "add", "path": "/spec/template/metadata/annotations/ignition-sync.io~1cr-name", "value": "lab-sync"},
-  {"op": "add", "path": "/spec/template/metadata/annotations/ignition-sync.io~1gateway-name", "value": "lab-gateway"}
+  {"op": "add", "path": "/spec/template/metadata/annotations/stoker.io~1cr-name", "value": "lab-sync"},
+  {"op": "add", "path": "/spec/template/metadata/annotations/stoker.io~1gateway-name", "value": "lab-gateway"}
 ]'
 ```
 
@@ -118,7 +118,7 @@ kubectl rollout status statefulset/ignition -n lab --timeout=300s
 kubectl get pod ignition-0 -n lab -o jsonpath='{.metadata.annotations}' | jq .
 ```
 
-Expected: Should contain `ignition-sync.io/cr-name: "lab-sync"` and `ignition-sync.io/gateway-name: "lab-gateway"`.
+Expected: Should contain `stoker.io/cr-name: "lab-sync"` and `stoker.io/gateway-name: "lab-gateway"`.
 
 ## Step 5: Create Gateway API Key Secret
 
@@ -135,39 +135,39 @@ kubectl label secret ignition-api-key -n lab app=lab-test
 ## Step 6: Build and Load Operator Image
 
 ```bash
-cd /path/to/ignition-sync-operator
-make docker-build IMG=ignition-sync-operator:lab
-kind load docker-image ignition-sync-operator:lab --name ignition-sync-lab
+cd /path/to/stoker-operator
+make docker-build IMG=stoker-operator:lab
+kind load docker-image stoker-operator:lab --name stoker-lab
 ```
 
 **Verify image is loaded:**
 ```bash
-docker exec ignition-sync-lab-control-plane crictl images | grep ignition-sync
+docker exec stoker-lab-control-plane crictl images | grep stoker
 ```
 
 ## Step 7: Install CRDs and Deploy Operator
 
 ```bash
 make install
-make deploy IMG=ignition-sync-operator:lab
+make deploy IMG=stoker-operator:lab
 ```
 
 **Wait for controller:**
 ```bash
-kubectl rollout status deployment/ignition-sync-operator-controller-manager \
-  -n ignition-sync-operator-system --timeout=120s
+kubectl rollout status deployment/stoker-operator-controller-manager \
+  -n stoker-system --timeout=120s
 ```
 
 **Verify:**
 ```bash
-kubectl get pods -n ignition-sync-operator-system
+kubectl get pods -n stoker-system
 ```
 
 Expected: `controller-manager` pod Running with `1/1` Ready.
 
 **Check operator logs for clean startup:**
 ```bash
-kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manager --tail=20
+kubectl logs -n stoker-system -l control-plane=controller-manager --tail=20
 ```
 
 Expected: Should see "starting webhook receiver" and no ERROR lines.
@@ -201,7 +201,7 @@ Run this checklist:
 echo "=== Environment Checklist ==="
 
 echo -n "Kind cluster: "
-kind get clusters | grep -q ignition-sync-lab && echo "OK" || echo "MISSING"
+kind get clusters | grep -q stoker-lab && echo "OK" || echo "MISSING"
 
 echo -n "Lab namespace: "
 kubectl get ns lab >/dev/null 2>&1 && echo "OK" || echo "MISSING"
@@ -210,11 +210,11 @@ echo -n "Ignition gateway: "
 kubectl get pod ignition-0 -n lab -o jsonpath='{.status.phase}' 2>/dev/null
 
 echo -n "  Annotations: "
-kubectl get pod ignition-0 -n lab -o jsonpath='{.metadata.annotations.ignition-sync\.io/cr-name}' 2>/dev/null
+kubectl get pod ignition-0 -n lab -o jsonpath='{.metadata.annotations.stoker\.io/cr-name}' 2>/dev/null
 echo ""
 
 echo -n "Operator: "
-kubectl get pods -n ignition-sync-operator-system -l control-plane=controller-manager \
+kubectl get pods -n stoker-system -l control-plane=controller-manager \
   -o jsonpath='{.items[0].status.phase}' 2>/dev/null
 echo ""
 
@@ -225,7 +225,7 @@ echo -n "API key secret: "
 kubectl get secret ignition-api-key -n lab >/dev/null 2>&1 && echo "OK" || echo "MISSING"
 
 echo -n "CRD: "
-kubectl get crd ignitionsyncs.sync.ignition.io >/dev/null 2>&1 && echo "OK" || echo "MISSING"
+kubectl get crd stokers.stoker.io >/dev/null 2>&1 && echo "OK" || echo "MISSING"
 ```
 
 All items should show `OK` or `Running`.
@@ -247,7 +247,7 @@ helm uninstall ignition -n lab
 kubectl delete namespace lab
 make undeploy ignore-not-found=true
 make uninstall ignore-not-found=true
-kind delete cluster --name ignition-sync-lab
+kind delete cluster --name stoker-lab
 ```
 
 ## Troubleshooting
@@ -258,4 +258,4 @@ kind delete cluster --name ignition-sync-lab
 
 **Image pull errors:** Ensure Docker Desktop has internet access. The Ignition image is ~800MB on first pull.
 
-**Operator CrashLoopBackOff:** Check logs with `kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manager --previous`. Common cause: CRD not installed before deploying.
+**Operator CrashLoopBackOff:** Check logs with `kubectl logs -n stoker-system -l control-plane=controller-manager --previous`. Common cause: CRD not installed before deploying.

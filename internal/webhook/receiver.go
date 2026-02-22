@@ -15,8 +15,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	syncv1alpha1 "github.com/ia-eknorr/ignition-sync-operator/api/v1alpha1"
-	synctypes "github.com/ia-eknorr/ignition-sync-operator/pkg/types"
+	stokerv1alpha1 "github.com/ia-eknorr/stoker-operator/api/v1alpha1"
+	stokertypes "github.com/ia-eknorr/stoker-operator/pkg/types"
 )
 
 const (
@@ -27,7 +27,7 @@ const (
 )
 
 // Receiver is an HTTP server that receives webhook payloads and annotates
-// IgnitionSync CRs with the requested ref. It implements manager.Runnable.
+// Stoker CRs with the requested ref. It implements manager.Runnable.
 type Receiver struct {
 	Client     client.Client
 	HMACSecret string
@@ -94,17 +94,17 @@ func (rv *Receiver) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Look up the IgnitionSync CR
-	var isync syncv1alpha1.IgnitionSync
+	// Look up the Stoker CR
+	var stk stokerv1alpha1.Stoker
 	key := types.NamespacedName{Name: crName, Namespace: namespace}
-	if err := rv.Client.Get(r.Context(), key, &isync); err != nil {
+	if err := rv.Client.Get(r.Context(), key, &stk); err != nil {
 		log.Error(err, "CR not found", "namespace", namespace, "name", crName)
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 
 	// Check if the ref is already set (idempotent)
-	if isync.Annotations != nil && isync.Annotations[synctypes.AnnotationRequestedRef] == ref {
+	if stk.Annotations != nil && stk.Annotations[stokertypes.AnnotationRequestedRef] == ref {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"accepted": true,
 			"ref":      ref,
@@ -114,20 +114,20 @@ func (rv *Receiver) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Annotate the CR
-	if isync.Annotations == nil {
-		isync.Annotations = make(map[string]string)
+	if stk.Annotations == nil {
+		stk.Annotations = make(map[string]string)
 	}
-	isync.Annotations[synctypes.AnnotationRequestedRef] = ref
-	isync.Annotations[synctypes.AnnotationRequestedAt] = time.Now().UTC().Format(time.RFC3339)
-	isync.Annotations[synctypes.AnnotationRequestedBy] = source
+	stk.Annotations[stokertypes.AnnotationRequestedRef] = ref
+	stk.Annotations[stokertypes.AnnotationRequestedAt] = time.Now().UTC().Format(time.RFC3339)
+	stk.Annotations[stokertypes.AnnotationRequestedBy] = source
 
-	if err := rv.Client.Update(r.Context(), &isync); err != nil {
+	if err := rv.Client.Update(r.Context(), &stk); err != nil {
 		log.Error(err, "failed to annotate CR", "namespace", namespace, "name", crName)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
-	rv.Recorder.Eventf(&isync, corev1.EventTypeNormal, "WebhookReceived", "Webhook from %s, ref %q", source, ref)
+	rv.Recorder.Eventf(&stk, corev1.EventTypeNormal, "WebhookReceived", "Webhook from %s, ref %q", source, ref)
 	log.Info("webhook accepted", "namespace", namespace, "cr", crName, "ref", ref, "source", source)
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"accepted": true,

@@ -33,9 +33,9 @@ rules:
   - list
   - watch
 - apiGroups:
-  - sync.ignition.io
+  - stoker.io
   resources:
-  - ignitionsyncs
+  - stokers
   - syncprofiles
   verbs:
   - get
@@ -44,15 +44,15 @@ rules:
   - update
   - watch
 - apiGroups:
-  - sync.ignition.io
+  - stoker.io
   resources:
-  - ignitionsyncs/finalizers
+  - stokers/finalizers
   verbs:
   - update
 - apiGroups:
-  - sync.ignition.io
+  - stoker.io
   resources:
-  - ignitionsyncs/status
+  - stokers/status
   - syncprofiles/status
   verbs:
   - get

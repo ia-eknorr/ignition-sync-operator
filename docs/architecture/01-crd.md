@@ -1,17 +1,17 @@
-<!-- Part of: Ignition Sync Operator Architecture (v3) -->
-<!-- See also: 00-overview.md, 02-controller.md, 04-sync-profile.md, 06-sync-agent.md, 08-deployment-operations.md, 09-security-testing-roadmap.md, 10-enterprise-examples.md -->
+<!-- Part of: Stoker Architecture (v3) -->
+<!-- See also: 00-overview.md, 02-controller.md, 04-sync-profile.md, 06-stoker-agent.md, 08-deployment-operations.md, 09-security-testing-roadmap.md, 10-enterprise-examples.md -->
 
-# Ignition Sync Operator — Custom Resource Definition
+# Stoker — Custom Resource Definition
 
 ## Custom Resource Definition
 
-The CRD is **namespace-scoped** — each namespace that runs Ignition gateways creates its own `IgnitionSync` CR. The cluster-scoped controller watches all namespaces.
+The CRD is **namespace-scoped** — each namespace that runs Ignition gateways creates its own `Stoker` CR. The cluster-scoped controller watches all namespaces.
 
 **Design Principle: Sensible Defaults** — The CRD uses kubebuilder default markers extensively so a minimal CR needs only `spec.git` and `spec.gateway.apiKeySecretRef`. Everything else has production-ready defaults. This reduces a typical CR from ~60 lines to ~24 lines.
 
 ```yaml
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: proveit-sync
   namespace: site1
@@ -62,7 +62,7 @@ spec:
     port: 8443
     # HMAC secret for webhook payload verification (constant-time HMAC comparison enforced)
     secretRef:
-      name: "ignition-sync-webhook-secret"
+      name: "stoker-webhook-secret"
       key: "hmac-key"
     # Accepted source formats (controller auto-detects)
     # - argocd:  ArgoCD resource hook / notification payload
@@ -201,7 +201,7 @@ spec:
   # ============================================================
   agent:
     image:
-      repository: ghcr.io/ia-eknorr/ignition-sync-agent
+      repository: ghcr.io/ia-eknorr/stoker-agent
       tag: "1.0.0"
       pullPolicy: IfNotPresent
       digest: ""          # Optional: pinned digest for supply chain security
@@ -225,7 +225,7 @@ The CRD starts at `v1alpha1` with a planned migration path:
 Fields are annotated in Go types to indicate stability:
 
 ```go
-type IgnitionSyncSpec struct {
+type StokerSpec struct {
     // Stable — will not change in v1beta1
     Git     GitSpec     `json:"git"`
     // Deprecated: Storage is no longer used. Agent clones locally.
@@ -341,7 +341,7 @@ Key status design decisions following K8s conventions:
 
 - **`observedGeneration`** on both the top-level status and on each condition — lets clients know if the status reflects the current spec.
 - **Conditions over phases** — `Ready`, `RefResolved`, `AllGatewaysSynced`, `WebhookReady`, `BidirectionalReady` give a multi-dimensional view. No single "phase" field that can only express one state.
-- **`discoveredGateways`** is dynamic — controller populates it by watching for pods with `ignition-sync.io/cr-name` matching this CR. Gateways appear/disappear as pods are created/deleted.
+- **`discoveredGateways`** is dynamic — controller populates it by watching for pods with `stoker.io/cr-name` matching this CR. Gateways appear/disappear as pods are created/deleted.
 
 ---
 
@@ -349,14 +349,14 @@ Key status design decisions following K8s conventions:
 
 > Full design document: [04-sync-profile.md](04-sync-profile.md)
 
-`SyncProfile` is a second namespace-scoped CRD that defines **ordered source→destination mappings** for a gateway role. It replaces the opinionated `shared`, `additionalFiles`, `normalize`, and `siteNumber` fields from IgnitionSync with a generic abstraction.
+`SyncProfile` is a second namespace-scoped CRD that defines **ordered source→destination mappings** for a gateway role. It replaces the opinionated `shared`, `additionalFiles`, `normalize`, and `siteNumber` fields from Stoker with a generic abstraction.
 
 **Why a separate CRD?** SyncProfile separates "what files go where" (file routing) from "how to connect to git and gateways" (infrastructure). Multiple gateways with the same role (e.g., 4 area gateways) reference a single SyncProfile instead of duplicating mapping annotations on each pod.
 
 ### Minimal SyncProfile
 
 ```yaml
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: proveit-area
@@ -373,12 +373,12 @@ Pods reference it via annotation:
 
 ```yaml
 podAnnotations:
-  ignition-sync.io/inject: "true"
-  ignition-sync.io/cr-name: "proveit-sync"
-  ignition-sync.io/sync-profile: "proveit-area"
+  stoker.io/inject: "true"
+  stoker.io/cr-name: "proveit-sync"
+  stoker.io/sync-profile: "proveit-area"
 ```
 
-### Deprecation of IgnitionSync File-Routing Fields
+### Deprecation of Stoker File-Routing Fields
 
 | Removed Field | SyncProfile Replacement |
 |---------------|------------------------|
@@ -392,7 +392,7 @@ This is a breaking change at v1alpha1. Pods without a `sync-profile` annotation 
 ### 3-Tier Configuration Precedence
 
 ```
-annotation > SyncProfile > IgnitionSync > defaults
+annotation > SyncProfile > Stoker > defaults
 ```
 
 See [04-sync-profile.md](04-sync-profile.md) for the full CRD spec, Go types, worked examples, and backward compatibility details.

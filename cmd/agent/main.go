@@ -19,8 +19,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	syncv1alpha1 "github.com/ia-eknorr/ignition-sync-operator/api/v1alpha1"
-	"github.com/ia-eknorr/ignition-sync-operator/internal/agent"
+	stokerv1alpha1 "github.com/ia-eknorr/stoker-operator/api/v1alpha1"
+	"github.com/ia-eknorr/stoker-operator/internal/agent"
 )
 
 func main() {
@@ -28,7 +28,7 @@ func main() {
 	logf.SetLogger(zap.New(zap.UseDevMode(devMode)))
 	log := logf.Log.WithName("agent")
 
-	log.Info("ignition-sync-agent starting", "devMode", devMode)
+	log.Info("stoker-agent starting", "devMode", devMode)
 
 	// Load configuration from environment.
 	cfg, err := agent.LoadConfig()
@@ -67,7 +67,7 @@ func main() {
 func buildK8sClient() (client.Client, error) {
 	scheme := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(syncv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(stokerv1alpha1.AddToScheme(scheme))
 
 	config, err := rest.InClusterConfig()
 	if err != nil {
@@ -94,13 +94,13 @@ func buildEventRecorder(log logr.Logger) (record.EventRecorder, func()) {
 
 	scheme := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(syncv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(stokerv1alpha1.AddToScheme(scheme))
 
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{
 		Interface: clientset.CoreV1().Events(""),
 	})
-	recorder := broadcaster.NewRecorder(scheme, corev1.EventSource{Component: "ignition-sync-agent"})
+	recorder := broadcaster.NewRecorder(scheme, corev1.EventSource{Component: "stoker-agent"})
 
 	return recorder, broadcaster.Shutdown
 }

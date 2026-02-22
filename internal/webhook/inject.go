@@ -16,14 +16,14 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	syncv1alpha1 "github.com/ia-eknorr/ignition-sync-operator/api/v1alpha1"
-	synctypes "github.com/ia-eknorr/ignition-sync-operator/pkg/types"
+	stokerv1alpha1 "github.com/ia-eknorr/stoker-operator/api/v1alpha1"
+	stokertypes "github.com/ia-eknorr/stoker-operator/pkg/types"
 )
 
 const (
-	agentContainerName = "sync-agent"
+	agentContainerName = "stoker-agent"
 
-	defaultAgentImage = "ghcr.io/ia-eknorr/ignition-sync-agent:latest"
+	defaultAgentImage = "ghcr.io/ia-eknorr/stoker-agent:latest"
 
 	// Volume names injected by the webhook.
 	volumeSyncRepo       = "sync-repo"
@@ -33,8 +33,8 @@ const (
 	// Mount paths inside the agent container.
 	mountRepo           = "/repo"
 	mountIgnitionData   = "/ignition-data"
-	mountGitCredentials = "/etc/ignition-sync/git-credentials"
-	mountAPIKey         = "/etc/ignition-sync/api-key"
+	mountGitCredentials = "/etc/stoker/git-credentials"
+	mountAPIKey         = "/etc/stoker/api-key"
 
 	// Environment variable for operator-level default agent image.
 	envDefaultAgentImage = "DEFAULT_AGENT_IMAGE"
@@ -49,7 +49,7 @@ type PodInjector struct {
 	Decoder admission.Decoder
 }
 
-// Handle processes admission requests for pod creation and injects the sync-agent sidecar.
+// Handle processes admission requests for pod creation and injects the stoker-agent sidecar.
 func (p *PodInjector) Handle(ctx context.Context, req admission.Request) admission.Response {
 	log := logf.FromContext(ctx).WithName("pod-injector")
 
@@ -59,7 +59,7 @@ func (p *PodInjector) Handle(ctx context.Context, req admission.Request) admissi
 	}
 
 	// Early return for non-annotated pods (~1ms, no network calls)
-	if pod.Annotations[synctypes.AnnotationInject] != annotationTrue {
+	if pod.Annotations[stokertypes.AnnotationInject] != annotationTrue {
 		return admission.Allowed("injection not requested")
 	}
 
@@ -75,27 +75,27 @@ func (p *PodInjector) Handle(ctx context.Context, req admission.Request) admissi
 		return admission.Denied(err.Error())
 	}
 
-	// Fetch IgnitionSync CR
-	var isync syncv1alpha1.IgnitionSync
+	// Fetch Stoker CR
+	var stk stokerv1alpha1.Stoker
 	key := client.ObjectKey{Name: crName, Namespace: req.Namespace}
-	if err := p.Client.Get(ctx, key, &isync); err != nil {
+	if err := p.Client.Get(ctx, key, &stk); err != nil {
 		if apierrors.IsNotFound(err) {
 			return admission.Denied(fmt.Sprintf(
-				"IgnitionSync CR '%s' not found in namespace '%s'", crName, req.Namespace))
+				"Stoker CR '%s' not found in namespace '%s'", crName, req.Namespace))
 		}
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
 
 	// Check if CR is paused
-	if isync.Spec.Paused {
+	if stk.Spec.Paused {
 		return admission.Denied(fmt.Sprintf(
-			"IgnitionSync CR '%s' is paused", crName))
+			"Stoker CR '%s' is paused", crName))
 	}
 
 	// Validate SyncProfile if specified
-	profileName := pod.Annotations[synctypes.AnnotationSyncProfile]
+	profileName := pod.Annotations[stokertypes.AnnotationSyncProfile]
 	if profileName != "" {
-		var profile syncv1alpha1.SyncProfile
+		var profile stokerv1alpha1.SyncProfile
 		profileKey := client.ObjectKey{Name: profileName, Namespace: req.Namespace}
 		if err := p.Client.Get(ctx, profileKey, &profile); err != nil {
 			if apierrors.IsNotFound(err) {
@@ -107,7 +107,7 @@ func (p *PodInjector) Handle(ctx context.Context, req admission.Request) admissi
 	}
 
 	// Inject sidecar
-	injectSidecar(pod, &isync)
+	injectSidecar(pod, &stk)
 
 	// Return JSON patch
 	marshaledPod, err := json.Marshal(pod)
@@ -115,11 +115,11 @@ func (p *PodInjector) Handle(ctx context.Context, req admission.Request) admissi
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
 
-	log.Info("injected sync-agent sidecar", "pod", pod.Name, "cr", crName, "namespace", req.Namespace)
+	log.Info("injected stoker-agent sidecar", "pod", pod.Name, "cr", crName, "namespace", req.Namespace)
 	return admission.PatchResponseFromRaw(req.Object.Raw, marshaledPod)
 }
 
-// isAlreadyInjected checks if the sync-agent container already exists.
+// isAlreadyInjected checks if the stoker-agent container already exists.
 func isAlreadyInjected(pod *corev1.Pod) bool {
 	for _, c := range pod.Spec.InitContainers {
 		if c.Name == agentContainerName {
@@ -129,21 +129,21 @@ func isAlreadyInjected(pod *corev1.Pod) bool {
 	return false
 }
 
-// resolveCRName resolves the IgnitionSync CR name from annotation or auto-derives it.
+// resolveCRName resolves the Stoker CR name from annotation or auto-derives it.
 func (p *PodInjector) resolveCRName(ctx context.Context, namespace string, pod *corev1.Pod) (string, error) {
-	if crName := pod.Annotations[synctypes.AnnotationCRName]; crName != "" {
+	if crName := pod.Annotations[stokertypes.AnnotationCRName]; crName != "" {
 		return crName, nil
 	}
 
 	// Auto-discover: list CRs in namespace
-	var list syncv1alpha1.IgnitionSyncList
+	var list stokerv1alpha1.StokerList
 	if err := p.Client.List(ctx, &list, client.InNamespace(namespace)); err != nil {
-		return "", fmt.Errorf("failed to list IgnitionSync CRs: %w", err)
+		return "", fmt.Errorf("failed to list Stoker CRs: %w", err)
 	}
 
 	switch len(list.Items) {
 	case 0:
-		return "", fmt.Errorf("no IgnitionSync CR found in namespace '%s'", namespace)
+		return "", fmt.Errorf("no Stoker CR found in namespace '%s'", namespace)
 	case 1:
 		return list.Items[0].Name, nil
 	default:
@@ -152,43 +152,43 @@ func (p *PodInjector) resolveCRName(ctx context.Context, namespace string, pod *
 			names[i] = item.Name
 		}
 		return "", fmt.Errorf(
-			"multiple IgnitionSync CRs in namespace '%s': [%s] — set annotation '%s' explicitly",
-			namespace, strings.Join(names, ", "), synctypes.AnnotationCRName)
+			"multiple Stoker CRs in namespace '%s': [%s] — set annotation '%s' explicitly",
+			namespace, strings.Join(names, ", "), stokertypes.AnnotationCRName)
 	}
 }
 
-// injectSidecar patches the pod spec with the sync-agent native sidecar.
-func injectSidecar(pod *corev1.Pod, isync *syncv1alpha1.IgnitionSync) {
-	image := resolveAgentImage(pod, isync)
-	pullPolicy := resolveAgentPullPolicy(isync)
+// injectSidecar patches the pod spec with the stoker-agent native sidecar.
+func injectSidecar(pod *corev1.Pod, stk *stokerv1alpha1.Stoker) {
+	image := resolveAgentImage(pod, stk)
+	pullPolicy := resolveAgentPullPolicy(stk)
 
 	// Determine gateway name for env var
-	gatewayName := pod.Annotations[synctypes.AnnotationGatewayName]
+	gatewayName := pod.Annotations[stokertypes.AnnotationGatewayName]
 
 	// Determine sync profile
-	syncProfile := pod.Annotations[synctypes.AnnotationSyncProfile]
+	syncProfile := pod.Annotations[stokertypes.AnnotationSyncProfile]
 
-	// Determine CR name — use annotation if set, otherwise use isync.Name
-	crName := pod.Annotations[synctypes.AnnotationCRName]
+	// Determine CR name — use annotation if set, otherwise use stk.Name
+	crName := pod.Annotations[stokertypes.AnnotationCRName]
 	if crName == "" {
-		crName = isync.Name
+		crName = stk.Name
 	}
 
 	// Gateway port and TLS from CR
-	gatewayPort := fmt.Sprintf("%d", isync.Spec.Gateway.Port)
-	if isync.Spec.Gateway.Port == 0 {
+	gatewayPort := fmt.Sprintf("%d", stk.Spec.Gateway.Port)
+	if stk.Spec.Gateway.Port == 0 {
 		gatewayPort = "8043"
 	}
 	gatewayTLS := annotationTrue
-	if isync.Spec.Gateway.TLS != nil && !*isync.Spec.Gateway.TLS {
+	if stk.Spec.Gateway.TLS != nil && !*stk.Spec.Gateway.TLS {
 		gatewayTLS = "false"
 	}
 
 	// Build env vars
-	env := buildEnvVars(crName, gatewayName, syncProfile, gatewayPort, gatewayTLS, isync)
+	env := buildEnvVars(crName, gatewayName, syncProfile, gatewayPort, gatewayTLS, stk)
 
 	// Build resources
-	resources := buildResources(isync)
+	resources := buildResources(stk)
 
 	// Security context (restricted PSS).
 	// We intentionally omit RunAsUser so the agent inherits the pod-level
@@ -286,7 +286,7 @@ func injectSidecar(pod *corev1.Pod, isync *syncv1alpha1.IgnitionSync) {
 			Name: volumeGitCredentials,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName:  gitCredentialSecretName(isync),
+					SecretName:  gitCredentialSecretName(stk),
 					DefaultMode: &secretMode,
 				},
 			},
@@ -295,7 +295,7 @@ func injectSidecar(pod *corev1.Pod, isync *syncv1alpha1.IgnitionSync) {
 			Name: volumeAPIKey,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName:  isync.Spec.Gateway.APIKeySecretRef.Name,
+					SecretName:  stk.Spec.Gateway.APIKeySecretRef.Name,
 					DefaultMode: &secretMode,
 				},
 			},
@@ -307,21 +307,21 @@ func injectSidecar(pod *corev1.Pod, isync *syncv1alpha1.IgnitionSync) {
 	if pod.Annotations == nil {
 		pod.Annotations = make(map[string]string)
 	}
-	pod.Annotations[synctypes.AnnotationInjected] = annotationTrue
+	pod.Annotations[stokertypes.AnnotationInjected] = annotationTrue
 }
 
 // resolveAgentImage resolves the agent image using 3-tier priority:
 // 1. Pod annotation (debugging override)
 // 2. CR spec.agent.image
 // 3. Environment variable / hardcoded default
-func resolveAgentImage(pod *corev1.Pod, isync *syncv1alpha1.IgnitionSync) string {
+func resolveAgentImage(pod *corev1.Pod, stk *stokerv1alpha1.Stoker) string {
 	// Tier 1: annotation override
-	if img := pod.Annotations[synctypes.AnnotationAgentImage]; img != "" {
+	if img := pod.Annotations[stokertypes.AnnotationAgentImage]; img != "" {
 		return img
 	}
 
 	// Tier 2: CR spec
-	spec := isync.Spec.Agent.Image
+	spec := stk.Spec.Agent.Image
 	if spec.Repository != "" {
 		tag := spec.Tag
 		if tag == "" {
@@ -338,15 +338,15 @@ func resolveAgentImage(pod *corev1.Pod, isync *syncv1alpha1.IgnitionSync) string
 }
 
 // resolveAgentPullPolicy returns the image pull policy from CR spec or default.
-func resolveAgentPullPolicy(isync *syncv1alpha1.IgnitionSync) string {
-	if p := isync.Spec.Agent.Image.PullPolicy; p != "" {
+func resolveAgentPullPolicy(stk *stokerv1alpha1.Stoker) string {
+	if p := stk.Spec.Agent.Image.PullPolicy; p != "" {
 		return p
 	}
 	return "IfNotPresent"
 }
 
 // buildEnvVars constructs the environment variables for the agent container.
-func buildEnvVars(crName, gatewayName, syncProfile, gatewayPort, gatewayTLS string, isync *syncv1alpha1.IgnitionSync) []corev1.EnvVar {
+func buildEnvVars(crName, gatewayName, syncProfile, gatewayPort, gatewayTLS string, stk *stokerv1alpha1.Stoker) []corev1.EnvVar {
 	env := []corev1.EnvVar{
 		{
 			Name: "POD_NAME",
@@ -373,20 +373,20 @@ func buildEnvVars(crName, gatewayName, syncProfile, gatewayPort, gatewayTLS stri
 		{Name: "DATA_PATH", Value: mountIgnitionData},
 		{Name: "GATEWAY_PORT", Value: gatewayPort},
 		{Name: "GATEWAY_TLS", Value: gatewayTLS},
-		{Name: "API_KEY_FILE", Value: mountAPIKey + "/" + isync.Spec.Gateway.APIKeySecretRef.Key},
+		{Name: "API_KEY_FILE", Value: mountAPIKey + "/" + stk.Spec.Gateway.APIKeySecretRef.Key},
 	}
 
 	// Git credential env vars depend on auth type
-	if isync.Spec.Git.Auth != nil {
-		if isync.Spec.Git.Auth.SSHKey != nil {
+	if stk.Spec.Git.Auth != nil {
+		if stk.Spec.Git.Auth.SSHKey != nil {
 			env = append(env, corev1.EnvVar{
 				Name:  "GIT_SSH_KEY_FILE",
-				Value: mountGitCredentials + "/" + isync.Spec.Git.Auth.SSHKey.SecretRef.Key,
+				Value: mountGitCredentials + "/" + stk.Spec.Git.Auth.SSHKey.SecretRef.Key,
 			})
-		} else if isync.Spec.Git.Auth.Token != nil {
+		} else if stk.Spec.Git.Auth.Token != nil {
 			env = append(env, corev1.EnvVar{
 				Name:  "GIT_TOKEN_FILE",
-				Value: mountGitCredentials + "/" + isync.Spec.Git.Auth.Token.SecretRef.Key,
+				Value: mountGitCredentials + "/" + stk.Spec.Git.Auth.Token.SecretRef.Key,
 			})
 		}
 	}
@@ -398,9 +398,9 @@ func buildEnvVars(crName, gatewayName, syncProfile, gatewayPort, gatewayTLS stri
 }
 
 // buildResources returns the agent container resources from CR spec or defaults.
-func buildResources(isync *syncv1alpha1.IgnitionSync) corev1.ResourceRequirements {
-	if isync.Spec.Agent.Resources != nil {
-		return *isync.Spec.Agent.Resources
+func buildResources(stk *stokerv1alpha1.Stoker) corev1.ResourceRequirements {
+	if stk.Spec.Agent.Resources != nil {
+		return *stk.Spec.Agent.Resources
 	}
 	return corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
@@ -415,18 +415,18 @@ func buildResources(isync *syncv1alpha1.IgnitionSync) corev1.ResourceRequirement
 }
 
 // gitCredentialSecretName returns the secret name for git credentials based on auth config.
-func gitCredentialSecretName(isync *syncv1alpha1.IgnitionSync) string {
-	if isync.Spec.Git.Auth == nil {
+func gitCredentialSecretName(stk *stokerv1alpha1.Stoker) string {
+	if stk.Spec.Git.Auth == nil {
 		return "git-credentials" // fallback name
 	}
-	if isync.Spec.Git.Auth.SSHKey != nil {
-		return isync.Spec.Git.Auth.SSHKey.SecretRef.Name
+	if stk.Spec.Git.Auth.SSHKey != nil {
+		return stk.Spec.Git.Auth.SSHKey.SecretRef.Name
 	}
-	if isync.Spec.Git.Auth.Token != nil {
-		return isync.Spec.Git.Auth.Token.SecretRef.Name
+	if stk.Spec.Git.Auth.Token != nil {
+		return stk.Spec.Git.Auth.Token.SecretRef.Name
 	}
-	if isync.Spec.Git.Auth.GitHubApp != nil {
-		return isync.Spec.Git.Auth.GitHubApp.PrivateKeySecretRef.Name
+	if stk.Spec.Git.Auth.GitHubApp != nil {
+		return stk.Spec.Git.Auth.GitHubApp.PrivateKeySecretRef.Name
 	}
 	return "git-credentials"
 }

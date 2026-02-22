@@ -1,6 +1,6 @@
 package conditions
 
-// Condition types for IgnitionSync status.conditions[].type
+// Condition types for Stoker status.conditions[].type
 const (
 	// TypeReady indicates overall readiness — all gateways synced and healthy.
 	TypeReady = "Ready"
@@ -11,7 +11,7 @@ const (
 	// TypeAllGatewaysSynced indicates whether all discovered gateways have completed sync.
 	TypeAllGatewaysSynced = "AllGatewaysSynced"
 
-	// TypeSidecarInjected indicates whether all gateway pods have the sync-agent sidecar.
+	// TypeSidecarInjected indicates whether all gateway pods have the stoker-agent sidecar.
 	TypeSidecarInjected = "SidecarInjected"
 
 	// SyncProfile condition types
@@ -20,7 +20,7 @@ const (
 	TypeAccepted = "Accepted"
 )
 
-// Condition reasons for IgnitionSync status.conditions[].reason
+// Condition reasons for Stoker status.conditions[].reason
 const (
 	ReasonReconciling         = "Reconciling"
 	ReasonRefResolved         = "RefResolved"

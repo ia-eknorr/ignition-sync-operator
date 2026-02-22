@@ -1,7 +1,7 @@
-<!-- Part of: Ignition Sync Operator Architecture (v3) -->
+<!-- Part of: Stoker Architecture (v3) -->
 <!-- See also: 00-overview.md, 01-crd.md, 02-controller.md, 04-sync-profile.md, 08-deployment-operations.md, 09-security-testing-roadmap.md, 10-enterprise-examples.md -->
 
-# Ignition Sync Operator — Sync Agent & Ignition-Aware Sync
+# Stoker — Sync Agent & Ignition-Aware Sync
 
 ## Sync Agent
 
@@ -12,15 +12,15 @@
 FROM golang:1.23 AS builder
 WORKDIR /app
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o sync-agent ./cmd/agent/
+RUN CGO_ENABLED=0 GOOS=linux go build -o stoker-agent ./cmd/agent/
 
 # Production image — distroless for minimal attack surface (~20MB)
 FROM gcr.io/distroless/static-debian12:nonroot
 
 # Primary: Go binary implements all sync logic (file sync, JSON/YAML transforms, metadata handling)
-COPY --from=builder /app/sync-agent /sync-agent
+COPY --from=builder /app/stoker-agent /stoker-agent
 
-ENTRYPOINT ["/sync-agent"]
+ENTRYPOINT ["/stoker-agent"]
 ```
 
 **Why distroless over Alpine:** The agent is a Go-first binary that handles all file operations in-process. No rsync, jq, curl, or shell needed in production. Distroless eliminates the shell attack surface entirely — there's no `sh` to exec into, reducing CVE exposure. Optional shell hooks (for advanced users) require a separate Alpine-based variant image.
@@ -35,7 +35,7 @@ The agent is **Go-first**: the sync agent binary is a self-contained executable 
 - Health endpoints and status reporting
 - Bidirectional change detection
 
-Optional shell scripts (`/opt/ignition-sync/hooks/`) are available as an **escape hatch** for advanced users who need custom sync logic, not as the primary mechanism. This approach:
+Optional shell scripts (`/opt/stoker/hooks/`) are available as an **escape hatch** for advanced users who need custom sync logic, not as the primary mechanism. This approach:
 - Eliminates the operational complexity of coordinating Go + shell
 - Provides better performance (no subprocess overhead for rsync/jq)
 - Improves debuggability (single binary, structured logging)
@@ -49,7 +49,7 @@ Image size: ~20MB (distroless + static Go binary). An Alpine-based variant (`-al
 
 The controller signals sync availability via ConfigMap:
 
-- **ConfigMap Watch** — Controller writes sync metadata to a ConfigMap (`ignition-sync-metadata-{crName}`); agent uses K8s informer to watch for changes. When the controller updates the ConfigMap with a new commit SHA, the agent receives a push notification and initiates a git fetch + checkout to bring its local clone up to date.
+- **ConfigMap Watch** — Controller writes sync metadata to a ConfigMap (`stoker-metadata-{crName}`); agent uses K8s informer to watch for changes. When the controller updates the ConfigMap with a new commit SHA, the agent receives a push notification and initiates a git fetch + checkout to bring its local clone up to date.
 - **Fallback: Polling Timer** — Agent polls the ConfigMap at `spec.polling.interval` (default: 60s) as a safety net in case the informer watch is disrupted.
 
 ConfigMap is the single communication mechanism between controller and agents. The agent owns its own git clone in a local emptyDir volume — no shared storage between controller and agent. This simplifies the architecture, eliminates cross-pod volume dependencies, and keeps controller-agent communication on well-understood K8s primitives.
@@ -133,7 +133,7 @@ On trigger (metadata ConfigMap updated with new commit):
         d. HTTP retry logic: 3 retries with exponential backoff on connection failures
         e. Accept any 2xx response as success — the scan runs asynchronously
            inside the gateway. Do NOT attempt to poll for completion.
-  16. Write status to ConfigMap ignition-sync-status-{crName}:
+  16. Write status to ConfigMap stoker-status-{crName}:
       {
         "gateway": "{gatewayName}",
         "syncedAt": "2026-02-12T10:30:00Z",
@@ -151,7 +151,7 @@ On filesystem change (bidirectional):
   1. inotify detects change in /ignition-data/{watchPath}
   2. Debounce (wait for configured quiet period)
   3. Diff changed files against /repo/{servicePath}/
-  4. Write change manifest to ConfigMap ignition-sync-changes-{crName}:
+  4. Write change manifest to ConfigMap stoker-changes-{crName}:
      {
        "gateway": "site",
        "timestamp": "2026-02-12T10:30:00Z",
@@ -212,7 +212,7 @@ Advantages over shell tools:
 - **Portability**: Single static binary, works on any Linux distro
 - **Debuggability**: Clear Go error messages, no cryptic rsync exit codes
 
-Optional shell hooks can be used for advanced transformations: users drop a script in `/opt/ignition-sync/hooks/pre-sync.sh` or `post-sync.sh`, and the agent will execute them if present (shell scripts are opt-in, not mandatory).
+Optional shell hooks can be used for advanced transformations: users drop a script in `/opt/stoker/hooks/pre-sync.sh` or `post-sync.sh`, and the agent will execute them if present (shell scripts are opt-in, not mandatory).
 
 ---
 
@@ -259,7 +259,7 @@ Agent queries GET /data/api/v2/modules to detect:
 **MQTT-Managed Tag Providers**
 - If MQTT Engine is installed, agent auto-detects MQTT-managed tag providers
 - Excludes these from UDT sync (MQTT manages them dynamically)
-- Annotation: `ignition-sync.io/exclude-tag-providers: "mqtt-engine,custom-mqtt"`
+- Annotation: `stoker.io/exclude-tag-providers: "mqtt-engine,custom-mqtt"`
 - Prevents conflicts between git-synced and MQTT-synced tags
 
 **Module JAR Installation Support**
@@ -287,7 +287,7 @@ Area Gateway
 
 **Tag Inheritance Strategy Annotation**
 ```yaml
-ignition-sync.io/tag-inheritance-strategy: "full"  # or "leaf-only"
+stoker.io/tag-inheritance-strategy: "full"  # or "leaf-only"
 ```
 
 - `full`: Sync all UDTs; assume this gateway is responsible for the full tag hierarchy
@@ -301,15 +301,15 @@ Agent behavior:
 
 **Tag Provider Normalization**
 - Config files may hardcode tag provider names (e.g., "default", "mqtt-engine")
-- Agent normalizes via annotation: `ignition-sync.io/tag-provider: "site-tags"`
+- Agent normalizes via annotation: `stoker.io/tag-provider: "site-tags"`
 - Replaces provider references in config.json from git default to gateway-specific provider
 
 ### Redundancy & Primary/Backup Coordination
 
 **Primary/Backup Detection**
 ```yaml
-ignition-sync.io/redundancy-role: "primary"  # or "backup"
-ignition-sync.io/peer-gateway-name: "site2-backup"
+stoker.io/redundancy-role: "primary"  # or "backup"
+stoker.io/peer-gateway-name: "site2-backup"
 ```
 
 - If backup, agent reads last-synced commit from primary gateway (via API)

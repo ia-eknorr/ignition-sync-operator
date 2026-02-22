@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: ignition-sync-status-CR_NAME
+  name: stoker-status-CR_NAME
   labels:
-    ignition-sync.io/cr-name: "CR_NAME"
+    stoker.io/cr-name: "CR_NAME"
 data:
   GATEWAY_NAME: |
     {

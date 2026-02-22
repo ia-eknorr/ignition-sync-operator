@@ -4,7 +4,7 @@
 
 Validate the complete end-to-end flow with **automatic sidecar injection** via the mutating webhook: operator deployment → webhook injection → file sync → API verification → git ref update → re-sync. This lab proves that a user only needs `podAnnotations` in their Helm values — the webhook handles all sidecar configuration automatically.
 
-Unlike Lab 06 (which manually patches StatefulSets with the sidecar), this lab uses the webhook to inject the `sync-agent` as a native sidecar. This is the production-intended deployment path.
+Unlike Lab 06 (which manually patches StatefulSets with the sidecar), this lab uses the webhook to inject the `stoker-agent` as a native sidecar. This is the production-intended deployment path.
 
 **Prerequisite:** Complete [00 — Environment Setup](00-environment-setup.md). The operator must be deployed with webhook and cert-manager enabled.
 
@@ -14,7 +14,7 @@ Unlike Lab 06 (which manually patches StatefulSets with the sidecar), this lab u
 
 ```bash
 export E2E_NS=e2e-webhook
-export OPERATOR_NS=ignition-sync-operator-system
+export OPERATOR_NS=stoker-system
 export GIT_REPO_URL=https://github.com/ia-eknorr/test-ignition-project.git
 export API_TOKEN="ignition-api-key:CYCSdRgW6MHYkeIXhH-BMqo1oaqfTdFi8tXvHJeCKmY"
 ```
@@ -40,21 +40,21 @@ Expected: Controller pod `1/1 Running` with 0 restarts.
 
 ```bash
 # Verify webhook configuration exists
-kubectl get mutatingwebhookconfiguration ignition-sync-pod-injection
+kubectl get mutatingwebhookconfiguration stoker-pod-injection
 ```
 
-Expected: Webhook exists with `pod-inject.sync.ignition.io` entry.
+Expected: Webhook exists with `pod-inject.stoker.io` entry.
 
 ```bash
 # Verify cert-manager issued the webhook certificate
 kubectl get certificate -n $OPERATOR_NS
 ```
 
-Expected: Certificate `ignition-sync-webhook-cert` with `READY=True`.
+Expected: Certificate `stoker-webhook-cert` with `READY=True`.
 
 ```bash
 # Verify CRDs are installed
-kubectl get crd ignitionsyncs.sync.ignition.io syncprofiles.sync.ignition.io
+kubectl get crd stokers.stoker.io syncprofiles.stoker.io
 ```
 
 Expected: Both CRDs present.
@@ -81,7 +81,7 @@ Create an isolated namespace with the injection label, git credentials, and API 
 ```bash
 # Create namespace with injection label
 kubectl create namespace $E2E_NS
-kubectl label namespace $E2E_NS ignition-sync.io/injection=enabled
+kubectl label namespace $E2E_NS stoker.io/injection=enabled
 ```
 
 Verify the label:
@@ -89,7 +89,7 @@ Verify the label:
 kubectl get namespace $E2E_NS --show-labels
 ```
 
-Expected: Labels include `ignition-sync.io/injection=enabled`.
+Expected: Labels include `stoker.io/injection=enabled`.
 
 ```bash
 # Create git token secret (for agent to clone the repo)
@@ -145,17 +145,17 @@ Expected: `git-token-secret`, `ignition-api-key`, `ignition-api-token-config` al
 
 ---
 
-## Lab 10.3: Deploy IgnitionSync CR and SyncProfiles
+## Lab 10.3: Deploy Stoker CR and SyncProfiles
 
 ### Purpose
-Create the IgnitionSync CR and per-gateway SyncProfiles. The controller should resolve the git ref before any gateways are deployed.
+Create the Stoker CR and per-gateway SyncProfiles. The controller should resolve the git ref before any gateways are deployed.
 
 ### Steps
 
 ```bash
 cat <<'EOF' | kubectl apply -f -
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: e2e-sync
   namespace: e2e-webhook
@@ -175,7 +175,7 @@ spec:
     port: 8088
     tls: false
 ---
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: blue-profile
@@ -200,7 +200,7 @@ spec:
     environment: "test"
     gateway: "blue"
 ---
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: red-profile
@@ -231,7 +231,7 @@ EOF
 
 1. **Ref resolved:**
    ```bash
-   kubectl get ignitionsync e2e-sync -n $E2E_NS
+   kubectl get stoker e2e-sync -n $E2E_NS
    ```
    Expected: `REF=main`, `Ready` column populated (no gateways yet, so gateway-related fields may show `0/0`).
 
@@ -243,7 +243,7 @@ EOF
 
 3. **Metadata ConfigMap created:**
    ```bash
-   kubectl get configmap ignition-sync-metadata-e2e-sync -n $E2E_NS -o json | jq '.data'
+   kubectl get configmap stoker-metadata-e2e-sync -n $E2E_NS -o json | jq '.data'
    ```
    Expected: `commit` is a 40-char hex SHA, `ref` is `main`, `trigger` is an RFC3339 timestamp.
 
@@ -310,9 +310,9 @@ helm install ignition-blue inductiveautomation/ignition -n $E2E_NS \
   --set service.type=NodePort \
   --set service.nodePorts.http=30088 \
   --set service.nodePorts.https=30043 \
-  --set 'podAnnotations.ignition-sync\.io/inject=true' \
-  --set 'podAnnotations.ignition-sync\.io/sync-profile=blue-profile' \
-  --set 'podAnnotations.ignition-sync\.io/gateway-name=ignition-blue'
+  --set 'podAnnotations.stoker\.io/inject=true' \
+  --set 'podAnnotations.stoker\.io/sync-profile=blue-profile' \
+  --set 'podAnnotations.stoker\.io/gateway-name=ignition-blue'
 
 # Deploy red gateway with webhook injection annotations
 helm install ignition-red inductiveautomation/ignition -n $E2E_NS \
@@ -320,9 +320,9 @@ helm install ignition-red inductiveautomation/ignition -n $E2E_NS \
   --set service.type=NodePort \
   --set service.nodePorts.http=30089 \
   --set service.nodePorts.https=30044 \
-  --set 'podAnnotations.ignition-sync\.io/inject=true' \
-  --set 'podAnnotations.ignition-sync\.io/sync-profile=red-profile' \
-  --set 'podAnnotations.ignition-sync\.io/gateway-name=ignition-red'
+  --set 'podAnnotations.stoker\.io/inject=true' \
+  --set 'podAnnotations.stoker\.io/sync-profile=red-profile' \
+  --set 'podAnnotations.stoker\.io/gateway-name=ignition-red'
 ```
 
 Wait for both pods to be ready (the startup probe on the sidecar gates readiness):
@@ -350,49 +350,49 @@ ignition-red-gateway-0      2/2     Running   0          ...
 ## Lab 10.5: Verify Sidecar Injection
 
 ### Purpose
-Confirm the webhook injected the `sync-agent` sidecar with correct configuration — env vars, volume mounts, security context, and annotations.
+Confirm the webhook injected the `stoker-agent` sidecar with correct configuration — env vars, volume mounts, security context, and annotations.
 
 ### Steps
 
-1. **Check init containers for `sync-agent`:**
+1. **Check init containers for `stoker-agent`:**
    ```bash
    kubectl get pod ignition-blue-gateway-0 -n $E2E_NS \
      -o jsonpath='{.spec.initContainers[*].name}'
    ```
-   Expected: Contains `sync-agent`.
+   Expected: Contains `stoker-agent`.
 
 2. **Check `injected` annotation:**
    ```bash
    kubectl get pod ignition-blue-gateway-0 -n $E2E_NS \
-     -o jsonpath='{.metadata.annotations.ignition-sync\.io/injected}'
+     -o jsonpath='{.metadata.annotations.stoker\.io/injected}'
    ```
    Expected: `true`
 
 3. **Verify env vars on the sidecar:**
    ```bash
    kubectl get pod ignition-blue-gateway-0 -n $E2E_NS \
-     -o jsonpath='{.spec.initContainers[?(@.name=="sync-agent")].env[*].name}' | tr ' ' '\n'
+     -o jsonpath='{.spec.initContainers[?(@.name=="stoker-agent")].env[*].name}' | tr ' ' '\n'
    ```
    Expected: Includes `POD_NAME`, `POD_NAMESPACE`, `CR_NAME`, `GATEWAY_NAME`, `SYNC_PROFILE`, `REPO_PATH`, `DATA_PATH`, `GATEWAY_PORT`, `GATEWAY_TLS`, `API_KEY_FILE`, `GIT_TOKEN_FILE`, `SYNC_PERIOD`.
 
 4. **Verify CR_NAME was auto-derived (only 1 CR in namespace):**
    ```bash
    kubectl get pod ignition-blue-gateway-0 -n $E2E_NS \
-     -o jsonpath='{.spec.initContainers[?(@.name=="sync-agent")].env[?(@.name=="CR_NAME")].value}'
+     -o jsonpath='{.spec.initContainers[?(@.name=="stoker-agent")].env[?(@.name=="CR_NAME")].value}'
    ```
    Expected: `e2e-sync`
 
 5. **Verify volume mounts:**
    ```bash
    kubectl get pod ignition-blue-gateway-0 -n $E2E_NS \
-     -o jsonpath='{.spec.initContainers[?(@.name=="sync-agent")].volumeMounts[*].name}' | tr ' ' '\n'
+     -o jsonpath='{.spec.initContainers[?(@.name=="stoker-agent")].volumeMounts[*].name}' | tr ' ' '\n'
    ```
    Expected: Includes `sync-repo`, `git-credentials`, `api-key`, and the data volume (`data`).
 
 6. **Verify security context (restricted PSS, no RunAsUser):**
    ```bash
    kubectl get pod ignition-blue-gateway-0 -n $E2E_NS \
-     -o json | jq '.spec.initContainers[] | select(.name=="sync-agent") | .securityContext'
+     -o json | jq '.spec.initContainers[] | select(.name=="stoker-agent") | .securityContext'
    ```
    Expected: `runAsNonRoot: true`, `readOnlyRootFilesystem: true`, `allowPrivilegeEscalation: false`. No `runAsUser` field — inherits pod-level UID.
 
@@ -400,7 +400,7 @@ Confirm the webhook injected the `sync-agent` sidecar with correct configuration
    ```bash
    # Agent data path
    kubectl get pod ignition-blue-gateway-0 -n $E2E_NS \
-     -o json | jq -r '.spec.initContainers[] | select(.name=="sync-agent") | .env[] | select(.name=="DATA_PATH") | .value'
+     -o json | jq -r '.spec.initContainers[] | select(.name=="stoker-agent") | .env[] | select(.name=="DATA_PATH") | .value'
 
    # Gateway data mount
    kubectl get pod ignition-blue-gateway-0 -n $E2E_NS \
@@ -411,9 +411,9 @@ Confirm the webhook injected the `sync-agent` sidecar with correct configuration
 8. **Repeat for red gateway:**
    ```bash
    kubectl get pod ignition-red-gateway-0 -n $E2E_NS \
-     -o jsonpath='{.metadata.annotations.ignition-sync\.io/injected}'
+     -o jsonpath='{.metadata.annotations.stoker\.io/injected}'
    kubectl get pod ignition-red-gateway-0 -n $E2E_NS \
-     -o jsonpath='{.spec.initContainers[?(@.name=="sync-agent")].env[?(@.name=="SYNC_PROFILE")].value}'
+     -o jsonpath='{.spec.initContainers[?(@.name=="stoker-agent")].env[?(@.name=="SYNC_PROFILE")].value}'
    ```
    Expected: `injected=true`, `SYNC_PROFILE=red-profile`.
 
@@ -428,37 +428,37 @@ Confirm the agent successfully cloned the repo, synced files, and reported statu
 
 1. **Check agent logs for initial sync:**
    ```bash
-   kubectl logs ignition-blue-gateway-0 -n $E2E_NS -c sync-agent --tail=50
+   kubectl logs ignition-blue-gateway-0 -n $E2E_NS -c stoker-agent --tail=50
    ```
    Look for: clone success, sync mappings applied, startup probe passed.
 
 2. **Check agent logs on red:**
    ```bash
-   kubectl logs ignition-red-gateway-0 -n $E2E_NS -c sync-agent --tail=50
+   kubectl logs ignition-red-gateway-0 -n $E2E_NS -c stoker-agent --tail=50
    ```
 
 3. **Verify status ConfigMap shows sync complete:**
    ```bash
-   kubectl get configmap ignition-sync-status-e2e-sync -n $E2E_NS -o json | jq '.data'
+   kubectl get configmap stoker-status-e2e-sync -n $E2E_NS -o json | jq '.data'
    ```
    Look for per-gateway status entries showing `Synced`.
 
-4. **Verify IgnitionSync CR shows both gateways synced:**
+4. **Verify Stoker CR shows both gateways synced:**
    ```bash
-   kubectl get ignitionsync e2e-sync -n $E2E_NS
+   kubectl get stoker e2e-sync -n $E2E_NS
    ```
    Expected: `GATEWAYS: 2/2 gateways synced`, `SYNCED: True`, `READY: True`.
 
 5. **Verify discovered gateways in CR status:**
    ```bash
-   kubectl get ignitionsync e2e-sync -n $E2E_NS -o json | \
+   kubectl get stoker e2e-sync -n $E2E_NS -o json | \
      jq '.status.discoveredGateways[] | {name, syncStatus, syncProfile, syncedCommit}'
    ```
    Expected: Both gateways with `syncStatus: Synced`, correct `syncProfile`, and a valid `syncedCommit` SHA.
 
 6. **Check CR conditions:**
    ```bash
-   kubectl get ignitionsync e2e-sync -n $E2E_NS -o json | \
+   kubectl get stoker e2e-sync -n $E2E_NS -o json | \
      jq '.status.conditions[] | {type, status, reason}'
    ```
    Expected: `RefResolved: True`, `AllGatewaysSynced: True`, `Ready: True`.
@@ -487,7 +487,7 @@ Verify the operator, webhook receiver, and agent emit K8s events for key state t
 3. **Test WebhookReceived event — trigger via webhook:**
    ```bash
    # Port-forward the webhook receiver
-   kubectl port-forward -n $OPERATOR_NS deploy/ignition-sync-operator-controller-manager 9444:9444 &
+   kubectl port-forward -n $OPERATOR_NS deploy/stoker-operator-controller-manager 9444:9444 &
    WH_PF_PID=$!
    sleep 2
 
@@ -520,7 +520,7 @@ Verify the operator, webhook receiver, and agent emit K8s events for key state t
 
 4. **Test Paused event — pause and unpause the CR:**
    ```bash
-   kubectl patch ignitionsync e2e-sync -n $E2E_NS --type merge -p '{"spec":{"paused":true}}'
+   kubectl patch stoker e2e-sync -n $E2E_NS --type merge -p '{"spec":{"paused":true}}'
    sleep 5
    kubectl get events -n $E2E_NS --field-selector reason=Paused
    ```
@@ -528,13 +528,13 @@ Verify the operator, webhook receiver, and agent emit K8s events for key state t
 
    Unpause:
    ```bash
-   kubectl patch ignitionsync e2e-sync -n $E2E_NS --type merge -p '{"spec":{"paused":false}}'
+   kubectl patch stoker e2e-sync -n $E2E_NS --type merge -p '{"spec":{"paused":false}}'
    ```
 
 5. **Test RefResolutionFailed event — set an invalid ref:**
    ```bash
-   kubectl annotate ignitionsync e2e-sync -n $E2E_NS \
-     ignition-sync.io/requested-ref=nonexistent-tag-xyz --overwrite
+   kubectl annotate stoker e2e-sync -n $E2E_NS \
+     stoker.io/requested-ref=nonexistent-tag-xyz --overwrite
    sleep 10
    kubectl get events -n $E2E_NS --field-selector reason=RefResolutionFailed
    ```
@@ -542,14 +542,14 @@ Verify the operator, webhook receiver, and agent emit K8s events for key state t
 
    Clean up the invalid ref:
    ```bash
-   kubectl annotate ignitionsync e2e-sync -n $E2E_NS ignition-sync.io/requested-ref-
+   kubectl annotate stoker e2e-sync -n $E2E_NS stoker.io/requested-ref-
    ```
 
 6. **Test SyncProfile validation events — create invalid profiles:**
    ```bash
    # ValidationFailed: path traversal
    cat <<'EOF' | kubectl apply -f -
-   apiVersion: sync.ignition.io/v1alpha1
+   apiVersion: stoker.io/v1alpha1
    kind: SyncProfile
    metadata:
      name: test-validation-fail
@@ -568,7 +568,7 @@ Verify the operator, webhook receiver, and agent emit K8s events for key state t
    ```bash
    # CycleDetected + DependencyNotFound: circular dependency
    cat <<'EOF' | kubectl apply -f -
-   apiVersion: sync.ignition.io/v1alpha1
+   apiVersion: stoker.io/v1alpha1
    kind: SyncProfile
    metadata:
      name: test-cycle-a
@@ -580,7 +580,7 @@ Verify the operator, webhook receiver, and agent emit K8s events for key state t
      dependsOn:
        - profileName: test-cycle-b
    ---
-   apiVersion: sync.ignition.io/v1alpha1
+   apiVersion: stoker.io/v1alpha1
    kind: SyncProfile
    metadata:
      name: test-cycle-b
@@ -606,7 +606,7 @@ Verify the operator, webhook receiver, and agent emit K8s events for key state t
 
 8. **Summary — all expected events:**
    ```bash
-   kubectl get events -n $E2E_NS --field-selector involvedObject.kind=IgnitionSync \
+   kubectl get events -n $E2E_NS --field-selector involvedObject.kind=Stoker \
      --sort-by=.lastTimestamp
    kubectl get events -n $E2E_NS --field-selector involvedObject.kind=SyncProfile \
      --sort-by=.lastTimestamp
@@ -700,7 +700,7 @@ Push a change to the test repo, verify the controller detects the new commit, an
 
 1. **Record current state:**
    ```bash
-   COMMIT_BEFORE=$(kubectl get ignitionsync e2e-sync -n $E2E_NS \
+   COMMIT_BEFORE=$(kubectl get stoker e2e-sync -n $E2E_NS \
      -o jsonpath='{.status.lastSyncCommit}')
    echo "Current commit: $COMMIT_BEFORE"
    ```
@@ -724,13 +724,13 @@ Push a change to the test repo, verify the controller detects the new commit, an
 
    ```bash
    # Watch the CR for changes
-   kubectl get ignitionsync e2e-sync -n $E2E_NS -w
+   kubectl get stoker e2e-sync -n $E2E_NS -w
    ```
 
    Or poll manually:
    ```bash
    sleep 90  # Wait for poll cycle
-   COMMIT_AFTER=$(kubectl get ignitionsync e2e-sync -n $E2E_NS \
+   COMMIT_AFTER=$(kubectl get stoker e2e-sync -n $E2E_NS \
      -o jsonpath='{.status.lastSyncCommit}')
    echo "New commit: $COMMIT_AFTER"
    [ "$COMMIT_BEFORE" != "$COMMIT_AFTER" ] && echo "PASS: New commit detected" || echo "FAIL: Commit unchanged"
@@ -738,14 +738,14 @@ Push a change to the test repo, verify the controller detects the new commit, an
 
 4. **Verify metadata ConfigMap updated:**
    ```bash
-   kubectl get configmap ignition-sync-metadata-e2e-sync -n $E2E_NS \
+   kubectl get configmap stoker-metadata-e2e-sync -n $E2E_NS \
      -o jsonpath='{.data.commit}'
    ```
    Expected: Matches `$COMMIT_AFTER`.
 
 5. **Verify agents re-synced:**
    ```bash
-   kubectl logs ignition-blue-gateway-0 -n $E2E_NS -c sync-agent --tail=20
+   kubectl logs ignition-blue-gateway-0 -n $E2E_NS -c stoker-agent --tail=20
    ```
    Look for: fetch, new commit detected, sync applied.
 
@@ -801,8 +801,8 @@ kubectl wait --for=delete pod/ignition-blue-gateway-0 pod/ignition-red-gateway-0
 # Delete PVCs (retained by default)
 kubectl delete pvc --all -n $E2E_NS
 
-# Delete IgnitionSync CR and SyncProfiles
-kubectl delete ignitionsync,syncprofile --all -n $E2E_NS
+# Delete Stoker CR and SyncProfiles
+kubectl delete stoker,syncprofile --all -n $E2E_NS
 
 # Delete namespace
 kubectl delete namespace $E2E_NS
@@ -820,12 +820,12 @@ echo "Skipping teardown — namespace $E2E_NS retained for next iteration"
 | Check | Status |
 |-------|--------|
 | Operator running with webhook and cert-manager healthy | |
-| Namespace labeled with `ignition-sync.io/injection=enabled` | |
+| Namespace labeled with `stoker.io/injection=enabled` | |
 | Secrets and ConfigMaps created (git-token, api-key, api-token-config) | |
-| IgnitionSync CR resolves ref before gateways deployed | |
+| Stoker CR resolves ref before gateways deployed | |
 | Both SyncProfiles accepted with correct deployment mode | |
-| Blue gateway pod has `sync-agent` init container (webhook injected) | |
-| Red gateway pod has `sync-agent` init container (webhook injected) | |
+| Blue gateway pod has `stoker-agent` init container (webhook injected) | |
+| Red gateway pod has `stoker-agent` init container (webhook injected) | |
 | `injected: "true"` annotation present on both pods | |
 | Agent env vars correct (CR_NAME, SYNC_PROFILE, GATEWAY_NAME, DATA_PATH) | |
 | Agent security context is restricted PSS, no explicit RunAsUser | |

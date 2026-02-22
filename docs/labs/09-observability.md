@@ -17,11 +17,11 @@ Verify the controller exposes Prometheus-compatible metrics at the configured en
 
 ```bash
 # Port-forward to the controller's metrics port (default: 8443 for secure, 8080 for insecure)
-CTRL_POD=$(kubectl get pods -n ignition-sync-operator-system \
+CTRL_POD=$(kubectl get pods -n stoker-system \
   -l control-plane=controller-manager -o jsonpath='{.items[0].metadata.name}')
 
 # Check what ports the controller listens on
-kubectl get pod "$CTRL_POD" -n ignition-sync-operator-system -o json | \
+kubectl get pod "$CTRL_POD" -n stoker-system -o json | \
   jq '.spec.containers[0].args'
 ```
 
@@ -29,7 +29,7 @@ The metrics endpoint is controlled by `--metrics-bind-address`. If metrics are s
 
 **For insecure metrics** (if configured with `--metrics-bind-address=:8080`):
 ```bash
-kubectl port-forward "pod/${CTRL_POD}" -n ignition-sync-operator-system 8080:8080 &
+kubectl port-forward "pod/${CTRL_POD}" -n stoker-system 8080:8080 &
 sleep 2
 curl -s http://localhost:8080/metrics | head -50
 ```
@@ -37,7 +37,7 @@ curl -s http://localhost:8080/metrics | head -50
 **For secure metrics** (default `--metrics-secure=true`):
 ```bash
 # Use kubectl exec to fetch from inside the pod
-kubectl exec "$CTRL_POD" -n ignition-sync-operator-system -- \
+kubectl exec "$CTRL_POD" -n stoker-system -- \
   wget -qO- http://localhost:8080/metrics 2>/dev/null | head -50 || \
   echo "Metrics may be on a different port or require TLS"
 ```
@@ -48,24 +48,24 @@ Metrics output should include:
 
 1. **Controller-runtime standard metrics:**
    ```
-   controller_runtime_reconcile_total{controller="ignitionsync",...}
+   controller_runtime_reconcile_total{controller="stoker",...}
    controller_runtime_reconcile_time_seconds_bucket{...}
    controller_runtime_reconcile_errors_total{...}
    ```
 
 2. **Workqueue metrics:**
    ```
-   workqueue_depth{name="ignitionsync"}
-   workqueue_adds_total{name="ignitionsync"}
-   workqueue_retries_total{name="ignitionsync"}
+   workqueue_depth{name="stoker"}
+   workqueue_adds_total{name="stoker"}
+   workqueue_retries_total{name="stoker"}
    ```
 
 3. **Custom operator metrics** (if implemented):
    ```
-   ignition_sync_ref_resolve_duration_seconds{...}
-   ignition_sync_discovered_gateways{...}
-   ignition_sync_synced_gateways{...}
-   ignition_sync_agent_clone_duration_seconds{...}
+   stoker_ref_resolve_duration_seconds{...}
+   stoker_discovered_gateways{...}
+   stoker_synced_gateways{...}
+   stoker_agent_clone_duration_seconds{...}
    ```
 
 Record which custom metrics exist — this informs whether we need to add more in a future iteration.
@@ -81,14 +81,14 @@ Verify controller logs are structured JSON with expected fields, making them par
 
 ```bash
 # Get recent logs
-kubectl logs "$CTRL_POD" -n ignition-sync-operator-system --tail=30
+kubectl logs "$CTRL_POD" -n stoker-system --tail=30
 ```
 
 ### What to Verify
 
 1. **Logs are JSON-formatted** (each line is valid JSON):
    ```bash
-   kubectl logs "$CTRL_POD" -n ignition-sync-operator-system --tail=10 | \
+   kubectl logs "$CTRL_POD" -n stoker-system --tail=10 | \
      while read line; do
        echo "$line" | jq . >/dev/null 2>&1 && echo "JSON OK" || echo "NOT JSON: $line"
      done
@@ -96,20 +96,20 @@ kubectl logs "$CTRL_POD" -n ignition-sync-operator-system --tail=30
 
 2. **Standard fields present** in each log entry:
    ```bash
-   kubectl logs "$CTRL_POD" -n ignition-sync-operator-system --tail=5 | jq -r 'keys | join(", ")' 2>/dev/null | head -3
+   kubectl logs "$CTRL_POD" -n stoker-system --tail=5 | jq -r 'keys | join(", ")' 2>/dev/null | head -3
    ```
    Expected fields: `ts` (or `timestamp`), `level`, `logger`, `msg`, `controller`, `namespace`, `name`
 
 3. **Reconciliation logs have CR context:**
    ```bash
-   kubectl logs "$CTRL_POD" -n ignition-sync-operator-system --tail=50 | \
+   kubectl logs "$CTRL_POD" -n stoker-system --tail=50 | \
      jq -r 'select(.msg | test("reconcil|resolve|gateway|ref"; "i")) | {msg, controller, namespace, name}' 2>/dev/null | head -20
    ```
    Expected: Each reconciliation log includes the CR namespace and name.
 
 4. **No unstructured log lines** (everything should be JSON):
    ```bash
-   NON_JSON=$(kubectl logs "$CTRL_POD" -n ignition-sync-operator-system --tail=100 | \
+   NON_JSON=$(kubectl logs "$CTRL_POD" -n stoker-system --tail=100 | \
      while read line; do echo "$line" | jq . >/dev/null 2>&1 || echo "$line"; done | wc -l | tr -d ' ')
    echo "Non-JSON lines: $NON_JSON"
    ```
@@ -126,11 +126,11 @@ Verify the operator emits meaningful Kubernetes events that appear in `kubectl d
 
 ```bash
 # Get all events for the CR
-kubectl describe ignitionsync lab-sync -n lab | grep -A 30 "^Events:"
+kubectl describe stoker lab-sync -n lab | grep -A 30 "^Events:"
 
 # Get events by field selector
 kubectl get events -n lab \
-  --field-selector involvedObject.name=lab-sync,involvedObject.kind=IgnitionSync \
+  --field-selector involvedObject.name=lab-sync,involvedObject.kind=Stoker \
   --sort-by=.lastTimestamp
 ```
 
@@ -156,8 +156,8 @@ Trigger an error and recovery to verify events are emitted for both:
 ```bash
 # Create a CR that will fail (bad repo)
 cat <<EOF | kubectl apply -n lab -f -
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: event-test
 spec:
@@ -181,7 +181,7 @@ sleep 20
 kubectl get events -n lab --field-selector involvedObject.name=event-test --sort-by=.lastTimestamp
 
 # Fix it
-kubectl patch ignitionsync event-test -n lab --type=merge \
+kubectl patch stoker event-test -n lab --type=merge \
   -p '{"spec":{"git":{"repo":"https://github.com/ia-eknorr/test-ignition-project.git"}}}'
 
 sleep 30
@@ -189,7 +189,7 @@ sleep 30
 # Check events for recovery
 kubectl get events -n lab --field-selector involvedObject.name=event-test --sort-by=.lastTimestamp
 
-kubectl delete ignitionsync event-test -n lab
+kubectl delete stoker event-test -n lab
 ```
 
 ---
@@ -203,7 +203,7 @@ Verify conditions provide enough information for operators to diagnose issues wi
 
 ```bash
 # Full condition output
-kubectl get ignitionsync lab-sync -n lab -o json | jq '[.status.conditions[] | {
+kubectl get stoker lab-sync -n lab -o json | jq '[.status.conditions[] | {
   type,
   status,
   reason,
@@ -225,7 +225,7 @@ kubectl get ignitionsync lab-sync -n lab -o json | jq '[.status.conditions[] | {
 
 3. **lastTransitionTime is recent** (not stale):
    ```bash
-   kubectl get ignitionsync lab-sync -n lab -o json | jq '.status.conditions[] | {
+   kubectl get stoker lab-sync -n lab -o json | jq '.status.conditions[] | {
      type,
      age: ((now - (.lastTransitionTime | fromdateiso8601)) | tostring + "s ago")
    }'
@@ -233,7 +233,7 @@ kubectl get ignitionsync lab-sync -n lab -o json | jq '[.status.conditions[] | {
 
 4. **kubectl columns reflect conditions:**
    ```bash
-   kubectl get ignitionsyncs -n lab -o wide
+   kubectl get stokers -n lab -o wide
    ```
    Expected: REF, SYNCED, GATEWAYS, READY, AGE columns all populated.
 
@@ -248,26 +248,26 @@ Verify the controller respects log verbosity settings (useful for debugging vs. 
 
 ```bash
 # Check current log level configuration
-kubectl get deployment ignition-sync-operator-controller-manager \
-  -n ignition-sync-operator-system -o json | \
+kubectl get deployment stoker-operator-controller-manager \
+  -n stoker-system -o json | \
   jq '.spec.template.spec.containers[0].args'
 
 # If using zap logger, check for --zap-log-level flag
 # Increase verbosity to debug
-kubectl patch deployment ignition-sync-operator-controller-manager \
-  -n ignition-sync-operator-system --type=json \
+kubectl patch deployment stoker-operator-controller-manager \
+  -n stoker-system --type=json \
   -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--zap-log-level=debug"}]' \
   2>/dev/null || echo "Args patching may need different approach"
 
-kubectl rollout status deployment/ignition-sync-operator-controller-manager \
-  -n ignition-sync-operator-system --timeout=60s 2>/dev/null || true
+kubectl rollout status deployment/stoker-operator-controller-manager \
+  -n stoker-system --timeout=60s 2>/dev/null || true
 ```
 
 ### What to Verify
 
 In debug mode, logs should show more detail:
 ```bash
-kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manager --tail=30
+kubectl logs -n stoker-system -l control-plane=controller-manager --tail=30
 ```
 
 Look for additional context in debug entries (e.g., specific resource versions, reconcile triggers, cache sync details).
@@ -282,14 +282,14 @@ Verify liveness and readiness probes work correctly.
 ### Steps
 
 ```bash
-CTRL_POD=$(kubectl get pods -n ignition-sync-operator-system \
+CTRL_POD=$(kubectl get pods -n stoker-system \
   -l control-plane=controller-manager -o jsonpath='{.items[0].metadata.name}')
 
 # Check health endpoints from inside the pod
-kubectl exec "$CTRL_POD" -n ignition-sync-operator-system -- \
+kubectl exec "$CTRL_POD" -n stoker-system -- \
   wget -qO- http://localhost:8081/healthz 2>/dev/null || echo "healthz: check port"
 
-kubectl exec "$CTRL_POD" -n ignition-sync-operator-system -- \
+kubectl exec "$CTRL_POD" -n stoker-system -- \
   wget -qO- http://localhost:8081/readyz 2>/dev/null || echo "readyz: check port"
 ```
 
@@ -300,14 +300,14 @@ Both return `ok` with HTTP 200.
 
 ```bash
 # Delete the controller pod to force a restart
-kubectl delete pod "$CTRL_POD" -n ignition-sync-operator-system
+kubectl delete pod "$CTRL_POD" -n stoker-system
 
 # Immediately check readiness
 sleep 2
-NEW_POD=$(kubectl get pods -n ignition-sync-operator-system \
+NEW_POD=$(kubectl get pods -n stoker-system \
   -l control-plane=controller-manager -o jsonpath='{.items[0].metadata.name}')
 
-kubectl get pod "$NEW_POD" -n ignition-sync-operator-system -o json | jq '{
+kubectl get pod "$NEW_POD" -n stoker-system -o json | jq '{
   phase: .status.phase,
   ready: (.status.conditions[] | select(.type=="Ready") | .status),
   containerReady: (.status.containerStatuses[0].ready)
@@ -327,7 +327,7 @@ Verify agent sidecar logs are accessible and structured. The agent clones the gi
 
 ```bash
 # If injection is active from Lab 06
-kubectl logs ignition-0 -n lab -c sync-agent --tail=20 2>/dev/null || \
+kubectl logs ignition-0 -n lab -c stoker-agent --tail=20 2>/dev/null || \
   echo "No agent sidecar — skip this lab"
 ```
 
@@ -353,7 +353,7 @@ Point the CR at a bad repo URL, observe the operator's response, then fix it.
 
 ```bash
 # Break the git connection by pointing to a nonexistent repo
-kubectl patch ignitionsync lab-sync -n lab --type=merge \
+kubectl patch stoker lab-sync -n lab --type=merge \
   -p '{"spec":{"git":{"repo":"https://github.com/ia-eknorr/nonexistent-repo-does-not-exist.git"}}}'
 
 # Watch the operator's response
@@ -363,21 +363,21 @@ WATCH_PID=$!
 sleep 5
 
 echo "=== Conditions ==="
-kubectl get ignitionsync lab-sync -n lab -o json | jq '[.status.conditions[] | {type, status, reason, message}]'
+kubectl get stoker lab-sync -n lab -o json | jq '[.status.conditions[] | {type, status, reason, message}]'
 
 echo "=== Operator Logs ==="
-kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manager --tail=10 | \
+kubectl logs -n stoker-system -l control-plane=controller-manager --tail=10 | \
   jq '{ts: .ts, msg: .msg, error: .error}' 2>/dev/null || \
-  kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manager --tail=10
+  kubectl logs -n stoker-system -l control-plane=controller-manager --tail=10
 
 # Fix it — restore the correct repo URL
-kubectl patch ignitionsync lab-sync -n lab --type=merge \
+kubectl patch stoker lab-sync -n lab --type=merge \
   -p '{"spec":{"git":{"repo":"https://github.com/ia-eknorr/test-ignition-project.git"}}}'
 
 sleep 30
 
 echo "=== Conditions After Recovery ==="
-kubectl get ignitionsync lab-sync -n lab -o json | jq '[.status.conditions[] | {type, status, reason, message}]'
+kubectl get stoker lab-sync -n lab -o json | jq '[.status.conditions[] | {type, status, reason, message}]'
 
 kill $WATCH_PID 2>/dev/null || true
 ```

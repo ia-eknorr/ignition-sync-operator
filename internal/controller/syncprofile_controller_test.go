@@ -10,8 +10,8 @@ import (
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	syncv1alpha1 "github.com/ia-eknorr/ignition-sync-operator/api/v1alpha1"
-	"github.com/ia-eknorr/ignition-sync-operator/pkg/conditions"
+	stokerv1alpha1 "github.com/ia-eknorr/stoker-operator/api/v1alpha1"
+	"github.com/ia-eknorr/stoker-operator/pkg/conditions"
 )
 
 func newProfileReconciler() *SyncProfileReconciler {
@@ -22,8 +22,8 @@ func newProfileReconciler() *SyncProfileReconciler {
 	}
 }
 
-func createSyncProfile(ctx context.Context, name string, spec syncv1alpha1.SyncProfileSpec) {
-	profile := &syncv1alpha1.SyncProfile{
+func createSyncProfile(ctx context.Context, name string, spec stokerv1alpha1.SyncProfileSpec) {
+	profile := &stokerv1alpha1.SyncProfile{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: "default",
@@ -41,15 +41,15 @@ var _ = Describe("SyncProfile Controller", func() {
 		nn := types.NamespacedName{Name: profileName, Namespace: "default"}
 
 		AfterEach(func() {
-			profile := &syncv1alpha1.SyncProfile{}
+			profile := &stokerv1alpha1.SyncProfile{}
 			if err := k8sClient.Get(ctx, nn, profile); err == nil {
 				_ = k8sClient.Delete(ctx, profile)
 			}
 		})
 
 		It("should set Accepted=True for a valid profile", func() {
-			createSyncProfile(ctx, profileName, syncv1alpha1.SyncProfileSpec{
-				Mappings: []syncv1alpha1.SyncMapping{
+			createSyncProfile(ctx, profileName, stokerv1alpha1.SyncProfileSpec{
+				Mappings: []stokerv1alpha1.SyncMapping{
 					{Source: "services/site/projects", Destination: "projects"},
 					{Source: "shared/scripts", Destination: "scripts"},
 				},
@@ -59,7 +59,7 @@ var _ = Describe("SyncProfile Controller", func() {
 			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 
-			profile := &syncv1alpha1.SyncProfile{}
+			profile := &stokerv1alpha1.SyncProfile{}
 			Expect(k8sClient.Get(ctx, nn, profile)).To(Succeed())
 
 			var acceptedCond *metav1.Condition
@@ -82,15 +82,15 @@ var _ = Describe("SyncProfile Controller", func() {
 		nn := types.NamespacedName{Name: profileName, Namespace: "default"}
 
 		AfterEach(func() {
-			profile := &syncv1alpha1.SyncProfile{}
+			profile := &stokerv1alpha1.SyncProfile{}
 			if err := k8sClient.Get(ctx, nn, profile); err == nil {
 				_ = k8sClient.Delete(ctx, profile)
 			}
 		})
 
 		It("should set Accepted=False for path traversal in source", func() {
-			createSyncProfile(ctx, profileName, syncv1alpha1.SyncProfileSpec{
-				Mappings: []syncv1alpha1.SyncMapping{
+			createSyncProfile(ctx, profileName, stokerv1alpha1.SyncProfileSpec{
+				Mappings: []stokerv1alpha1.SyncMapping{
 					{Source: "../../../etc/passwd", Destination: "config"},
 				},
 			})
@@ -99,7 +99,7 @@ var _ = Describe("SyncProfile Controller", func() {
 			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 
-			profile := &syncv1alpha1.SyncProfile{}
+			profile := &stokerv1alpha1.SyncProfile{}
 			Expect(k8sClient.Get(ctx, nn, profile)).To(Succeed())
 
 			var acceptedCond *metav1.Condition
@@ -121,15 +121,15 @@ var _ = Describe("SyncProfile Controller", func() {
 		nn := types.NamespacedName{Name: profileName, Namespace: "default"}
 
 		AfterEach(func() {
-			profile := &syncv1alpha1.SyncProfile{}
+			profile := &stokerv1alpha1.SyncProfile{}
 			if err := k8sClient.Get(ctx, nn, profile); err == nil {
 				_ = k8sClient.Delete(ctx, profile)
 			}
 		})
 
 		It("should set Accepted=False for absolute path in source", func() {
-			createSyncProfile(ctx, profileName, syncv1alpha1.SyncProfileSpec{
-				Mappings: []syncv1alpha1.SyncMapping{
+			createSyncProfile(ctx, profileName, stokerv1alpha1.SyncProfileSpec{
+				Mappings: []stokerv1alpha1.SyncMapping{
 					{Source: "/etc/passwd", Destination: "config"},
 				},
 			})
@@ -138,7 +138,7 @@ var _ = Describe("SyncProfile Controller", func() {
 			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 
-			profile := &syncv1alpha1.SyncProfile{}
+			profile := &stokerv1alpha1.SyncProfile{}
 			Expect(k8sClient.Get(ctx, nn, profile)).To(Succeed())
 
 			var acceptedCond *metav1.Condition
@@ -160,18 +160,18 @@ var _ = Describe("SyncProfile Controller", func() {
 		nn := types.NamespacedName{Name: profileName, Namespace: "default"}
 
 		AfterEach(func() {
-			profile := &syncv1alpha1.SyncProfile{}
+			profile := &stokerv1alpha1.SyncProfile{}
 			if err := k8sClient.Get(ctx, nn, profile); err == nil {
 				_ = k8sClient.Delete(ctx, profile)
 			}
 		})
 
 		It("should reject path traversal in deploymentMode.source", func() {
-			createSyncProfile(ctx, profileName, syncv1alpha1.SyncProfileSpec{
-				Mappings: []syncv1alpha1.SyncMapping{
+			createSyncProfile(ctx, profileName, stokerv1alpha1.SyncProfileSpec{
+				Mappings: []stokerv1alpha1.SyncMapping{
 					{Source: "services/site", Destination: "site"},
 				},
-				DeploymentMode: &syncv1alpha1.DeploymentModeSpec{
+				DeploymentMode: &stokerv1alpha1.DeploymentModeSpec{
 					Name:   "bad-mode",
 					Source: "../../malicious",
 				},
@@ -181,7 +181,7 @@ var _ = Describe("SyncProfile Controller", func() {
 			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 
-			profile := &syncv1alpha1.SyncProfile{}
+			profile := &stokerv1alpha1.SyncProfile{}
 			Expect(k8sClient.Get(ctx, nn, profile)).To(Succeed())
 
 			var acceptedCond *metav1.Condition
@@ -203,7 +203,7 @@ var _ = Describe("SyncProfile Controller", func() {
 
 		AfterEach(func() {
 			for _, name := range []string{profileName, "some-base-profile"} {
-				profile := &syncv1alpha1.SyncProfile{}
+				profile := &stokerv1alpha1.SyncProfile{}
 				if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, profile); err == nil {
 					_ = k8sClient.Delete(ctx, profile)
 				}
@@ -212,21 +212,21 @@ var _ = Describe("SyncProfile Controller", func() {
 
 		It("should accept profile with vars, dependsOn, and dryRun", func() {
 			// Create the dependency profile so validation passes.
-			createSyncProfile(ctx, "some-base-profile", syncv1alpha1.SyncProfileSpec{
-				Mappings: []syncv1alpha1.SyncMapping{
+			createSyncProfile(ctx, "some-base-profile", stokerv1alpha1.SyncProfileSpec{
+				Mappings: []stokerv1alpha1.SyncMapping{
 					{Source: "shared/base", Destination: "base"},
 				},
 			})
 
-			createSyncProfile(ctx, profileName, syncv1alpha1.SyncProfileSpec{
-				Mappings: []syncv1alpha1.SyncMapping{
+			createSyncProfile(ctx, profileName, stokerv1alpha1.SyncProfileSpec{
+				Mappings: []stokerv1alpha1.SyncMapping{
 					{Source: "services/site", Destination: "site", Required: true},
 				},
 				Vars: map[string]string{
 					"siteNumber": "1",
 					"region":     "us-east",
 				},
-				DependsOn: []syncv1alpha1.ProfileDependency{
+				DependsOn: []stokerv1alpha1.ProfileDependency{
 					{ProfileName: "some-base-profile"},
 				},
 				DryRun: true,
@@ -237,7 +237,7 @@ var _ = Describe("SyncProfile Controller", func() {
 			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 
-			profile := &syncv1alpha1.SyncProfile{}
+			profile := &stokerv1alpha1.SyncProfile{}
 			Expect(k8sClient.Get(ctx, nn, profile)).To(Succeed())
 
 			var acceptedCond *metav1.Condition
@@ -267,18 +267,18 @@ var _ = Describe("SyncProfile Controller", func() {
 		nn := types.NamespacedName{Name: profileName, Namespace: "default"}
 
 		AfterEach(func() {
-			profile := &syncv1alpha1.SyncProfile{}
+			profile := &stokerv1alpha1.SyncProfile{}
 			if err := k8sClient.Get(ctx, nn, profile); err == nil {
 				_ = k8sClient.Delete(ctx, profile)
 			}
 		})
 
 		It("should reject a profile that depends on itself", func() {
-			createSyncProfile(ctx, profileName, syncv1alpha1.SyncProfileSpec{
-				Mappings: []syncv1alpha1.SyncMapping{
+			createSyncProfile(ctx, profileName, stokerv1alpha1.SyncProfileSpec{
+				Mappings: []stokerv1alpha1.SyncMapping{
 					{Source: "src", Destination: "dst"},
 				},
-				DependsOn: []syncv1alpha1.ProfileDependency{
+				DependsOn: []stokerv1alpha1.ProfileDependency{
 					{ProfileName: profileName},
 				},
 			})
@@ -287,7 +287,7 @@ var _ = Describe("SyncProfile Controller", func() {
 			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 
-			profile := &syncv1alpha1.SyncProfile{}
+			profile := &stokerv1alpha1.SyncProfile{}
 			Expect(k8sClient.Get(ctx, nn, profile)).To(Succeed())
 
 			cond := findAcceptedCondition(profile)
@@ -305,7 +305,7 @@ var _ = Describe("SyncProfile Controller", func() {
 
 		AfterEach(func() {
 			for _, name := range []string{profileA, profileB} {
-				profile := &syncv1alpha1.SyncProfile{}
+				profile := &stokerv1alpha1.SyncProfile{}
 				if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, profile); err == nil {
 					_ = k8sClient.Delete(ctx, profile)
 				}
@@ -313,15 +313,15 @@ var _ = Describe("SyncProfile Controller", func() {
 		})
 
 		It("should detect a two-node cycle", func() {
-			createSyncProfile(ctx, profileB, syncv1alpha1.SyncProfileSpec{
-				Mappings: []syncv1alpha1.SyncMapping{{Source: "src", Destination: "dst"}},
-				DependsOn: []syncv1alpha1.ProfileDependency{
+			createSyncProfile(ctx, profileB, stokerv1alpha1.SyncProfileSpec{
+				Mappings: []stokerv1alpha1.SyncMapping{{Source: "src", Destination: "dst"}},
+				DependsOn: []stokerv1alpha1.ProfileDependency{
 					{ProfileName: profileA},
 				},
 			})
-			createSyncProfile(ctx, profileA, syncv1alpha1.SyncProfileSpec{
-				Mappings: []syncv1alpha1.SyncMapping{{Source: "src", Destination: "dst"}},
-				DependsOn: []syncv1alpha1.ProfileDependency{
+			createSyncProfile(ctx, profileA, stokerv1alpha1.SyncProfileSpec{
+				Mappings: []stokerv1alpha1.SyncMapping{{Source: "src", Destination: "dst"}},
+				DependsOn: []stokerv1alpha1.ProfileDependency{
 					{ProfileName: profileB},
 				},
 			})
@@ -330,7 +330,7 @@ var _ = Describe("SyncProfile Controller", func() {
 			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: profileA, Namespace: "default"}})
 			Expect(err).NotTo(HaveOccurred())
 
-			profile := &syncv1alpha1.SyncProfile{}
+			profile := &stokerv1alpha1.SyncProfile{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: profileA, Namespace: "default"}, profile)).To(Succeed())
 
 			cond := findAcceptedCondition(profile)
@@ -346,7 +346,7 @@ var _ = Describe("SyncProfile Controller", func() {
 
 		AfterEach(func() {
 			for _, name := range names {
-				profile := &syncv1alpha1.SyncProfile{}
+				profile := &stokerv1alpha1.SyncProfile{}
 				if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, profile); err == nil {
 					_ = k8sClient.Delete(ctx, profile)
 				}
@@ -354,26 +354,26 @@ var _ = Describe("SyncProfile Controller", func() {
 		})
 
 		It("should detect a three-node cycle", func() {
-			mapping := []syncv1alpha1.SyncMapping{{Source: "src", Destination: "dst"}}
+			mapping := []stokerv1alpha1.SyncMapping{{Source: "src", Destination: "dst"}}
 
-			createSyncProfile(ctx, "test-tri-c", syncv1alpha1.SyncProfileSpec{
+			createSyncProfile(ctx, "test-tri-c", stokerv1alpha1.SyncProfileSpec{
 				Mappings:  mapping,
-				DependsOn: []syncv1alpha1.ProfileDependency{{ProfileName: "test-tri-a"}},
+				DependsOn: []stokerv1alpha1.ProfileDependency{{ProfileName: "test-tri-a"}},
 			})
-			createSyncProfile(ctx, "test-tri-b", syncv1alpha1.SyncProfileSpec{
+			createSyncProfile(ctx, "test-tri-b", stokerv1alpha1.SyncProfileSpec{
 				Mappings:  mapping,
-				DependsOn: []syncv1alpha1.ProfileDependency{{ProfileName: "test-tri-c"}},
+				DependsOn: []stokerv1alpha1.ProfileDependency{{ProfileName: "test-tri-c"}},
 			})
-			createSyncProfile(ctx, "test-tri-a", syncv1alpha1.SyncProfileSpec{
+			createSyncProfile(ctx, "test-tri-a", stokerv1alpha1.SyncProfileSpec{
 				Mappings:  mapping,
-				DependsOn: []syncv1alpha1.ProfileDependency{{ProfileName: "test-tri-b"}},
+				DependsOn: []stokerv1alpha1.ProfileDependency{{ProfileName: "test-tri-b"}},
 			})
 
 			r := newProfileReconciler()
 			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: "test-tri-a", Namespace: "default"}})
 			Expect(err).NotTo(HaveOccurred())
 
-			profile := &syncv1alpha1.SyncProfile{}
+			profile := &stokerv1alpha1.SyncProfile{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-tri-a", Namespace: "default"}, profile)).To(Succeed())
 
 			cond := findAcceptedCondition(profile)
@@ -390,18 +390,18 @@ var _ = Describe("SyncProfile Controller", func() {
 		nn := types.NamespacedName{Name: profileName, Namespace: "default"}
 
 		AfterEach(func() {
-			profile := &syncv1alpha1.SyncProfile{}
+			profile := &stokerv1alpha1.SyncProfile{}
 			if err := k8sClient.Get(ctx, nn, profile); err == nil {
 				_ = k8sClient.Delete(ctx, profile)
 			}
 		})
 
 		It("should reject a profile with a nonexistent dependency", func() {
-			createSyncProfile(ctx, profileName, syncv1alpha1.SyncProfileSpec{
-				Mappings: []syncv1alpha1.SyncMapping{
+			createSyncProfile(ctx, profileName, stokerv1alpha1.SyncProfileSpec{
+				Mappings: []stokerv1alpha1.SyncMapping{
 					{Source: "src", Destination: "dst"},
 				},
-				DependsOn: []syncv1alpha1.ProfileDependency{
+				DependsOn: []stokerv1alpha1.ProfileDependency{
 					{ProfileName: "nonexistent-profile"},
 				},
 			})
@@ -410,7 +410,7 @@ var _ = Describe("SyncProfile Controller", func() {
 			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 
-			profile := &syncv1alpha1.SyncProfile{}
+			profile := &stokerv1alpha1.SyncProfile{}
 			Expect(k8sClient.Get(ctx, nn, profile)).To(Succeed())
 
 			cond := findAcceptedCondition(profile)
@@ -428,7 +428,7 @@ var _ = Describe("SyncProfile Controller", func() {
 
 		AfterEach(func() {
 			for _, name := range []string{base, child} {
-				profile := &syncv1alpha1.SyncProfile{}
+				profile := &stokerv1alpha1.SyncProfile{}
 				if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, profile); err == nil {
 					_ = k8sClient.Delete(ctx, profile)
 				}
@@ -436,14 +436,14 @@ var _ = Describe("SyncProfile Controller", func() {
 		})
 
 		It("should accept a valid dependency chain", func() {
-			mapping := []syncv1alpha1.SyncMapping{{Source: "src", Destination: "dst"}}
+			mapping := []stokerv1alpha1.SyncMapping{{Source: "src", Destination: "dst"}}
 
-			createSyncProfile(ctx, base, syncv1alpha1.SyncProfileSpec{
+			createSyncProfile(ctx, base, stokerv1alpha1.SyncProfileSpec{
 				Mappings: mapping,
 			})
-			createSyncProfile(ctx, child, syncv1alpha1.SyncProfileSpec{
+			createSyncProfile(ctx, child, stokerv1alpha1.SyncProfileSpec{
 				Mappings:  mapping,
-				DependsOn: []syncv1alpha1.ProfileDependency{{ProfileName: base}},
+				DependsOn: []stokerv1alpha1.ProfileDependency{{ProfileName: base}},
 			})
 
 			r := newProfileReconciler()
@@ -456,7 +456,7 @@ var _ = Describe("SyncProfile Controller", func() {
 			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: child, Namespace: "default"}})
 			Expect(err).NotTo(HaveOccurred())
 
-			profile := &syncv1alpha1.SyncProfile{}
+			profile := &stokerv1alpha1.SyncProfile{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: child, Namespace: "default"}, profile)).To(Succeed())
 
 			cond := findAcceptedCondition(profile)
@@ -468,7 +468,7 @@ var _ = Describe("SyncProfile Controller", func() {
 })
 
 // findAcceptedCondition returns the Accepted condition, or nil.
-func findAcceptedCondition(profile *syncv1alpha1.SyncProfile) *metav1.Condition {
+func findAcceptedCondition(profile *stokerv1alpha1.SyncProfile) *metav1.Condition {
 	for i := range profile.Status.Conditions {
 		if profile.Status.Conditions[i].Type == conditions.TypeAccepted {
 			return &profile.Status.Conditions[i]

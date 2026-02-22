@@ -11,13 +11,13 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	syncv1alpha1 "github.com/ia-eknorr/ignition-sync-operator/api/v1alpha1"
+	stokerv1alpha1 "github.com/ia-eknorr/stoker-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 )
 
 // ResolveAuth reads the appropriate Secret and builds a go-git transport.AuthMethod.
 // Returns nil auth (valid for public repos) if no auth is configured.
-func ResolveAuth(ctx context.Context, c client.Client, namespace string, authSpec *syncv1alpha1.GitAuthSpec) (transport.AuthMethod, error) {
+func ResolveAuth(ctx context.Context, c client.Client, namespace string, authSpec *stokerv1alpha1.GitAuthSpec) (transport.AuthMethod, error) {
 	if authSpec == nil {
 		return nil, nil
 	}
@@ -35,7 +35,7 @@ func ResolveAuth(ctx context.Context, c client.Client, namespace string, authSpe
 	}
 }
 
-func resolveSSHAuth(ctx context.Context, c client.Client, namespace string, sshAuth *syncv1alpha1.SSHKeyAuth) (transport.AuthMethod, error) {
+func resolveSSHAuth(ctx context.Context, c client.Client, namespace string, sshAuth *stokerv1alpha1.SSHKeyAuth) (transport.AuthMethod, error) {
 	secret := &corev1.Secret{}
 	key := types.NamespacedName{Name: sshAuth.SecretRef.Name, Namespace: namespace}
 	if err := c.Get(ctx, key, secret); err != nil {
@@ -59,7 +59,7 @@ func resolveSSHAuth(ctx context.Context, c client.Client, namespace string, sshA
 	return publicKey, nil
 }
 
-func resolveTokenAuth(ctx context.Context, c client.Client, namespace string, tokenAuth *syncv1alpha1.TokenAuth) (transport.AuthMethod, error) {
+func resolveTokenAuth(ctx context.Context, c client.Client, namespace string, tokenAuth *stokerv1alpha1.TokenAuth) (transport.AuthMethod, error) {
 	secret := &corev1.Secret{}
 	key := types.NamespacedName{Name: tokenAuth.SecretRef.Name, Namespace: namespace}
 	if err := c.Get(ctx, key, secret); err != nil {

@@ -6,8 +6,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 source "${SCRIPT_DIR}/lib.sh"
 
-KIND_CLUSTER="${KIND_CLUSTER:-ignition-sync-func-test}"
-IMG="${IMG:-ignition-sync-operator:func-test}"
+KIND_CLUSTER="${KIND_CLUSTER:-stoker-func-test}"
+IMG="${IMG:-stoker-operator:func-test}"
 
 echo "=== Functional Test Teardown ==="
 

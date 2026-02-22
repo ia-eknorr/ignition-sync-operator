@@ -14,7 +14,7 @@ const (
 )
 
 // GatewayStatus is the JSON payload each sync agent writes
-// as a value in ConfigMap ignition-sync-status-{crName}.
+// as a value in ConfigMap stoker-status-{crName}.
 // Key = gateway name, Value = JSON of this struct.
 type GatewayStatus struct {
 	// SyncStatus is the current sync state (Pending, Syncing, Synced, Error).

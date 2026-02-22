@@ -1,0 +1,19 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "stoker-operator.fullname" . }}-agent
+  labels:
+    {{- include "stoker-operator.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["stoker.io"]
+    resources: ["stokers"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["stoker.io"]
+    resources: ["syncprofiles"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]

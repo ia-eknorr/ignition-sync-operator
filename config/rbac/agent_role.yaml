@@ -1,26 +1,26 @@
 ---
 # Agent Role — grants the sync agent sidecar permission to read metadata ConfigMaps,
-# write status ConfigMaps, and read IgnitionSync/SyncProfile CRs within its namespace.
+# write status ConfigMaps, and read Stoker/SyncProfile CRs within its namespace.
 #
 # The Helm chart creates this ClusterRole automatically. To grant it to gateway pods,
 # create a RoleBinding in each namespace where gateways run:
 #
-#   kubectl create rolebinding ignition-sync-agent \
-#     --clusterrole=ignition-sync-agent \
+#   kubectl create rolebinding stoker-agent \
+#     --clusterrole=stoker-agent \
 #     --serviceaccount=<namespace>:<sa-name> \
 #     -n <namespace>
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: ignition-sync-agent
+  name: stoker-agent
 rules:
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]
-  - apiGroups: ["sync.ignition.io"]
-    resources: ["ignitionsyncs"]
+  - apiGroups: ["stoker.io"]
+    resources: ["stokers"]
     verbs: ["get", "list", "watch"]
-  - apiGroups: ["sync.ignition.io"]
+  - apiGroups: ["stoker.io"]
     resources: ["syncprofiles"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]

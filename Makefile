@@ -51,12 +51,12 @@ setup: ## Configure git hooks and local tooling.
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
-HELM_CHART_DIR ?= charts/ignition-sync-operator
+HELM_CHART_DIR ?= charts/stoker-operator
 
 .PHONY: helm-sync
 helm-sync: manifests ## Sync CRDs and verify RBAC between kustomize config and Helm chart.
-	@cp config/crd/bases/sync.ignition.io_ignitionsyncs.yaml $(HELM_CHART_DIR)/crds/
-	@cp config/crd/bases/sync.ignition.io_syncprofiles.yaml $(HELM_CHART_DIR)/crds/
+	@cp config/crd/bases/stoker.io_stokers.yaml $(HELM_CHART_DIR)/crds/
+	@cp config/crd/bases/stoker.io_syncprofiles.yaml $(HELM_CHART_DIR)/crds/
 	@echo "CRDs copied to $(HELM_CHART_DIR)/crds/"
 	@diff <(sed -n '/^rules:/,$$p' config/rbac/role.yaml | sed 's/^[[:space:]]*//' | grep -v '^$$') \
 	      <(sed -n '/^rules:/,$$p' $(HELM_CHART_DIR)/templates/clusterrole.yaml | sed 's/^[[:space:]]*//' | grep -v '^$$') \
@@ -133,10 +133,10 @@ PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
 	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
-	- $(CONTAINER_TOOL) buildx create --name ignition-sync-operator-builder
-	$(CONTAINER_TOOL) buildx use ignition-sync-operator-builder
+	- $(CONTAINER_TOOL) buildx create --name stoker-operator-builder
+	$(CONTAINER_TOOL) buildx use stoker-operator-builder
 	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
-	- $(CONTAINER_TOOL) buildx rm ignition-sync-operator-builder
+	- $(CONTAINER_TOOL) buildx rm stoker-operator-builder
 	rm Dockerfile.cross
 
 .PHONY: build-installer

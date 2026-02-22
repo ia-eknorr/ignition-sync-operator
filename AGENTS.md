@@ -1,4 +1,4 @@
-# ignition-sync-operator - AI Agent Guide
+# stoker-operator - AI Agent Guide
 
 ## Project Structure
 

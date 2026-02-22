@@ -17,11 +17,11 @@ Verify the webhook receiver HTTP server is running inside the controller and rea
 
 ```bash
 # Identify controller pod
-CTRL_POD=$(kubectl get pods -n ignition-sync-operator-system \
+CTRL_POD=$(kubectl get pods -n stoker-system \
   -l control-plane=controller-manager -o jsonpath='{.items[0].metadata.name}')
 
 # Start port-forward to webhook receiver port (9443)
-kubectl port-forward "pod/${CTRL_POD}" -n ignition-sync-operator-system 19443:9443 &
+kubectl port-forward "pod/${CTRL_POD}" -n stoker-system 19443:9443 &
 PF_PID=$!
 sleep 3
 
@@ -37,7 +37,7 @@ HTTP `200` or `202` — confirms the server is listening and processing requests
 
 ### Verify in operator logs:
 ```bash
-kubectl logs -n ignition-sync-operator-system "$CTRL_POD" --tail=10 | grep webhook
+kubectl logs -n stoker-system "$CTRL_POD" --tail=10 | grep webhook
 ```
 
 Expected: `webhook accepted` log entry.
@@ -53,10 +53,10 @@ Test the simplest payload format: `{"ref": "..."}`.
 
 ```bash
 # Clear any previous webhook annotations
-kubectl annotate ignitionsync lab-sync -n lab \
-  ignition-sync.io/requested-ref- \
-  ignition-sync.io/requested-at- \
-  ignition-sync.io/requested-by- 2>/dev/null || true
+kubectl annotate stoker lab-sync -n lab \
+  stoker.io/requested-ref- \
+  stoker.io/requested-at- \
+  stoker.io/requested-by- 2>/dev/null || true
 
 # Send generic payload
 RESPONSE=$(curl -s -w '\n%{http_code}' \
@@ -86,10 +86,10 @@ echo "Body: $HTTP_BODY"
 
 3. **CR annotations set:**
    ```bash
-   kubectl get ignitionsync lab-sync -n lab -o json | jq '{
-     "requested-ref": .metadata.annotations["ignition-sync.io/requested-ref"],
-     "requested-at": .metadata.annotations["ignition-sync.io/requested-at"],
-     "requested-by": .metadata.annotations["ignition-sync.io/requested-by"]
+   kubectl get stoker lab-sync -n lab -o json | jq '{
+     "requested-ref": .metadata.annotations["stoker.io/requested-ref"],
+     "requested-at": .metadata.annotations["stoker.io/requested-at"],
+     "requested-by": .metadata.annotations["stoker.io/requested-by"]
    }'
    ```
    Expected:
@@ -104,8 +104,8 @@ echo "Body: $HTTP_BODY"
 ### Steps
 
 ```bash
-kubectl annotate ignitionsync lab-sync -n lab \
-  ignition-sync.io/requested-ref- ignition-sync.io/requested-at- ignition-sync.io/requested-by- 2>/dev/null || true
+kubectl annotate stoker lab-sync -n lab \
+  stoker.io/requested-ref- stoker.io/requested-at- stoker.io/requested-by- 2>/dev/null || true
 
 curl -s -w '\nHTTP %{http_code}\n' \
   -X POST http://localhost:19443/webhook/lab/lab-sync \
@@ -123,9 +123,9 @@ curl -s -w '\nHTTP %{http_code}\n' \
 ### What to Verify
 
 ```bash
-kubectl get ignitionsync lab-sync -n lab -o json | jq '{
-  ref: .metadata.annotations["ignition-sync.io/requested-ref"],
-  by: .metadata.annotations["ignition-sync.io/requested-by"]
+kubectl get stoker lab-sync -n lab -o json | jq '{
+  ref: .metadata.annotations["stoker.io/requested-ref"],
+  by: .metadata.annotations["stoker.io/requested-by"]
 }'
 ```
 
@@ -138,8 +138,8 @@ Expected: `ref: "v3.1.0"`, `by: "github"`
 ### Steps
 
 ```bash
-kubectl annotate ignitionsync lab-sync -n lab \
-  ignition-sync.io/requested-ref- ignition-sync.io/requested-at- ignition-sync.io/requested-by- 2>/dev/null || true
+kubectl annotate stoker lab-sync -n lab \
+  stoker.io/requested-ref- stoker.io/requested-at- stoker.io/requested-by- 2>/dev/null || true
 
 curl -s -w '\nHTTP %{http_code}\n' \
   -X POST http://localhost:19443/webhook/lab/lab-sync \
@@ -163,9 +163,9 @@ curl -s -w '\nHTTP %{http_code}\n' \
 ### What to Verify
 
 ```bash
-kubectl get ignitionsync lab-sync -n lab -o json | jq '{
-  ref: .metadata.annotations["ignition-sync.io/requested-ref"],
-  by: .metadata.annotations["ignition-sync.io/requested-by"]
+kubectl get stoker lab-sync -n lab -o json | jq '{
+  ref: .metadata.annotations["stoker.io/requested-ref"],
+  by: .metadata.annotations["stoker.io/requested-by"]
 }'
 ```
 
@@ -178,8 +178,8 @@ Expected: `ref: "v4.2.0"`, `by: "argocd"`
 ### Steps
 
 ```bash
-kubectl annotate ignitionsync lab-sync -n lab \
-  ignition-sync.io/requested-ref- ignition-sync.io/requested-at- ignition-sync.io/requested-by- 2>/dev/null || true
+kubectl annotate stoker lab-sync -n lab \
+  stoker.io/requested-ref- stoker.io/requested-at- stoker.io/requested-by- 2>/dev/null || true
 
 curl -s -w '\nHTTP %{http_code}\n' \
   -X POST http://localhost:19443/webhook/lab/lab-sync \
@@ -201,9 +201,9 @@ curl -s -w '\nHTTP %{http_code}\n' \
 ### What to Verify
 
 ```bash
-kubectl get ignitionsync lab-sync -n lab -o json | jq '{
-  ref: .metadata.annotations["ignition-sync.io/requested-ref"],
-  by: .metadata.annotations["ignition-sync.io/requested-by"]
+kubectl get stoker lab-sync -n lab -o json | jq '{
+  ref: .metadata.annotations["stoker.io/requested-ref"],
+  by: .metadata.annotations["stoker.io/requested-by"]
 }'
 ```
 
@@ -225,21 +225,21 @@ HMAC_SECRET="lab-test-secret-$(date +%s)"
 echo "HMAC secret: $HMAC_SECRET"
 
 # Patch controller deployment to set HMAC
-kubectl set env deployment/ignition-sync-operator-controller-manager \
-  -n ignition-sync-operator-system \
+kubectl set env deployment/stoker-operator-controller-manager \
+  -n stoker-system \
   WEBHOOK_HMAC_SECRET="$HMAC_SECRET"
 
 # Wait for rollout
-kubectl rollout status deployment/ignition-sync-operator-controller-manager \
-  -n ignition-sync-operator-system --timeout=60s
+kubectl rollout status deployment/stoker-operator-controller-manager \
+  -n stoker-system --timeout=60s
 
 # Kill old port-forward, establish new one
 kill $PF_PID 2>/dev/null || true
 sleep 2
 
-CTRL_POD=$(kubectl get pods -n ignition-sync-operator-system \
+CTRL_POD=$(kubectl get pods -n stoker-system \
   -l control-plane=controller-manager -o jsonpath='{.items[0].metadata.name}')
-kubectl port-forward "pod/${CTRL_POD}" -n ignition-sync-operator-system 19443:9443 &
+kubectl port-forward "pod/${CTRL_POD}" -n stoker-system 19443:9443 &
 PF_PID=$!
 sleep 3
 ```
@@ -273,8 +273,8 @@ Expected: `HTTP 401`
 **Test valid HMAC → 202:**
 
 ```bash
-kubectl annotate ignitionsync lab-sync -n lab \
-  ignition-sync.io/requested-ref- ignition-sync.io/requested-at- ignition-sync.io/requested-by- 2>/dev/null || true
+kubectl annotate stoker lab-sync -n lab \
+  stoker.io/requested-ref- stoker.io/requested-at- stoker.io/requested-by- 2>/dev/null || true
 
 PAYLOAD='{"ref":"v1.0.0"}'
 VALID_SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$HMAC_SECRET" | awk '{print $NF}')
@@ -379,8 +379,8 @@ Sending the same ref twice should return 200 (not 202) with a message about the 
 ### Steps
 
 ```bash
-kubectl annotate ignitionsync lab-sync -n lab \
-  ignition-sync.io/requested-ref- ignition-sync.io/requested-at- ignition-sync.io/requested-by- 2>/dev/null || true
+kubectl annotate stoker lab-sync -n lab \
+  stoker.io/requested-ref- stoker.io/requested-at- stoker.io/requested-by- 2>/dev/null || true
 
 PAYLOAD='{"ref":"v2.0.0"}'
 SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$HMAC_SECRET" | awk '{print $NF}')
@@ -420,17 +420,17 @@ This is the end-to-end test: send a webhook to change the ref, and verify the co
 
 ```bash
 # Ensure CR is at main
-kubectl patch ignitionsync lab-sync -n lab --type=merge \
+kubectl patch stoker lab-sync -n lab --type=merge \
   -p '{"spec":{"git":{"ref":"main"}}}'
 sleep 20
 
 # Record current state from metadata ConfigMap
-COMMIT_BEFORE=$(kubectl get configmap ignition-sync-metadata-lab-sync -n lab -o jsonpath='{.data.commit}')
+COMMIT_BEFORE=$(kubectl get configmap stoker-metadata-lab-sync -n lab -o jsonpath='{.data.commit}')
 echo "Before: commit=$COMMIT_BEFORE, ref=main"
 
 # Clear webhook annotations
-kubectl annotate ignitionsync lab-sync -n lab \
-  ignition-sync.io/requested-ref- ignition-sync.io/requested-at- ignition-sync.io/requested-by- 2>/dev/null || true
+kubectl annotate stoker lab-sync -n lab \
+  stoker.io/requested-ref- stoker.io/requested-at- stoker.io/requested-by- 2>/dev/null || true
 
 # Send webhook to switch to v1.0.0
 PAYLOAD='{"ref":"v1.0.0"}'
@@ -447,7 +447,7 @@ echo "Waiting for reconciliation..."
 sleep 30
 
 # Check if the commit changed in the metadata ConfigMap
-COMMIT_AFTER=$(kubectl get configmap ignition-sync-metadata-lab-sync -n lab -o jsonpath='{.data.commit}')
+COMMIT_AFTER=$(kubectl get configmap stoker-metadata-lab-sync -n lab -o jsonpath='{.data.commit}')
 echo "After: commit=$COMMIT_AFTER"
 
 if [ "$COMMIT_BEFORE" != "$COMMIT_AFTER" ]; then
@@ -459,7 +459,7 @@ fi
 
 # Verify metadata ConfigMap contents
 echo "--- Metadata ConfigMap ---"
-kubectl get configmap ignition-sync-metadata-lab-sync -n lab -o json | jq '.data'
+kubectl get configmap stoker-metadata-lab-sync -n lab -o json | jq '.data'
 ```
 
 ### What to Watch For
@@ -469,7 +469,7 @@ The exact behavior depends on how the controller uses the `requested-ref` annota
 
 Check the operator logs:
 ```bash
-kubectl logs -n ignition-sync-operator-system "$CTRL_POD" --tail=30 | grep -E "webhook|requested|reconcil"
+kubectl logs -n stoker-system "$CTRL_POD" --tail=30 | grep -E "webhook|requested|reconcil"
 ```
 
 ---
@@ -478,22 +478,22 @@ kubectl logs -n ignition-sync-operator-system "$CTRL_POD" --tail=30 | grep -E "w
 
 ```bash
 # Remove HMAC from controller
-kubectl set env deployment/ignition-sync-operator-controller-manager \
-  -n ignition-sync-operator-system \
+kubectl set env deployment/stoker-operator-controller-manager \
+  -n stoker-system \
   WEBHOOK_HMAC_SECRET-
 
-kubectl rollout status deployment/ignition-sync-operator-controller-manager \
-  -n ignition-sync-operator-system --timeout=60s
+kubectl rollout status deployment/stoker-operator-controller-manager \
+  -n stoker-system --timeout=60s
 
 # Clean up port-forward
 kill $PF_PID 2>/dev/null || true
 
 # Restore CR to main
-kubectl patch ignitionsync lab-sync -n lab --type=merge \
+kubectl patch stoker lab-sync -n lab --type=merge \
   -p '{"spec":{"git":{"ref":"main"}}}'
 
-kubectl annotate ignitionsync lab-sync -n lab \
-  ignition-sync.io/requested-ref- ignition-sync.io/requested-at- ignition-sync.io/requested-by- 2>/dev/null || true
+kubectl annotate stoker lab-sync -n lab \
+  stoker.io/requested-ref- stoker.io/requested-at- stoker.io/requested-by- 2>/dev/null || true
 
 sleep 20
 ```
@@ -511,7 +511,7 @@ for pod in ignition-0 ignition-secondary-0; do
 done
 
 # Operator healthy
-kubectl get pods -n ignition-sync-operator-system -o json | jq '.items[0].status.containerStatuses[0].restartCount'
+kubectl get pods -n stoker-system -o json | jq '.items[0].status.containerStatuses[0].restartCount'
 
 curl -s -o /dev/null -w 'Ignition HTTP: %{http_code}\n' http://localhost:8088/StatusPing
 ```

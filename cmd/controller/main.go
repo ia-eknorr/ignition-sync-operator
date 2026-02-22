@@ -20,10 +20,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	syncv1alpha1 "github.com/ia-eknorr/ignition-sync-operator/api/v1alpha1"
-	"github.com/ia-eknorr/ignition-sync-operator/internal/controller"
-	"github.com/ia-eknorr/ignition-sync-operator/internal/git"
-	iswebhook "github.com/ia-eknorr/ignition-sync-operator/internal/webhook"
+	stokerv1alpha1 "github.com/ia-eknorr/stoker-operator/api/v1alpha1"
+	"github.com/ia-eknorr/stoker-operator/internal/controller"
+	"github.com/ia-eknorr/stoker-operator/internal/git"
+	iswebhook "github.com/ia-eknorr/stoker-operator/internal/webhook"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -35,7 +35,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	utilruntime.Must(syncv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(stokerv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -150,7 +150,7 @@ func main() {
 		WebhookServer:          webhookServer,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "a86165bb.ignition.io",
+		LeaderElectionID:       "a86165bb.stoker.io",
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
@@ -168,14 +168,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&controller.IgnitionSyncReconciler{
+	if err := (&controller.StokerReconciler{
 		Client:    mgr.GetClient(),
 		Scheme:    mgr.GetScheme(),
 		GitClient: &git.GoGitClient{},
 		//nolint:staticcheck // TODO: migrate to events.EventRecorder
-		Recorder: mgr.GetEventRecorderFor("ignition-sync-controller"),
+		Recorder: mgr.GetEventRecorderFor("stoker-controller"),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "IgnitionSync")
+		setupLog.Error(err, "unable to create controller", "controller", "Stoker")
 		os.Exit(1)
 	}
 	//nolint:staticcheck // TODO: migrate to events.EventRecorder

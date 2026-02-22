@@ -14,8 +14,8 @@ metadata:
 spec:
   secretName: webhook-server-cert
   dnsNames:
-    - webhook-service.ignition-sync-operator-system.svc
-    - webhook-service.ignition-sync-operator-system.svc.cluster.local
+    - webhook-service.stoker-system.svc
+    - webhook-service.stoker-system.svc.cluster.local
   issuerRef:
     name: selfsigned-issuer
     kind: Issuer

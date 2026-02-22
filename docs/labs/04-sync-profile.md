@@ -2,7 +2,7 @@
 
 ## Objective
 
-Validate the SyncProfile CRD: installation, validation, the 3-tier config precedence model (IgnitionSync → SyncProfile → pod annotation), backward compatibility with 2-tier mode, and graceful degradation on profile deletion. This lab confirms the SyncProfile abstraction works correctly before the agent (Phase 6) relies on it for file routing.
+Validate the SyncProfile CRD: installation, validation, the 3-tier config precedence model (Stoker → SyncProfile → pod annotation), backward compatibility with 2-tier mode, and graceful degradation on profile deletion. This lab confirms the SyncProfile abstraction works correctly before the agent (Phase 6) relies on it for file routing.
 
 **Prerequisite:** Complete [00 — Environment Setup](00-environment-setup.md) and [02 — Controller Core](02-controller-core.md).
 
@@ -17,7 +17,7 @@ Verify the SyncProfile CRD is installed with expected schema, short names, and p
 
 ```bash
 # Verify CRD exists
-kubectl get crd syncprofiles.sync.ignition.io -o yaml | head -30
+kubectl get crd syncprofiles.stoker.io -o yaml | head -30
 
 # Verify short name
 kubectl get sp -n lab
@@ -41,7 +41,7 @@ Create a valid SyncProfile and verify the controller sets the `Accepted=True` co
 
 ```bash
 cat <<EOF | kubectl apply -n lab -f -
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: lab-site-profile
@@ -95,7 +95,7 @@ Verify that SyncProfile with path traversal (`..`) is rejected with `Accepted=Fa
 
 ```bash
 cat <<EOF | kubectl apply -n lab -f -
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: bad-traversal
@@ -138,7 +138,7 @@ Verify absolute paths in mappings are rejected.
 
 ```bash
 cat <<EOF | kubectl apply -n lab -f -
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: bad-absolute
@@ -167,15 +167,15 @@ kubectl delete syncprofile bad-absolute -n lab
 ## Lab 4.5: Pod References SyncProfile (3-Tier Mode)
 
 ### Purpose
-Verify that a pod with `ignition-sync.io/sync-profile` annotation is correctly associated with the referenced SyncProfile, and the profile's `gatewayCount` status is updated.
+Verify that a pod with `stoker.io/sync-profile` annotation is correctly associated with the referenced SyncProfile, and the profile's `gatewayCount` status is updated.
 
 ### Steps
 
 ```bash
-# Ensure the IgnitionSync CR exists (from Lab 02)
+# Ensure the Stoker CR exists (from Lab 02)
 cat <<EOF | kubectl apply -n lab -f -
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: lab-sync
 spec:
@@ -205,10 +205,10 @@ metadata:
   labels:
     app.kubernetes.io/name: gateway-profile-test
   annotations:
-    ignition-sync.io/inject: "true"
-    ignition-sync.io/cr-name: "lab-sync"
-    ignition-sync.io/sync-profile: "lab-site-profile"
-    ignition-sync.io/gateway-name: "profile-gw"
+    stoker.io/inject: "true"
+    stoker.io/cr-name: "lab-sync"
+    stoker.io/sync-profile: "lab-site-profile"
+    stoker.io/gateway-name: "profile-gw"
 spec:
   containers:
     - name: ignition
@@ -219,9 +219,9 @@ EOF
 
 ### What to Verify
 
-1. **Gateway discovered by IgnitionSync controller**:
+1. **Gateway discovered by Stoker controller**:
    ```bash
-   kubectl get ignitionsync lab-sync -n lab \
+   kubectl get stoker lab-sync -n lab \
      -o jsonpath='{.status.discoveredGateways[?(@.name=="profile-gw")].name}'
    ```
    Expected: `profile-gw`
@@ -256,7 +256,7 @@ Verify that multiple pods can reference the same SyncProfile and the `gatewayCou
 ```bash
 # Create an area profile
 cat <<EOF | kubectl apply -n lab -f -
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: lab-area-profile
@@ -278,10 +278,10 @@ metadata:
   labels:
     app.kubernetes.io/name: gateway-area-${i}
   annotations:
-    ignition-sync.io/inject: "true"
-    ignition-sync.io/cr-name: "lab-sync"
-    ignition-sync.io/sync-profile: "lab-area-profile"
-    ignition-sync.io/gateway-name: "area${i}"
+    stoker.io/inject: "true"
+    stoker.io/cr-name: "lab-sync"
+    stoker.io/sync-profile: "lab-area-profile"
+    stoker.io/gateway-name: "area${i}"
 spec:
   containers:
     - name: ignition
@@ -297,7 +297,7 @@ sleep 15
 
 1. **All 3 gateways discovered**:
    ```bash
-   kubectl get ignitionsync lab-sync -n lab \
+   kubectl get stoker lab-sync -n lab \
      -o json | jq '[.status.discoveredGateways[].name] | sort'
    ```
    Expected: List includes `area1`, `area2`, `area3`
@@ -319,7 +319,7 @@ kubectl delete pod gateway-area-1 gateway-area-2 gateway-area-3 -n lab
 ## Lab 4.8: Profile Update Triggers Re-Reconcile
 
 ### Purpose
-Verify that updating a SyncProfile triggers the IgnitionSync controller to re-reconcile affected gateways.
+Verify that updating a SyncProfile triggers the Stoker controller to re-reconcile affected gateways.
 
 ### Steps
 
@@ -333,10 +333,10 @@ metadata:
   labels:
     app.kubernetes.io/name: gateway-update-test
   annotations:
-    ignition-sync.io/inject: "true"
-    ignition-sync.io/cr-name: "lab-sync"
-    ignition-sync.io/sync-profile: "lab-site-profile"
-    ignition-sync.io/gateway-name: "update-gw"
+    stoker.io/inject: "true"
+    stoker.io/cr-name: "lab-sync"
+    stoker.io/sync-profile: "lab-site-profile"
+    stoker.io/gateway-name: "update-gw"
 spec:
   containers:
     - name: ignition
@@ -362,7 +362,7 @@ kubectl patch syncprofile lab-site-profile -n lab --type=merge \
 
 2. **Operator logs show re-reconcile** triggered by profile change:
    ```bash
-   kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manager --tail=20 | grep -i "reconcil"
+   kubectl logs -n stoker-system -l control-plane=controller-manager --tail=20 | grep -i "reconcil"
    ```
    Expected: Recent reconciliation log lines for `lab-sync`
 
@@ -383,7 +383,7 @@ Verify that deleting a SyncProfile referenced by pods triggers a warning but doe
 ```bash
 # Create a temporary profile
 cat <<EOF | kubectl apply -n lab -f -
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: temp-profile
@@ -402,10 +402,10 @@ metadata:
   labels:
     app.kubernetes.io/name: gateway-temp
   annotations:
-    ignition-sync.io/inject: "true"
-    ignition-sync.io/cr-name: "lab-sync"
-    ignition-sync.io/sync-profile: "temp-profile"
-    ignition-sync.io/gateway-name: "temp-gw"
+    stoker.io/inject: "true"
+    stoker.io/cr-name: "lab-sync"
+    stoker.io/sync-profile: "temp-profile"
+    stoker.io/gateway-name: "temp-gw"
 spec:
   containers:
     - name: ignition
@@ -424,20 +424,20 @@ sleep 10
 
 1. **Controller still running**:
    ```bash
-   kubectl get pods -n ignition-sync-operator-system \
+   kubectl get pods -n stoker-system \
      -o jsonpath='{.items[0].status.phase}'
    ```
    Expected: `Running`
 
 2. **Warning logged** about missing profile:
    ```bash
-   kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manager --tail=30 | grep -i "profile\|warning"
+   kubectl logs -n stoker-system -l control-plane=controller-manager --tail=30 | grep -i "profile\|warning"
    ```
    Expected: Warning about profile `temp-profile` not found.
 
-3. **IgnitionSync CR still healthy**:
+3. **Stoker CR still healthy**:
    ```bash
-   kubectl get ignitionsync lab-sync -n lab -o jsonpath='{.status.refResolutionStatus}'
+   kubectl get stoker lab-sync -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
    Expected: Still `Resolved`
 
@@ -457,7 +457,7 @@ Verify that a paused profile is still accepted but signals gateways to halt sync
 
 ```bash
 cat <<EOF | kubectl apply -n lab -f -
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: paused-profile
@@ -501,7 +501,7 @@ Verify the CRD accepts the `dependsOn` field for profile dependency ordering (e.
 
 ```bash
 cat <<EOF | kubectl apply -n lab -f -
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: lab-depends-on
@@ -552,7 +552,7 @@ Verify the CRD accepts the `vars` map for template variables resolved by the age
 
 ```bash
 cat <<EOF | kubectl apply -n lab -f -
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: lab-with-vars
@@ -599,7 +599,7 @@ Verify the CRD accepts the `dryRun` boolean field. When true, the agent syncs to
 
 ```bash
 cat <<EOF | kubectl apply -n lab -f -
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: lab-dryrun
@@ -645,7 +645,7 @@ Verify the CRD accepts the `required` boolean on individual mappings. When `requ
 
 ```bash
 cat <<EOF | kubectl apply -n lab -f -
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: lab-required
@@ -688,12 +688,12 @@ kubectl delete syncprofile lab-required -n lab
 ## Lab 4.16: Pod with `ref-override` Annotation
 
 ### Purpose
-Verify that a pod with the `ignition-sync.io/ref-override` annotation is still discovered by the controller and the annotation is preserved. The actual ref override behavior (agent-side) is tested in Phase 5.
+Verify that a pod with the `stoker.io/ref-override` annotation is still discovered by the controller and the annotation is preserved. The actual ref override behavior (agent-side) is tested in Phase 5.
 
 ### Steps
 
 ```bash
-# Ensure IgnitionSync CR exists (from Lab 4.5)
+# Ensure Stoker CR exists (from Lab 4.5)
 # Create a pod with ref-override
 cat <<EOF | kubectl apply -n lab -f -
 apiVersion: v1
@@ -703,11 +703,11 @@ metadata:
   labels:
     app.kubernetes.io/name: gateway-ref-override
   annotations:
-    ignition-sync.io/inject: "true"
-    ignition-sync.io/cr-name: "lab-sync"
-    ignition-sync.io/sync-profile: "lab-site-profile"
-    ignition-sync.io/gateway-name: "override-gw"
-    ignition-sync.io/ref-override: "v1.0.0-rc1"
+    stoker.io/inject: "true"
+    stoker.io/cr-name: "lab-sync"
+    stoker.io/sync-profile: "lab-site-profile"
+    stoker.io/gateway-name: "override-gw"
+    stoker.io/ref-override: "v1.0.0-rc1"
 spec:
   containers:
     - name: ignition
@@ -720,7 +720,7 @@ EOF
 
 1. **Gateway discovered by controller**:
    ```bash
-   kubectl get ignitionsync lab-sync -n lab \
+   kubectl get stoker lab-sync -n lab \
      -o jsonpath='{.status.discoveredGateways[?(@.name=="override-gw")].name}'
    ```
    Expected: `override-gw`
@@ -728,7 +728,7 @@ EOF
 2. **Annotation preserved on pod**:
    ```bash
    kubectl get pod gateway-ref-override -n lab \
-     -o jsonpath='{.metadata.annotations.ignition-sync\.io/ref-override}'
+     -o jsonpath='{.metadata.annotations.stoker\.io/ref-override}'
    ```
    Expected: `v1.0.0-rc1`
 

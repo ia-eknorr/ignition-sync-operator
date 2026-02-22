@@ -2,15 +2,15 @@
 
 ## Objective
 
-Validate the mutating webhook that automatically injects the sync agent sidecar into Ignition gateway pods. After this phase, users no longer need to manually patch StatefulSets — they just add `ignition-sync.io/inject: "true"` to their pod template and the agent appears automatically.
+Validate the mutating webhook that automatically injects the sync agent sidecar into Ignition gateway pods. After this phase, users no longer need to manually patch StatefulSets — they just add `stoker.io/inject: "true"` to their pod template and the agent appears automatically.
 
 The webhook injects:
-- A `sync-agent` sidecar container
+- A `stoker-agent` sidecar container
 - An `emptyDir` volume (`sync-repo`) mounted at `/repo` for the agent to clone into
-- A projected secret volume (`git-credentials`) from the git token secret referenced in the IgnitionSync CR
+- A projected secret volume (`git-credentials`) from the git token secret referenced in the Stoker CR
 - Agent configuration via environment variables derived from pod annotations and CR spec
 
-**Prerequisite:** Complete [06 — Sync Agent](06-sync-agent.md). The agent binary must be proven to work. Remove any manual sidecar patches from the Ignition StatefulSet before starting.
+**Prerequisite:** Complete [06 — Sync Agent](06-stoker-agent.md). The agent binary must be proven to work. Remove any manual sidecar patches from the Ignition StatefulSet before starting.
 
 ---
 
@@ -43,8 +43,8 @@ kubectl rollout status statefulset/ignition -n lab --timeout=300s
 
 # Re-add operator annotations
 kubectl patch statefulset ignition -n lab --type=json -p='[
-  {"op": "add", "path": "/spec/template/metadata/annotations/ignition-sync.io~1cr-name", "value": "lab-sync"},
-  {"op": "add", "path": "/spec/template/metadata/annotations/ignition-sync.io~1gateway-name", "value": "lab-gateway"}
+  {"op": "add", "path": "/spec/template/metadata/annotations/stoker.io~1cr-name", "value": "lab-sync"},
+  {"op": "add", "path": "/spec/template/metadata/annotations/stoker.io~1gateway-name", "value": "lab-gateway"}
 ]'
 kubectl rollout status statefulset/ignition -n lab --timeout=300s
 ```
@@ -56,7 +56,7 @@ kubectl rollout status statefulset/ignition -n lab --timeout=300s
 ### Steps
 
 ```bash
-kubectl get mutatingwebhookconfiguration -l app.kubernetes.io/name=ignition-sync-operator
+kubectl get mutatingwebhookconfiguration -l app.kubernetes.io/name=stoker-operator
 ```
 
 ### What to Verify
@@ -80,14 +80,14 @@ kubectl get mutatingwebhookconfiguration -o json | jq '.items[] | {
 ## Lab 7.2: Injection — Pod With Annotation Gets Agent Sidecar
 
 ### Purpose
-Add `ignition-sync.io/inject: "true"` to the Ignition StatefulSet and verify the agent container is automatically injected with an emptyDir volume for repo clone and a projected git auth secret.
+Add `stoker.io/inject: "true"` to the Ignition StatefulSet and verify the agent container is automatically injected with an emptyDir volume for repo clone and a projected git auth secret.
 
 ### Steps
 
 ```bash
 # Add the inject annotation
 kubectl patch statefulset ignition -n lab --type=json -p='[
-  {"op": "add", "path": "/spec/template/metadata/annotations/ignition-sync.io~1inject", "value": "true"}
+  {"op": "add", "path": "/spec/template/metadata/annotations/stoker.io~1inject", "value": "true"}
 ]'
 
 # This triggers a rolling restart
@@ -96,11 +96,11 @@ kubectl rollout status statefulset/ignition -n lab --timeout=300s
 
 ### What to Verify
 
-1. **Pod has 2 containers** (ignition + sync-agent):
+1. **Pod has 2 containers** (ignition + stoker-agent):
    ```bash
    kubectl get pod ignition-0 -n lab -o jsonpath='{.spec.containers[*].name}'
    ```
-   Expected: `ignition sync-agent` (or similar)
+   Expected: `ignition stoker-agent` (or similar)
 
 2. **Injected volumes are emptyDir + secret** (NOT a PVC):
    ```bash
@@ -112,11 +112,11 @@ kubectl rollout status statefulset/ignition -n lab --timeout=300s
    ```
    Expected:
    - `sync-repo` — type `emptyDir`
-   - `git-credentials` — type `secret` (projected from the git token secret in the IgnitionSync CR)
+   - `git-credentials` — type `secret` (projected from the git token secret in the Stoker CR)
 
 3. **Agent container has correct volume mounts:**
    ```bash
-   kubectl get pod ignition-0 -n lab -o json | jq '[.spec.containers[] | select(.name == "sync-agent") | {
+   kubectl get pod ignition-0 -n lab -o json | jq '[.spec.containers[] | select(.name == "stoker-agent") | {
      name,
      image,
      volumeMounts: [.volumeMounts[] | {mountPath, name, readOnly}]
@@ -128,13 +128,13 @@ kubectl rollout status statefulset/ignition -n lab --timeout=300s
 
 4. **Agent container has env vars from annotations:**
    ```bash
-   kubectl get pod ignition-0 -n lab -o json | jq '[.spec.containers[] | select(.name == "sync-agent") | .env[] | {(.name): .value}] | add'
+   kubectl get pod ignition-0 -n lab -o json | jq '[.spec.containers[] | select(.name == "stoker-agent") | .env[] | {(.name): .value}] | add'
    ```
    Expected: `GATEWAY_NAME`, `CR_NAME`, `CR_NAMESPACE`, `GIT_AUTH_TOKEN_FILE`, etc. populated from annotations + CR spec
 
 5. **Agent is running and cloning to /repo:**
    ```bash
-   kubectl logs ignition-0 -n lab -c sync-agent --tail=20
+   kubectl logs ignition-0 -n lab -c stoker-agent --tail=20
    ```
 
 ---
@@ -156,17 +156,17 @@ Confirm the webhook injected an emptyDir (not a PVC) for repo storage, and that 
    ```bash
    kubectl get pod ignition-0 -n lab -o json | jq '.spec.volumes[] | select(.name == "git-credentials")'
    ```
-   Expected: A secret volume projected from the git token secret referenced in the IgnitionSync CR.
+   Expected: A secret volume projected from the git token secret referenced in the Stoker CR.
 
 3. **Verify the agent cloned the repo into the emptyDir:**
    ```bash
-   kubectl exec ignition-0 -n lab -c sync-agent -- ls /repo/
+   kubectl exec ignition-0 -n lab -c stoker-agent -- ls /repo/
    ```
    Expected: The contents of the git repository (project directories, etc.)
 
 4. **Verify git credentials are mounted read-only:**
    ```bash
-   kubectl exec ignition-0 -n lab -c sync-agent -- ls -la /etc/git-credentials/
+   kubectl exec ignition-0 -n lab -c stoker-agent -- ls -la /etc/git-credentials/
    ```
    Expected: Token file(s) present, mounted read-only.
 
@@ -229,12 +229,12 @@ Verify all supported pod annotations are correctly translated into agent environ
 ```bash
 # Patch StatefulSet with all annotation values
 kubectl patch statefulset ignition -n lab --type=json -p='[
-  {"op": "add", "path": "/spec/template/metadata/annotations/ignition-sync.io~1deployment-mode", "value": "prd-cloud"},
-  {"op": "add", "path": "/spec/template/metadata/annotations/ignition-sync.io~1tag-provider", "value": "my-provider"},
-  {"op": "add", "path": "/spec/template/metadata/annotations/ignition-sync.io~1sync-period", "value": "15"},
-  {"op": "add", "path": "/spec/template/metadata/annotations/ignition-sync.io~1exclude-patterns", "value": "**/*.bak,**/*.tmp"},
-  {"op": "add", "path": "/spec/template/metadata/annotations/ignition-sync.io~1system-name", "value": "lab-system"},
-  {"op": "add", "path": "/spec/template/metadata/annotations/ignition-sync.io~1system-name-template", "value": "{{.GatewayName}}-prod"}
+  {"op": "add", "path": "/spec/template/metadata/annotations/stoker.io~1deployment-mode", "value": "prd-cloud"},
+  {"op": "add", "path": "/spec/template/metadata/annotations/stoker.io~1tag-provider", "value": "my-provider"},
+  {"op": "add", "path": "/spec/template/metadata/annotations/stoker.io~1sync-period", "value": "15"},
+  {"op": "add", "path": "/spec/template/metadata/annotations/stoker.io~1exclude-patterns", "value": "**/*.bak,**/*.tmp"},
+  {"op": "add", "path": "/spec/template/metadata/annotations/stoker.io~1system-name", "value": "lab-system"},
+  {"op": "add", "path": "/spec/template/metadata/annotations/stoker.io~1system-name-template", "value": "{{.GatewayName}}-prod"}
 ]'
 
 kubectl rollout status statefulset/ignition -n lab --timeout=300s
@@ -243,7 +243,7 @@ kubectl rollout status statefulset/ignition -n lab --timeout=300s
 ### What to Verify
 
 ```bash
-kubectl get pod ignition-0 -n lab -o json | jq '[.spec.containers[] | select(.name == "sync-agent") | .env[] | {(.name): .value}] | add'
+kubectl get pod ignition-0 -n lab -o json | jq '[.spec.containers[] | select(.name == "stoker-agent") | .env[] | {(.name): .value}] | add'
 ```
 
 Expected env vars include:
@@ -258,12 +258,12 @@ Expected env vars include:
 
 ```bash
 kubectl patch statefulset ignition -n lab --type=json -p='[
-  {"op": "remove", "path": "/spec/template/metadata/annotations/ignition-sync.io~1deployment-mode"},
-  {"op": "remove", "path": "/spec/template/metadata/annotations/ignition-sync.io~1tag-provider"},
-  {"op": "remove", "path": "/spec/template/metadata/annotations/ignition-sync.io~1sync-period"},
-  {"op": "remove", "path": "/spec/template/metadata/annotations/ignition-sync.io~1exclude-patterns"},
-  {"op": "remove", "path": "/spec/template/metadata/annotations/ignition-sync.io~1system-name"},
-  {"op": "remove", "path": "/spec/template/metadata/annotations/ignition-sync.io~1system-name-template"}
+  {"op": "remove", "path": "/spec/template/metadata/annotations/stoker.io~1deployment-mode"},
+  {"op": "remove", "path": "/spec/template/metadata/annotations/stoker.io~1tag-provider"},
+  {"op": "remove", "path": "/spec/template/metadata/annotations/stoker.io~1sync-period"},
+  {"op": "remove", "path": "/spec/template/metadata/annotations/stoker.io~1exclude-patterns"},
+  {"op": "remove", "path": "/spec/template/metadata/annotations/stoker.io~1system-name"},
+  {"op": "remove", "path": "/spec/template/metadata/annotations/stoker.io~1system-name-template"}
 ]'
 kubectl rollout status statefulset/ignition -n lab --timeout=300s
 ```
@@ -278,7 +278,7 @@ Verify the injected sidecar container follows Kubernetes pod security standards 
 ### Steps
 
 ```bash
-kubectl get pod ignition-0 -n lab -o json | jq '.spec.containers[] | select(.name == "sync-agent") | .securityContext'
+kubectl get pod ignition-0 -n lab -o json | jq '.spec.containers[] | select(.name == "stoker-agent") | .securityContext'
 ```
 
 ### Expected
@@ -297,18 +297,18 @@ kubectl get pod ignition-0 -n lab -o json | jq '.spec.containers[] | select(.nam
 ## Lab 7.7: Injection with auto-derived CR Name
 
 ### Purpose
-When only one IgnitionSync CR exists in the namespace, `ignition-sync.io/cr-name` annotation should be optional — the webhook auto-derives it.
+When only one Stoker CR exists in the namespace, `stoker.io/cr-name` annotation should be optional — the webhook auto-derives it.
 
 ### Steps
 
 ```bash
 # Ensure only one CR exists
-kubectl get ignitionsyncs -n lab
+kubectl get stokers -n lab
 # Should show only lab-sync
 
 # Remove cr-name annotation
 kubectl patch statefulset ignition -n lab --type=json -p='[
-  {"op": "remove", "path": "/spec/template/metadata/annotations/ignition-sync.io~1cr-name"}
+  {"op": "remove", "path": "/spec/template/metadata/annotations/stoker.io~1cr-name"}
 ]'
 kubectl rollout status statefulset/ignition -n lab --timeout=300s
 ```
@@ -317,7 +317,7 @@ kubectl rollout status statefulset/ignition -n lab --timeout=300s
 
 ```bash
 # Agent container should still have CR_NAME set (auto-derived)
-kubectl get pod ignition-0 -n lab -o json | jq '[.spec.containers[] | select(.name == "sync-agent") | .env[] | select(.name=="CR_NAME")]'
+kubectl get pod ignition-0 -n lab -o json | jq '[.spec.containers[] | select(.name == "stoker-agent") | .env[] | select(.name=="CR_NAME")]'
 ```
 
 Expected: `CR_NAME: "lab-sync"` (auto-derived from the only CR in namespace).
@@ -325,7 +325,7 @@ Expected: `CR_NAME: "lab-sync"` (auto-derived from the only CR in namespace).
 ### Restore
 ```bash
 kubectl patch statefulset ignition -n lab --type=json -p='[
-  {"op": "add", "path": "/spec/template/metadata/annotations/ignition-sync.io~1cr-name", "value": "lab-sync"}
+  {"op": "add", "path": "/spec/template/metadata/annotations/stoker.io~1cr-name", "value": "lab-sync"}
 ]'
 kubectl rollout status statefulset/ignition -n lab --timeout=300s
 ```
@@ -342,7 +342,7 @@ The ultimate integration test. With injection enabled, change the git ref and ve
 
 ### How It Works
 
-When you update the IgnitionSync CR with a new git ref:
+When you update the Stoker CR with a new git ref:
 1. **Controller resolves new ref** via `git ls-remote` -> updates the metadata ConfigMap with commit hash
 2. **Agent detects ConfigMap change** via K8s watch -> clones/fetches the new commit to local emptyDir at `/repo`
 3. **Agent syncs updated files** to `/usr/local/bin/ignition/data/projects/` -> triggers Ignition scan API call
@@ -352,34 +352,34 @@ When you update the IgnitionSync CR with a new git ref:
 
 ```bash
 # Start at v1.0.0
-kubectl patch ignitionsync lab-sync -n lab --type=merge \
+kubectl patch stoker lab-sync -n lab --type=merge \
   -p '{"spec":{"git":{"ref":"v1.0.0"}}}'
 sleep 60
 
 # Verify ref was resolved
-kubectl get ignitionsync lab-sync -n lab -o json | jq '.status.conditions[] | select(.type=="RefResolved")'
+kubectl get stoker lab-sync -n lab -o json | jq '.status.conditions[] | select(.type=="RefResolved")'
 # Expected: status "True", reason "Resolved"
 
 # Check repo contents on the agent's local emptyDir
-kubectl exec ignition-0 -n lab -c sync-agent -- ls /repo/
+kubectl exec ignition-0 -n lab -c stoker-agent -- ls /repo/
 echo "^ Repo should be cloned at the v1.0.0 ref"
 
 # Check what views exist in Ignition
-kubectl exec ignition-0 -n lab -c sync-agent -- \
+kubectl exec ignition-0 -n lab -c stoker-agent -- \
   ls /usr/local/bin/ignition/data/projects/MyProject/com.inductiveautomation.perspective/views/ 2>/dev/null
 echo "^ Should only have MainView"
 
 # Switch to v2.0.0
-kubectl patch ignitionsync lab-sync -n lab --type=merge \
+kubectl patch stoker lab-sync -n lab --type=merge \
   -p '{"spec":{"git":{"ref":"v2.0.0"}}}'
 sleep 60
 
 # Verify ref resolved again
-kubectl get ignitionsync lab-sync -n lab -o json | jq '.status.conditions[] | select(.type=="RefResolved")'
+kubectl get stoker lab-sync -n lab -o json | jq '.status.conditions[] | select(.type=="RefResolved")'
 # Expected: status "True", reason "Resolved"
 
 # Check again
-kubectl exec ignition-0 -n lab -c sync-agent -- \
+kubectl exec ignition-0 -n lab -c stoker-agent -- \
   ls /usr/local/bin/ignition/data/projects/MyProject/com.inductiveautomation.perspective/views/ 2>/dev/null
 echo "^ Should now have MainView AND SecondView"
 ```
@@ -388,7 +388,7 @@ echo "^ Should now have MainView AND SecondView"
 
 ### Restore
 ```bash
-kubectl patch ignitionsync lab-sync -n lab --type=merge \
+kubectl patch stoker lab-sync -n lab --type=merge \
   -p '{"spec":{"git":{"ref":"main"}}}'
 ```
 

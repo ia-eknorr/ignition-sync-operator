@@ -21,7 +21,7 @@ type SyncProfileSpec struct {
 	DeploymentMode *DeploymentModeSpec `json:"deploymentMode,omitempty"`
 
 	// excludePatterns are glob patterns for files to exclude.
-	// Merged with IgnitionSync global excludePatterns (additive).
+	// Merged with Stoker global excludePatterns (additive).
 	// +optional
 	ExcludePatterns []string `json:"excludePatterns,omitempty"`
 

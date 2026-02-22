@@ -15,8 +15,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	syncv1alpha1 "github.com/ia-eknorr/ignition-sync-operator/api/v1alpha1"
-	"github.com/ia-eknorr/ignition-sync-operator/pkg/conditions"
+	stokerv1alpha1 "github.com/ia-eknorr/stoker-operator/api/v1alpha1"
+	"github.com/ia-eknorr/stoker-operator/pkg/conditions"
 )
 
 // SyncProfileReconciler reconciles a SyncProfile object.
@@ -26,14 +26,14 @@ type SyncProfileReconciler struct {
 	Recorder record.EventRecorder
 }
 
-// +kubebuilder:rbac:groups=sync.ignition.io,resources=syncprofiles,verbs=get;list;watch;update;patch
-// +kubebuilder:rbac:groups=sync.ignition.io,resources=syncprofiles/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=stoker.io,resources=syncprofiles,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=stoker.io,resources=syncprofiles/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 func (r *SyncProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
-	var profile syncv1alpha1.SyncProfile
+	var profile stokerv1alpha1.SyncProfile
 	if err := r.Get(ctx, req.NamespacedName, &profile); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -63,7 +63,7 @@ func (r *SyncProfileReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 }
 
 // validateSyncProfile checks that the profile spec is safe and well-formed.
-func validateSyncProfile(profile *syncv1alpha1.SyncProfile) error {
+func validateSyncProfile(profile *stokerv1alpha1.SyncProfile) error {
 	for i, m := range profile.Spec.Mappings {
 		if err := validatePath(m.Source, fmt.Sprintf("mappings[%d].source", i)); err != nil {
 			return err
@@ -99,7 +99,7 @@ func containsTraversal(p string) bool {
 }
 
 // setProfileCondition sets a condition on the SyncProfile's status.
-func setProfileCondition(profile *syncv1alpha1.SyncProfile, condType string, status metav1.ConditionStatus, reason, message string) {
+func setProfileCondition(profile *stokerv1alpha1.SyncProfile, condType string, status metav1.ConditionStatus, reason, message string) {
 	condition := metav1.Condition{
 		Type:               condType,
 		Status:             status,
@@ -133,13 +133,13 @@ type dependencyError struct {
 func (e *dependencyError) Error() string { return e.message }
 
 // validateDependencies checks for missing dependency references and cycles.
-func (r *SyncProfileReconciler) validateDependencies(ctx context.Context, profile *syncv1alpha1.SyncProfile) *dependencyError {
+func (r *SyncProfileReconciler) validateDependencies(ctx context.Context, profile *stokerv1alpha1.SyncProfile) *dependencyError {
 	if len(profile.Spec.DependsOn) == 0 {
 		return nil
 	}
 
 	// List all profiles in the namespace to build the adjacency map.
-	var profileList syncv1alpha1.SyncProfileList
+	var profileList stokerv1alpha1.SyncProfileList
 	if err := r.List(ctx, &profileList, client.InNamespace(profile.Namespace)); err != nil {
 		return &dependencyError{
 			reason:  conditions.ReasonValidationFailed,
@@ -230,7 +230,7 @@ func buildCyclePath(cycleNode, from string, parent map[string]string) string {
 // SetupWithManager sets up the SyncProfile controller with the Manager.
 func (r *SyncProfileReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&syncv1alpha1.SyncProfile{}).
+		For(&stokerv1alpha1.SyncProfile{}).
 		Named("syncprofile").
 		Complete(r)
 }

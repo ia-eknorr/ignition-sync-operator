@@ -13,8 +13,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	syncv1alpha1 "github.com/ia-eknorr/ignition-sync-operator/api/v1alpha1"
-	"github.com/ia-eknorr/ignition-sync-operator/internal/syncengine"
+	stokerv1alpha1 "github.com/ia-eknorr/stoker-operator/api/v1alpha1"
+	"github.com/ia-eknorr/stoker-operator/internal/syncengine"
 )
 
 // TemplateContext holds the variables available in mapping templates.
@@ -27,8 +27,8 @@ type TemplateContext struct {
 }
 
 // fetchSyncProfile reads a SyncProfile CR from the K8s API.
-func fetchSyncProfile(ctx context.Context, c client.Client, namespace, name string) (*syncv1alpha1.SyncProfileSpec, error) {
-	sp := &syncv1alpha1.SyncProfile{}
+func fetchSyncProfile(ctx context.Context, c client.Client, namespace, name string) (*stokerv1alpha1.SyncProfileSpec, error) {
+	sp := &stokerv1alpha1.SyncProfile{}
 	key := types.NamespacedName{Name: name, Namespace: namespace}
 
 	if err := c.Get(ctx, key, sp); err != nil {
@@ -85,7 +85,7 @@ func validateResolvedPath(path, label string) error {
 // buildSyncPlan constructs a SyncPlan from a SyncProfile spec, template context,
 // and runtime paths.
 func buildSyncPlan(
-	profile *syncv1alpha1.SyncProfileSpec,
+	profile *stokerv1alpha1.SyncProfileSpec,
 	tmplCtx *TemplateContext,
 	repoPath string,
 	liveDir string,

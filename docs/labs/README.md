@@ -48,7 +48,7 @@ Each phase doc follows this structure:
 | [03 — Gateway Discovery](03-gateway-discovery.md) | 3 | Pod annotation discovery, status, conditions |
 | [04 — SyncProfile](04-sync-profile.md) | 4 | SyncProfile CRD, 3-tier config, backward compat |
 | [05 — Webhook Receiver](05-webhook-receiver.md) | 5 | HTTP handler, HMAC, payload formats |
-| [06 — Sync Agent](06-sync-agent.md) | 6 | Git clone, file sync, scan API, status reporting |
+| [06 — Sync Agent](06-stoker-agent.md) | 6 | Git clone, file sync, scan API, status reporting |
 | [07 — Sidecar Injection](07-sidecar-injection.md) | 7 | Mutating webhook, pod injection, git secret injection |
 | [08 — Helm Chart](08-helm-chart.md) | 8 | Operator helm install, values, upgrades |
 | [09 — Observability](09-observability.md) | 9 | Metrics, structured logging, events |
@@ -58,7 +58,7 @@ Each phase doc follows this structure:
 
 **Do not proceed to the next phase until all labs in the current phase pass.** If a lab fails:
 
-1. Examine operator logs: `kubectl logs -n ignition-sync-operator-system -l control-plane=controller-manager --tail=100`
+1. Examine operator logs: `kubectl logs -n stoker-system -l control-plane=controller-manager --tail=100`
 2. Examine Ignition gateway logs: `kubectl logs -n lab -l app.kubernetes.io/name=ignition --tail=100`
 3. Check events: `kubectl get events -n lab --sort-by=.lastTimestamp`
 4. Identify root cause, fix code, rebuild image, reload into kind, re-run the failing lab
@@ -69,9 +69,9 @@ Each phase doc follows this structure:
 These are used throughout all labs:
 
 ```bash
-export KIND_CLUSTER=ignition-sync-lab
-export OPERATOR_IMG=ignition-sync-operator:lab
-export OPERATOR_NS=ignition-sync-operator-system
+export KIND_CLUSTER=stoker-lab
+export OPERATOR_IMG=stoker-operator:lab
+export OPERATOR_NS=stoker-system
 export LAB_NS=lab
 export GIT_REPO_URL=https://github.com/ia-eknorr/test-ignition-project.git
 ```

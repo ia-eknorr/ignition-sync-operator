@@ -1,5 +1,5 @@
-<!-- Part of: Ignition Sync Operator Architecture (v3) -->
-<!-- See also: 00-overview.md, 01-crd.md, 02-controller.md, 04-sync-profile.md, 06-sync-agent.md -->
+<!-- Part of: Stoker Architecture (v3) -->
+<!-- See also: 00-overview.md, 01-crd.md, 02-controller.md, 04-sync-profile.md, 06-stoker-agent.md -->
 
 # Sync Agent — Development Plan
 
@@ -80,13 +80,13 @@ The agent needs its own ServiceAccount, Role, and RoleBinding. Currently none ex
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: ignition-sync-agent
+  name: stoker-agent
   namespace: system  # Helm-templated
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: ignition-sync-agent
+  name: stoker-agent
   namespace: system
 rules:
   # Read metadata ConfigMap (controller → agent trigger)
@@ -97,12 +97,12 @@ rules:
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["create", "update", "patch"]
-  # Read IgnitionSync CR (for git URL, auth ref, excludes, gateway spec)
-  - apiGroups: ["sync.ignition.io"]
-    resources: ["ignitionsyncs"]
+  # Read Stoker CR (for git URL, auth ref, excludes, gateway spec)
+  - apiGroups: ["stoker.io"]
+    resources: ["stokers"]
     verbs: ["get", "list", "watch"]
   # Read SyncProfile CR
-  - apiGroups: ["sync.ignition.io"]
+  - apiGroups: ["stoker.io"]
     resources: ["syncprofiles"]
     verbs: ["get", "list", "watch"]
   # Read git auth + API key secrets (scoped at injection time)
@@ -113,15 +113,15 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: ignition-sync-agent
+  name: stoker-agent
   namespace: system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: ignition-sync-agent
+  name: stoker-agent
 subjects:
   - kind: ServiceAccount
-    name: ignition-sync-agent
+    name: stoker-agent
     namespace: system
 ```
 
@@ -131,7 +131,7 @@ subjects:
 
 The current metadata ConfigMap only has `commit`, `ref`, `trigger`. The agent needs more to bootstrap without reading the CR directly.
 
-**Update** `ensureMetadataConfigMap()` in [ignitionsync_controller.go](internal/controller/ignitionsync_controller.go) to include:
+**Update** `ensureMetadataConfigMap()` in [stoker_controller.go](internal/controller/stoker_controller.go) to include:
 
 ```go
 Data: map[string]string{
@@ -170,7 +170,7 @@ env:
       fieldRef:
         fieldPath: metadata.namespace
   - name: CR_NAME
-    value: "my-isync"        # from AnnotationCRName
+    value: "my-stoker"        # from AnnotationCRName
   - name: GATEWAY_NAME
     value: "site-gateway"    # from AnnotationGatewayName or app.kubernetes.io/name label
 ```
@@ -193,7 +193,7 @@ The agent reads `AnnotationSyncProfile` and `AnnotationRefOverride` from the pro
 **Add to** [conditions.go](pkg/conditions/conditions.go):
 
 ```go
-// Agent lifecycle conditions (set on IgnitionSync CR by controller, reading status CM)
+// Agent lifecycle conditions (set on Stoker CR by controller, reading status CM)
 TypeAgentReady     = "AgentReady"     // Agent sidecar is running and healthy
 TypeRefSkew        = "RefSkew"        // Agent synced a different ref than controller expects
 TypeDependenciesMet = "DependenciesMet" // All dependsOn profiles are Synced (SyncProfile condition)
@@ -222,7 +222,7 @@ The `Mappings` printcolumn uses JSONPath `.spec.mappings` which returns an array
 **Add to** [syncprofile_controller.go](internal/controller/syncprofile_controller.go):
 
 ```go
-func validateDependsOnCycles(ctx context.Context, c client.Client, profile *syncv1alpha1.SyncProfile) error {
+func validateDependsOnCycles(ctx context.Context, c client.Client, profile *stokerv1alpha1.SyncProfile) error {
     visited := map[string]bool{profile.Name: true}
     queue := make([]string, 0, len(profile.Spec.DependsOn))
     for _, dep := range profile.Spec.DependsOn {
@@ -235,7 +235,7 @@ func validateDependsOnCycles(ctx context.Context, c client.Client, profile *sync
             return fmt.Errorf("dependency cycle detected: %s", name)
         }
         visited[name] = true
-        var dep syncv1alpha1.SyncProfile
+        var dep stokerv1alpha1.SyncProfile
         if err := c.Get(ctx, types.NamespacedName{Name: name, Namespace: profile.Namespace}, &dep); err != nil {
             continue // missing profile is a different validation
         }
@@ -249,11 +249,11 @@ func validateDependsOnCycles(ctx context.Context, c client.Client, profile *sync
 
 ### 2.0.7 — Fix Redundant SyncProfile Self-Watch
 
-The SyncProfile controller's `SetupWithManager` has a redundant `.Watches(&syncv1alpha1.SyncProfile{}, ...)` on its own `For` resource. The `For()` already watches SyncProfile changes. The Watches call should enqueue **IgnitionSync** CRs, not SyncProfile CRs.
+The SyncProfile controller's `SetupWithManager` has a redundant `.Watches(&stokerv1alpha1.SyncProfile{}, ...)` on its own `For` resource. The `For()` already watches SyncProfile changes. The Watches call should enqueue **Stoker** CRs, not SyncProfile CRs.
 
-**Fix:** The `findIgnitionSyncsForProfile` function is correct (returns IgnitionSync requests), but it's wired to the SyncProfile controller. It should be wired to the **IgnitionSync controller** instead, or the SyncProfile controller should re-reconcile IgnitionSync CRs via a cross-controller watch.
+**Fix:** The `findStokersForProfile` function is correct (returns Stoker requests), but it's wired to the SyncProfile controller. It should be wired to the **Stoker controller** instead, or the SyncProfile controller should re-reconcile Stoker CRs via a cross-controller watch.
 
-**Simplest fix:** Remove the `.Watches()` from the SyncProfile controller entirely. The IgnitionSync controller already watches SyncProfile changes via its own `Watches` clause.
+**Simplest fix:** Remove the `.Watches()` from the SyncProfile controller entirely. The Stoker controller already watches SyncProfile changes via its own `Watches` clause.
 
 ---
 
@@ -275,8 +275,8 @@ type AgentConfig struct {
     RepoPath     string // "/repo"
     TargetPath   string // "/ignition-data"
     StagingDir   string // "/ignition-data/.sync-staging"
-    GitAuthPath  string // "/etc/ignition-sync/git-credentials"
-    APIKeyPath   string // "/etc/ignition-sync/api-key"
+    GitAuthPath  string // "/etc/stoker/git-credentials"
+    APIKeyPath   string // "/etc/stoker/api-key"
     AnnotationsPath string // "/etc/podinfo/annotations"
 
     // Read from metadata ConfigMap (mutable)
@@ -657,14 +657,14 @@ On subsequent fetches, fetch only the needed commit. This addresses Security H-1
 
 ### 6.4.1 — Read Metadata ConfigMap
 
-The agent watches `ignition-sync-metadata-{crName}` for changes using a scoped informer (only ConfigMaps in the agent's namespace, filtered by label `ignition-sync.io/cr-name`).
+The agent watches `stoker-metadata-{crName}` for changes using a scoped informer (only ConfigMaps in the agent's namespace, filtered by label `stoker.io/cr-name`).
 
 ```go
 func (a *Agent) readMetadataConfigMap(ctx context.Context) (*MetadataConfig, error) {
     var cm corev1.ConfigMap
     key := types.NamespacedName{
         Namespace: a.config.Namespace,
-        Name:      fmt.Sprintf("ignition-sync-metadata-%s", a.config.CRName),
+        Name:      fmt.Sprintf("stoker-metadata-%s", a.config.CRName),
     }
     if err := a.client.Get(ctx, key, &cm); err != nil {
         return nil, err
@@ -685,7 +685,7 @@ Each agent writes its own key (gateway name) within the shared status ConfigMap.
 
 ```go
 func (a *Agent) writeStatus(ctx context.Context, result *SyncResult, ref, commit string) error {
-    cmName := fmt.Sprintf("ignition-sync-status-%s", a.config.CRName)
+    cmName := fmt.Sprintf("stoker-status-%s", a.config.CRName)
 
     // Read current ConfigMap
     var cm corev1.ConfigMap
@@ -896,9 +896,9 @@ Use `slog` (Go stdlib) or `logr` (controller-runtime compatible). Log key events
 Emit K8s Events for major state transitions:
 
 ```go
-recorder.Event(isync, corev1.EventTypeNormal, "SyncCompleted",
+recorder.Event(stk, corev1.EventTypeNormal, "SyncCompleted",
     fmt.Sprintf("Gateway %s synced to %s (%d files changed)", gwName, commit[:8], changedCount))
-recorder.Event(isync, corev1.EventTypeWarning, "SyncFailed",
+recorder.Event(stk, corev1.EventTypeWarning, "SyncFailed",
     fmt.Sprintf("Gateway %s sync failed: %s", gwName, err.Error()))
 ```
 
@@ -997,27 +997,27 @@ After the agent is functional, update the controller to:
 
 ### 10.8.1 — Read Agent Status from ConfigMap
 
-The controller reads `ignition-sync-status-{crName}` and updates `DiscoveredGateway` status fields:
+The controller reads `stoker-status-{crName}` and updates `DiscoveredGateway` status fields:
 
 ```go
-func (r *Reconciler) updateGatewayStatusFromConfigMap(ctx context.Context, isync *v1alpha1.IgnitionSync) error {
+func (r *Reconciler) updateGatewayStatusFromConfigMap(ctx context.Context, stk *v1alpha1.Stoker) error {
     var statusCM corev1.ConfigMap
     key := types.NamespacedName{
-        Namespace: isync.Namespace,
-        Name:      fmt.Sprintf("ignition-sync-status-%s", isync.Name),
+        Namespace: stk.Namespace,
+        Name:      fmt.Sprintf("stoker-status-%s", stk.Name),
     }
     if err := r.Get(ctx, key, &statusCM); err != nil {
         return client.IgnoreNotFound(err)
     }
 
-    for i, gw := range isync.Status.DiscoveredGateways {
+    for i, gw := range stk.Status.DiscoveredGateways {
         if data, ok := statusCM.Data[gw.Name]; ok {
             var report GatewayStatusReport
             json.Unmarshal([]byte(data), &report)
-            isync.Status.DiscoveredGateways[i].SyncStatus = "Synced"
-            isync.Status.DiscoveredGateways[i].SyncedCommit = report.Commit
-            isync.Status.DiscoveredGateways[i].SyncedRef = report.Ref
-            isync.Status.DiscoveredGateways[i].LastSyncTime = &metav1.Time{Time: report.SyncedAt}
+            stk.Status.DiscoveredGateways[i].SyncStatus = "Synced"
+            stk.Status.DiscoveredGateways[i].SyncedCommit = report.Commit
+            stk.Status.DiscoveredGateways[i].SyncedRef = report.Ref
+            stk.Status.DiscoveredGateways[i].LastSyncTime = &metav1.Time{Time: report.SyncedAt}
             // ... etc
         }
     }
@@ -1027,7 +1027,7 @@ func (r *Reconciler) updateGatewayStatusFromConfigMap(ctx context.Context, isync
 
 ### 10.8.2 — Detect RefSkew
 
-If `gw.SyncedRef != isync.Status.LastSyncRef`, set `TypeRefSkew` condition as a warning. This detects gateways using `ref-override`.
+If `gw.SyncedRef != stk.Status.LastSyncRef`, set `TypeRefSkew` condition as a warning. This detects gateways using `ref-override`.
 
 ### 10.8.3 — SyncProfile GatewayCount
 

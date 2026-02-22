@@ -13,8 +13,8 @@ import (
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	syncv1alpha1 "github.com/ia-eknorr/ignition-sync-operator/api/v1alpha1"
-	synctypes "github.com/ia-eknorr/ignition-sync-operator/pkg/types"
+	stokerv1alpha1 "github.com/ia-eknorr/stoker-operator/api/v1alpha1"
+	stokertypes "github.com/ia-eknorr/stoker-operator/pkg/types"
 )
 
 const testRef = "v2.0.0"
@@ -83,7 +83,7 @@ func TestParsePayload_InvalidJSON(t *testing.T) {
 
 func newTestReceiver(hmacSecret string, objects ...runtime.Object) (*Receiver, *http.ServeMux) {
 	scheme := runtime.NewScheme()
-	_ = syncv1alpha1.AddToScheme(scheme)
+	_ = stokerv1alpha1.AddToScheme(scheme)
 
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
@@ -102,19 +102,19 @@ func newTestReceiver(hmacSecret string, objects ...runtime.Object) (*Receiver, *
 	return rv, mux
 }
 
-func testCR() *syncv1alpha1.IgnitionSync {
-	return &syncv1alpha1.IgnitionSync{
+func testCR() *stokerv1alpha1.Stoker {
+	return &stokerv1alpha1.Stoker{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-sync",
 			Namespace: "default",
 		},
-		Spec: syncv1alpha1.IgnitionSyncSpec{
-			Git: syncv1alpha1.GitSpec{
+		Spec: stokerv1alpha1.StokerSpec{
+			Git: stokerv1alpha1.GitSpec{
 				Repo: "git@github.com:example/test.git",
 				Ref:  "main",
 			},
-			Gateway: syncv1alpha1.GatewaySpec{
-				APIKeySecretRef: syncv1alpha1.SecretKeyRef{
+			Gateway: stokerv1alpha1.GatewaySpec{
+				APIKeySecretRef: stokerv1alpha1.SecretKeyRef{
 					Name: "api-key",
 					Key:  "apiKey",
 				},
@@ -198,18 +198,18 @@ func TestHandler_AnnotatesCR(t *testing.T) {
 	}
 
 	// Verify the CR was annotated
-	var cr syncv1alpha1.IgnitionSync
+	var cr stokerv1alpha1.Stoker
 	err := rv.Client.Get(req.Context(), types.NamespacedName{Name: "my-sync", Namespace: "default"}, &cr)
 	if err != nil {
 		t.Fatalf("failed to get CR: %v", err)
 	}
-	if cr.Annotations[synctypes.AnnotationRequestedRef] != testRef {
-		t.Fatalf("expected requested-ref=v2.0.0, got %q", cr.Annotations[synctypes.AnnotationRequestedRef])
+	if cr.Annotations[stokertypes.AnnotationRequestedRef] != testRef {
+		t.Fatalf("expected requested-ref=v2.0.0, got %q", cr.Annotations[stokertypes.AnnotationRequestedRef])
 	}
-	if cr.Annotations[synctypes.AnnotationRequestedBy] != SourceGeneric {
-		t.Fatalf("expected requested-by=generic, got %q", cr.Annotations[synctypes.AnnotationRequestedBy])
+	if cr.Annotations[stokertypes.AnnotationRequestedBy] != SourceGeneric {
+		t.Fatalf("expected requested-by=generic, got %q", cr.Annotations[stokertypes.AnnotationRequestedBy])
 	}
-	if cr.Annotations[synctypes.AnnotationRequestedAt] == "" {
+	if cr.Annotations[stokertypes.AnnotationRequestedAt] == "" {
 		t.Fatal("expected requested-at to be set")
 	}
 }
@@ -217,7 +217,7 @@ func TestHandler_AnnotatesCR(t *testing.T) {
 func TestHandler_DuplicateRefReturns200(t *testing.T) {
 	cr := testCR()
 	cr.Annotations = map[string]string{
-		synctypes.AnnotationRequestedRef: testRef,
+		stokertypes.AnnotationRequestedRef: testRef,
 	}
 	_, mux := newTestReceiver("", cr)
 

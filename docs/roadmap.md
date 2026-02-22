@@ -8,7 +8,7 @@ is limited.
 
 ### Completed
 
-- IgnitionSync CRD with git ref resolution via `ls-remote`
+- Stoker CRD with git ref resolution via `ls-remote`
 - SyncProfile CRD with declarative file mappings and deployment mode overlays
 - Agent sidecar with sync engine (clone, staging, merge, orphan cleanup)
 - MutatingWebhook for automatic sidecar injection
@@ -49,8 +49,8 @@ Focus on condition types, multi-tenancy, and dependency ordering.
 - `RefSkew` detection (controller detects gateway `syncedRef` drift from CR `lastSyncRef`)
 - `DependenciesMet` condition enforcement for `dependsOn` profiles
 - Downward API annotation reader (enables ref-override and profile switching without pod restart)
-- Ref override support via `ignition-sync.io/ref-override` annotation
-- Per-gateway sync status conditions on the IgnitionSync CR
+- Ref override support via `stoker.io/ref-override` annotation
+- Per-gateway sync status conditions on the Stoker CR
 - Namespace-scoped agent RBAC automation (controller creates RoleBindings)
 - Resource quotas and rate limiting for concurrent syncs
 - Audit logging for all sync operations

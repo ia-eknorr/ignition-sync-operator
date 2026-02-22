@@ -1,7 +1,7 @@
-<!-- Part of: Ignition Sync Operator Architecture (v3) -->
-<!-- See also: 00-overview.md, 01-crd.md, 02-controller.md, 04-sync-profile.md, 06-sync-agent.md, 08-deployment-operations.md, 09-security-testing-roadmap.md -->
+<!-- Part of: Stoker Architecture (v3) -->
+<!-- See also: 00-overview.md, 01-crd.md, 02-controller.md, 04-sync-profile.md, 06-stoker-agent.md, 08-deployment-operations.md, 09-security-testing-roadmap.md -->
 
-# Ignition Sync Operator — Integration Patterns, Examples & Enterprise
+# Stoker — Integration Patterns, Examples & Enterprise
 
 ## Integration Patterns
 
@@ -18,16 +18,16 @@ metadata:
 data:
   trigger.on-sync-succeeded: |
     - when: app.status.operationState.phase in ['Succeeded']
-      send: [ignition-sync-webhook]
-  template.ignition-sync-webhook: |
+      send: [stoker-webhook]
+  template.stoker-webhook: |
     webhook:
-      ignition-sync:
+      stoker:
         method: POST
         path: /webhook/{{.app.metadata.namespace}}/{{.app.metadata.annotations.sync_ignition_io/cr-name}}
         body: |
           {"ref": "{{.app.metadata.annotations.git_ref}}"}
-  service.webhook.ignition-sync:
-    url: http://ignition-sync-controller.ignition-sync-system.svc:8443
+  service.webhook.stoker:
+    url: http://stoker-controller.stoker-system.svc:8443
     headers:
       - name: Content-Type
         value: application/json
@@ -54,11 +54,11 @@ spec:
               - key: git.ref
                 value: ${{ freight.commits[0].tag }}
 
-        # New: directly update the IgnitionSync CR
+        # New: directly update the Stoker CR
         - uses: http
           config:
             method: POST
-            url: http://ignition-sync-controller.ignition-sync-system.svc:8443/webhook/site1/proveit-sync
+            url: http://stoker-controller.stoker-system.svc:8443/webhook/site1/proveit-sync
             body: '{"ref": "${{ freight.commits[0].tag }}"}'
 ```
 
@@ -83,9 +83,9 @@ The `ignition` chart at `charts.ia.io` doesn't need any changes. Users add annot
 myGateway:
   gateway:
     podAnnotations:
-      ignition-sync.io/inject: "true"
-      ignition-sync.io/cr-name: "my-sync"
-      ignition-sync.io/service-path: "services/gateway"
+      stoker.io/inject: "true"
+      stoker.io/cr-name: "my-sync"
+      stoker.io/service-path: "services/gateway"
 ```
 
 The mutating webhook handles the rest. If the ignition chart later adds first-class `gitSync` values, it can generate these annotations from a friendlier schema — but the webhook-based approach means **any version of the ignition chart works today**.
@@ -95,14 +95,14 @@ The mutating webhook handles the rest. If the ignition chart later adds first-cl
 ## Worked Examples
 
 > These examples use the [SyncProfile CRD](04-sync-profile.md) for file routing, separating
-> infrastructure concerns (IgnitionSync) from file mappings (SyncProfile).
+> infrastructure concerns (Stoker) from file mappings (SyncProfile).
 
 ### ProveIt 2026 (5 gateways, 1 site + 4 areas)
 
 ```yaml
-# IgnitionSync CR — pure infrastructure, no file routing
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+# Stoker CR — pure infrastructure, no file routing
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: proveit-sync
   namespace: site1
@@ -136,13 +136,13 @@ spec:
     enabled: false
   agent:
     image:
-      repository: ghcr.io/ia-eknorr/ignition-sync-agent
+      repository: ghcr.io/ia-eknorr/stoker-agent
       tag: "1.0.0"
 ```
 
 ```yaml
 # SyncProfile: site gateway role
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: proveit-site
@@ -170,7 +170,7 @@ spec:
     - "**/tag-*/System/"
 ---
 # SyncProfile: area gateway role (shared by all 4 areas)
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: proveit-area
@@ -190,16 +190,16 @@ spec:
 site:
   gateway:
     podAnnotations:
-      ignition-sync.io/inject: "true"
-      ignition-sync.io/cr-name: "proveit-sync"
-      ignition-sync.io/sync-profile: "proveit-site"
+      stoker.io/inject: "true"
+      stoker.io/cr-name: "proveit-sync"
+      stoker.io/sync-profile: "proveit-site"
 
 area1:
   gateway:
     podAnnotations:
-      ignition-sync.io/inject: "true"
-      ignition-sync.io/cr-name: "proveit-sync"
-      ignition-sync.io/sync-profile: "proveit-area"
+      stoker.io/inject: "true"
+      stoker.io/cr-name: "proveit-sync"
+      stoker.io/sync-profile: "proveit-area"
 
 # area2, area3, area4 — identical to area1
 ```
@@ -217,9 +217,9 @@ What this replaces in the current site chart:
 ### Public Demo (2 gateways, replicated frontend)
 
 ```yaml
-# IgnitionSync CR
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+# Stoker CR
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: demo-sync
   namespace: public-demo
@@ -242,13 +242,13 @@ spec:
       key: apiKey
   agent:
     image:
-      repository: ghcr.io/ia-eknorr/ignition-sync-agent
+      repository: ghcr.io/ia-eknorr/stoker-agent
       tag: "1.0.0"
 ```
 
 ```yaml
 # SyncProfiles for each gateway role
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: demo-frontend
@@ -260,7 +260,7 @@ spec:
     - source: "services/ignition-frontend/config"
       destination: "config"
 ---
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: demo-backend
@@ -279,16 +279,16 @@ frontend:
   gateway:
     replicas: 5
     podAnnotations:
-      ignition-sync.io/inject: "true"
-      ignition-sync.io/cr-name: "demo-sync"
-      ignition-sync.io/sync-profile: "demo-frontend"
+      stoker.io/inject: "true"
+      stoker.io/cr-name: "demo-sync"
+      stoker.io/sync-profile: "demo-frontend"
 
 backend:
   gateway:
     podAnnotations:
-      ignition-sync.io/inject: "true"
-      ignition-sync.io/cr-name: "demo-sync"
-      ignition-sync.io/sync-profile: "demo-backend"
+      stoker.io/inject: "true"
+      stoker.io/cr-name: "demo-sync"
+      stoker.io/sync-profile: "demo-backend"
 ```
 
 Note: With 5 frontend replicas, all 5 pods get the sync agent injected, all independently clone the repository to local emptyDir volumes, and all use the same `demo-frontend` SyncProfile. The controller discovers all 5 and tracks each in `status.discoveredGateways`.
@@ -298,8 +298,8 @@ Note: With 5 frontend replicas, all 5 pods get the sync agent injected, all inde
 For a single gateway, SyncProfile is optional — use 2-tier mode with `service-path` annotation:
 
 ```yaml
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: my-sync
   namespace: default
@@ -322,7 +322,7 @@ spec:
       key: apiKey
   agent:
     image:
-      repository: ghcr.io/ia-eknorr/ignition-sync-agent
+      repository: ghcr.io/ia-eknorr/stoker-agent
       tag: "1.0.0"
 ```
 
@@ -331,15 +331,15 @@ spec:
 ignition:
   gateway:
     podAnnotations:
-      ignition-sync.io/inject: "true"
-      ignition-sync.io/cr-name: "my-sync"
-      ignition-sync.io/service-path: "."   # repo root IS the service
+      stoker.io/inject: "true"
+      stoker.io/cr-name: "my-sync"
+      stoker.io/service-path: "."   # repo root IS the service
 ```
 
 Or with a minimal SyncProfile:
 
 ```yaml
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: single-gw
@@ -361,11 +361,11 @@ While v1 focuses on single-cluster operation, the architecture is designed for f
 
 ```
 Central Control Plane (e.g., dedicated cluster)
-  └─ IgnitionSyncFederation CR
+  └─ StokerFederation CR
      └─ Specifies: 3x Production clusters, 2x DR clusters
 
 Per Cluster (managed by local controller)
-  └─ IgnitionSync CRs (watch for federation updates)
+  └─ Stoker CRs (watch for federation updates)
   └─ Local discovery of gateways
 ```
 
@@ -395,7 +395,7 @@ Controller supports:
 spec:
   agent:
     image:
-      repository: git-internal.local:5000/ignition-sync-agent
+      repository: git-internal.local:5000/stoker-agent
       tag: "1.0.0"
       digest: "sha256:..."  # Pinned digest required in air-gap
 ```
@@ -419,7 +419,7 @@ For deployments with 100+ gateways across multiple sites, reducing duplication i
 **Kustomize Base + Overlay Pattern**
 ```yaml
 # base/sync-profile-area.yaml — shared across all sites
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: area
@@ -438,7 +438,7 @@ patchesStrategicMerge:
   - sync-profile-patch.yaml
 
 # overlays/site1/sync-profile-patch.yaml
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: area
@@ -452,14 +452,14 @@ spec:
 ```yaml
 # Kyverno or CEL-based template validation
 apiVersion: constraints.gatekeeper.sh/v1beta1
-kind: K8sIgnitionSyncDefaults
+kind: K8sStokerDefaults
 metadata:
   name: apply-defaults
 spec:
   match:
     kinds:
-      - apiGroups: ["sync.ignition.io"]
-        kinds: ["IgnitionSync"]
+      - apiGroups: ["stoker.io"]
+        kinds: ["Stoker"]
   parameters:
     excludePatterns:
       - "**/.git/"
@@ -504,7 +504,7 @@ approval:
 1. Webhook triggers ref update on CR
 2. Controller detects new ref, creates temporary "PendingApproval" condition
 3. Sync is paused until approval is granted
-4. On approval: `kubectl annotate ignitionsync proveit-sync approved-by=alice approved-at="$(date -Iseconds)"`
+4. On approval: `kubectl annotate stoker proveit-sync approved-by=alice approved-at="$(date -Iseconds)"`
 5. Controller detects approval annotation, proceeds with sync
 
 ---
@@ -516,7 +516,7 @@ approval:
 CLI tool for live-syncing local git repo to dev gateway:
 
 ```bash
-ignition-sync dev watch \
+stoker dev watch \
   --repo=/path/to/local/conf \
   --gateway=dev-gateway.local:8043 \
   --api-key=$IGNITION_API_KEY \
@@ -533,10 +533,10 @@ Useful for rapid iteration during development.
 
 ### Migration Tool
 
-Auto-generate IgnitionSync CRs from existing git-sync ConfigMaps:
+Auto-generate Stoker CRs from existing git-sync ConfigMaps:
 
 ```bash
-ignition-sync migrate \
+stoker migrate \
   --from-configmap git-sync-env-site \
   --namespace site1 \
   --output proveit-sync-cr.yaml
@@ -544,8 +544,8 @@ ignition-sync migrate \
 
 Generates:
 ```yaml
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: proveit-sync
   namespace: site1

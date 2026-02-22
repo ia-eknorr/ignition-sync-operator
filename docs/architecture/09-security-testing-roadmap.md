@@ -1,7 +1,7 @@
-<!-- Part of: Ignition Sync Operator Architecture (v3) -->
-<!-- See also: 00-overview.md, 01-crd.md, 02-controller.md, 04-sync-profile.md, 06-sync-agent.md, 08-deployment-operations.md, 10-enterprise-examples.md -->
+<!-- Part of: Stoker Architecture (v3) -->
+<!-- See also: 00-overview.md, 01-crd.md, 02-controller.md, 04-sync-profile.md, 06-stoker-agent.md, 08-deployment-operations.md, 10-enterprise-examples.md -->
 
-# Ignition Sync Operator — Security, Testing & Roadmap
+# Stoker — Security, Testing & Roadmap
 
 ## Testing Strategy
 
@@ -22,14 +22,14 @@
 ### SyncProfile Tests
 
 - Unit: SyncProfile validation (empty mappings rejected, path traversal rejected, valid spec accepted)
-- Unit: 3-tier precedence resolution (annotation > profile > IgnitionSync > defaults)
+- Unit: 3-tier precedence resolution (annotation > profile > Stoker > defaults)
 - Integration (envtest): SyncProfile create → Accepted condition set
 - Integration: Pod with `sync-profile` annotation → profile resolved correctly
 - Integration: Pod without `sync-profile` → falls back to `service-path` annotation (2-tier mode)
 - Integration: Profile deletion → graceful degradation, warning logged
 - Integration: Profile update → affected gateways re-synced
 - Integration: Mapping order enforcement (later overlays earlier)
-- Integration: Exclude pattern merging (profile + IgnitionSync global)
+- Integration: Exclude pattern merging (profile + Stoker global)
 
 ### End-to-End Tests
 
@@ -57,8 +57,8 @@
 
 For existing deployments using the current git-sync sidecar pattern:
 
-1. **Install the operator** — `helm install ignition-sync ia/ignition-sync`
-2. **Create the `IgnitionSync` CR** in each namespace — maps directly from current values
+1. **Install the operator** — `helm install stoker ia/stoker`
+2. **Create the `Stoker` CR** in each namespace — maps directly from current values
 3. **Add annotations** to existing gateway pods (via values.yaml update)
 4. **Remove old git-sync configuration** — init containers, ConfigMaps, scripts, volumes
 5. **Deploy** — ArgoCD syncs the changes; pods restart with injected sync agents instead of git-sync sidecars
@@ -86,13 +86,13 @@ site:
 
 **After:**
 ```yaml
-# 3 annotations per gateway, 1 IgnitionSync CR
+# 3 annotations per gateway, 1 Stoker CR
 site:
   gateway:
     podAnnotations:
-      ignition-sync.io/inject: "true"
-      ignition-sync.io/cr-name: "proveit-sync"
-      ignition-sync.io/service-path: "services/site"
+      stoker.io/inject: "true"
+      stoker.io/cr-name: "proveit-sync"
+      stoker.io/service-path: "services/site"
 ```
 
 ---
@@ -112,7 +112,7 @@ Example Helm values enforcing digest pinning:
 ```yaml
 controller:
   image:
-    repository: ghcr.io/ia-eknorr/ignition-sync-controller
+    repository: ghcr.io/ia-eknorr/stoker-controller
     tag: "1.0.0"
     digest: "sha256:abc123f..."  # Prevents tag mutability attacks
 ```
@@ -144,7 +144,7 @@ controller:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: ignition-sync-default-deny
+  name: stoker-default-deny
 spec:
   podSelector: {}
   policyTypes:
@@ -159,7 +159,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: ignition-sync-webhook
+      app.kubernetes.io/name: stoker-webhook
   policyTypes:
     - Ingress
   ingress:
@@ -178,7 +178,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: ignition-sync-controller
+      app.kubernetes.io/name: stoker-controller
   policyTypes:
     - Egress
   egress:
@@ -202,7 +202,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      ignition-sync.io/inject: "true"
+      stoker.io/inject: "true"
   policyTypes:
     - Egress
   egress:
@@ -278,11 +278,11 @@ securityContext:
 
 **Validation of Injection Targets**
 - Webhook validates that pod labels indicate an actual Ignition gateway (e.g., `app=ignition`)
-- Whitelist check: pod namespace must be in `spec.webhookNamespaces` in the IgnitionSync CR
+- Whitelist check: pod namespace must be in `spec.webhookNamespaces` in the Stoker CR
 - Prevents accidental injection into unrelated pods (e.g., honeypot pods or testing containers)
 
 ```yaml
-# IgnitionSync CR webhook config
+# Stoker CR webhook config
 spec:
   webhook:
     enabled: true
@@ -309,9 +309,9 @@ spec:
 - Disables all sync operations cluster-wide (critical for incident response)
 
 ```yaml
-# Option 1: Set spec.paused on IgnitionSync CR
-apiVersion: sync.ignition.io/v1alpha1
-kind: IgnitionSync
+# Option 1: Set spec.paused on Stoker CR
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
 metadata:
   name: proveit-sync
 spec:
@@ -322,15 +322,15 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: ignition-sync-global-pause
-  namespace: ignition-sync-system
+  name: stoker-global-pause
+  namespace: stoker-system
 data:
   paused: "true"
 ```
 
-- Emergency procedure documented in runbook: `kubectl patch ignitionsync {crName} -p '{"spec":{"paused":true}}'`
+- Emergency procedure documented in runbook: `kubectl patch stoker {crName} -p '{"spec":{"paused":true}}'`
 - Alert sent to incident response team when pause is activated
-- Clear procedure to resume operations: `kubectl patch ignitionsync {crName} -p '{"spec":{"paused":false}}'`
+- Clear procedure to resume operations: `kubectl patch stoker {crName} -p '{"spec":{"paused":false}}'`
 
 ### Audit Trail
 
@@ -388,13 +388,13 @@ data:
 
 ### v1.1 (Near-term)
 - Pre/post-sync hooks (replaces `normalize` and `siteNumber` functionality)
-- CRD short names (`igs` for `ignitionsyncs`)
+- CRD short names (`stk` for `stokers`)
 - Shared git clone cache (dedup across CRs referencing same repo)
 - Optional native git CLI backend (for repos where go-git memory usage is a concern)
 - Controller sharding for 500+ CRs
 - Source abstraction layer (git, OCI, S3)
 - Approval workflows and change gates
-- Multi-environment config inheritance (IgnitionSyncBase CRD)
+- Multi-environment config inheritance (StokerBase CRD)
 - Canary sync and staged rollout
 - Enhanced snapshot/rollback capabilities
 - Grafana dashboard as first-class artifact
@@ -424,7 +424,7 @@ Changes incorporated from the 6-agent architecture review:
 | Added finalizer handling for CR deletion cleanup | Agent 1 (K8s Best Practices) | Reconciliation Loop |
 | Webhook receiver annotates CR instead of mutating spec.git.ref | Agent 1 | Webhook Receiver |
 | Added ConfigMap RBAC permissions | Agent 1 | RBAC |
-| Added ignitionsyncs/finalizers subresource permission | Agent 1 | RBAC |
+| Added stokers/finalizers subresource permission | Agent 1 | RBAC |
 | Scoped Secret access with namespace-mode guidance | Agent 1, 3 | RBAC |
 | Fixed printer column — condition message instead of array jsonPath | Agent 1 | kubectl Integration |
 | Added watch predicates (GenerationChangedPredicate) | Agent 1 | Reconciliation Loop |
@@ -460,7 +460,7 @@ Changes incorporated from the 6-agent architecture review:
 
 | Item | Agent | Rationale for deferral |
 |------|-------|----------------------|
-| CRD short names (`igs`) | Agent 1 | Convenience, not correctness |
+| CRD short names (`stk`) | Agent 1 | Convenience, not correctness |
 | CRD split into multiple types | Agent 1 | v1 keeps single CRD for simplicity |
 | Shared git clone cache | Agent 5 | Optimization for multi-CR same-repo |
 | Native git CLI backend | Agent 5 | Only needed for very large repos |

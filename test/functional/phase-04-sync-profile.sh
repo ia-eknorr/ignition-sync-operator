@@ -18,8 +18,8 @@ sleep 2
 # ────────────────────────────────────────────────────────────────────
 log_test "3A.1: SyncProfile CRD Installation"
 
-crd_name=$($KUBECTL get crd syncprofiles.sync.ignition.io -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
-assert_eq "syncprofiles.sync.ignition.io" "$crd_name" "SyncProfile CRD should exist"
+crd_name=$($KUBECTL get crd syncprofiles.stoker.io -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+assert_eq "syncprofiles.stoker.io" "$crd_name" "SyncProfile CRD should exist"
 
 # Verify short name
 assert_exit_code 0 "kubectl get sp works" $KUBECTL get sp -n "$TEST_NAMESPACE"
@@ -30,7 +30,7 @@ assert_exit_code 0 "kubectl get sp works" $KUBECTL get sp -n "$TEST_NAMESPACE"
 log_test "3A.2: Valid SyncProfile Accepted"
 
 cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f -
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: test-site-profile
@@ -63,7 +63,7 @@ assert_eq "1" "$obs_gen" "observedGeneration is 1"
 log_test "3A.3: Path Traversal Rejected"
 
 cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f -
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: test-bad-traversal
@@ -94,7 +94,7 @@ sleep 1
 log_test "3A.4: Absolute Path Rejected"
 
 cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f -
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: test-bad-absolute
@@ -115,10 +115,10 @@ sleep 1
 # ────────────────────────────────────────────────────────────────────
 log_test "3A.5: Pod with sync-profile Annotation"
 
-# Setup: create API key secret and IgnitionSync CR
+# Setup: create API key secret and Stoker CR
 apply_fixture "api-key-secret.yaml"
 apply_fixture "test-cr.yaml"
-wait_for_typed_condition "ignitionsync/test-sync" "RefResolved" "True" 90
+wait_for_typed_condition "stoker/test-sync" "RefResolved" "True" 90
 
 # Create a pod referencing the SyncProfile
 cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f -
@@ -130,10 +130,10 @@ metadata:
     app: gateway-test
     app.kubernetes.io/name: gateway-profile-1
   annotations:
-    ignition-sync.io/inject: "true"
-    ignition-sync.io/cr-name: "test-sync"
-    ignition-sync.io/sync-profile: "test-site-profile"
-    ignition-sync.io/gateway-name: "profile-gw"
+    stoker.io/inject: "true"
+    stoker.io/cr-name: "test-sync"
+    stoker.io/sync-profile: "test-site-profile"
+    stoker.io/gateway-name: "profile-gw"
 spec:
   containers:
     - name: ignition
@@ -147,7 +147,7 @@ wait_for_named_pod_phase "gateway-profile-1" "Running" 60
 deadline=$((SECONDS + 30))
 gw_name=""
 while [[ $SECONDS -lt $deadline ]]; do
-    gw_name=$(kubectl_jq "ignitionsync/test-sync" \
+    gw_name=$(kubectl_jq "stoker/test-sync" \
         '.status.discoveredGateways[] | select(.name=="profile-gw") | .name')
     if [[ "$gw_name" == "profile-gw" ]]; then
         break
@@ -179,10 +179,10 @@ metadata:
     app: gateway-test
     app.kubernetes.io/name: gateway-2tier-1
   annotations:
-    ignition-sync.io/inject: "true"
-    ignition-sync.io/cr-name: "test-sync"
-    ignition-sync.io/service-path: "services/gateway"
-    ignition-sync.io/gateway-name: "twotier-gw"
+    stoker.io/inject: "true"
+    stoker.io/cr-name: "test-sync"
+    stoker.io/service-path: "services/gateway"
+    stoker.io/gateway-name: "twotier-gw"
 spec:
   containers:
     - name: ignition
@@ -196,7 +196,7 @@ wait_for_named_pod_phase "gateway-2tier-1" "Running" 60
 deadline=$((SECONDS + 30))
 gw_name=""
 while [[ $SECONDS -lt $deadline ]]; do
-    gw_name=$(kubectl_jq "ignitionsync/test-sync" \
+    gw_name=$(kubectl_jq "stoker/test-sync" \
         '.status.discoveredGateways[] | select(.name=="twotier-gw") | .name')
     if [[ "$gw_name" == "twotier-gw" ]]; then
         break
@@ -206,12 +206,12 @@ done
 assert_eq "twotier-gw" "$gw_name" "2-tier gateway discovered (no sync-profile)"
 
 # Verify servicePath populated from annotation
-svc_path=$(kubectl_jq "ignitionsync/test-sync" \
+svc_path=$(kubectl_jq "stoker/test-sync" \
     '.status.discoveredGateways[] | select(.name=="twotier-gw") | .servicePath')
 assert_eq "services/gateway" "$svc_path" "servicePath from annotation"
 
 # Verify controller still running
-controller_ns="ignition-sync-operator-system"
+controller_ns="stoker-system"
 ctrl_phase=$($KUBECTL get pods -n "$controller_ns" -l control-plane=controller-manager \
     -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
 assert_eq "Running" "$ctrl_phase" "Controller still running"
@@ -223,7 +223,7 @@ log_test "3A.7: Multiple Gateways Share One Profile"
 
 # Create an area profile
 cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f -
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: test-area-profile
@@ -248,10 +248,10 @@ metadata:
     app: gateway-test
     app.kubernetes.io/name: gateway-area-${i}
   annotations:
-    ignition-sync.io/inject: "true"
-    ignition-sync.io/cr-name: "test-sync"
-    ignition-sync.io/sync-profile: "test-area-profile"
-    ignition-sync.io/gateway-name: "area${i}"
+    stoker.io/inject: "true"
+    stoker.io/cr-name: "test-sync"
+    stoker.io/sync-profile: "test-area-profile"
+    stoker.io/gateway-name: "area${i}"
 spec:
   containers:
     - name: ignition
@@ -269,7 +269,7 @@ done
 deadline=$((SECONDS + 30))
 area_count=0
 while [[ $SECONDS -lt $deadline ]]; do
-    area_count=$(kubectl_jq "ignitionsync/test-sync" \
+    area_count=$(kubectl_jq "stoker/test-sync" \
         '[.status.discoveredGateways[] | select(.name | startswith("area"))] | length')
     if [[ "$area_count" == "3" ]]; then
         break
@@ -283,8 +283,8 @@ assert_eq "3" "$area_count" "3 area gateways discovered sharing one profile"
 # ────────────────────────────────────────────────────────────────────
 log_test "3A.8: Profile Update Triggers Re-Reconcile"
 
-# Record current observed generation of IgnitionSync
-obs_before=$(kubectl_json "ignitionsync/test-sync" '{.status.observedGeneration}')
+# Record current observed generation of Stoker
+obs_before=$(kubectl_json "stoker/test-sync" '{.status.observedGeneration}')
 
 # Update the profile
 $KUBECTL patch syncprofile test-site-profile -n "$TEST_NAMESPACE" --type=merge \
@@ -310,7 +310,7 @@ log_test "3A.9: Profile Deletion Graceful Degradation"
 
 # Create a temporary profile
 cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f -
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: temp-profile
@@ -332,10 +332,10 @@ metadata:
     app: gateway-test
     app.kubernetes.io/name: gateway-temp
   annotations:
-    ignition-sync.io/inject: "true"
-    ignition-sync.io/cr-name: "test-sync"
-    ignition-sync.io/sync-profile: "temp-profile"
-    ignition-sync.io/gateway-name: "temp-gw"
+    stoker.io/inject: "true"
+    stoker.io/cr-name: "test-sync"
+    stoker.io/sync-profile: "temp-profile"
+    stoker.io/gateway-name: "temp-gw"
 spec:
   containers:
     - name: ignition
@@ -355,9 +355,9 @@ ctrl_phase=$($KUBECTL get pods -n "$controller_ns" -l control-plane=controller-m
     -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
 assert_eq "Running" "$ctrl_phase" "Controller survives profile deletion"
 
-# IgnitionSync CR should still be healthy
-clone_status=$(kubectl_json "ignitionsync/test-sync" '{.status.refResolutionStatus}')
-assert_eq "Resolved" "$clone_status" "IgnitionSync CR still Resolved after profile deletion"
+# Stoker CR should still be healthy
+clone_status=$(kubectl_json "stoker/test-sync" '{.status.refResolutionStatus}')
+assert_eq "Resolved" "$clone_status" "Stoker CR still Resolved after profile deletion"
 
 # Clean up the temp pod
 $KUBECTL delete pod gateway-temp -n "$TEST_NAMESPACE" --ignore-not-found 2>/dev/null || true
@@ -368,7 +368,7 @@ $KUBECTL delete pod gateway-temp -n "$TEST_NAMESPACE" --ignore-not-found 2>/dev/
 log_test "3A.10: Paused Profile"
 
 cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f -
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: test-paused-profile
@@ -397,7 +397,7 @@ log_test "3A.12: Profile with dependsOn"
 
 apply_rc=0
 cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f - 2>/dev/null || apply_rc=$?
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: test-depends-on
@@ -440,7 +440,7 @@ log_test "3A.13: Profile with vars"
 
 apply_rc=0
 cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f - 2>/dev/null || apply_rc=$?
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: test-vars
@@ -481,7 +481,7 @@ log_test "3A.14: Profile with dryRun"
 
 apply_rc=0
 cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f - 2>/dev/null || apply_rc=$?
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: test-dryrun
@@ -519,7 +519,7 @@ log_test "3A.15: Mapping with required Field"
 
 apply_rc=0
 cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f - 2>/dev/null || apply_rc=$?
-apiVersion: sync.ignition.io/v1alpha1
+apiVersion: stoker.io/v1alpha1
 kind: SyncProfile
 metadata:
   name: test-required
@@ -558,10 +558,10 @@ sleep 1
 # ────────────────────────────────────────────────────────────────────
 log_test "3A.16: Pod with ref-override Annotation"
 
-# Ensure IgnitionSync CR exists (may already from 3A.5)
+# Ensure Stoker CR exists (may already from 3A.5)
 apply_fixture "api-key-secret.yaml" 2>/dev/null || true
 apply_fixture "test-cr.yaml" 2>/dev/null || true
-wait_for_typed_condition "ignitionsync/test-sync" "RefResolved" "True" 90
+wait_for_typed_condition "stoker/test-sync" "RefResolved" "True" 90
 
 cat <<EOF | $KUBECTL apply -n "$TEST_NAMESPACE" -f -
 apiVersion: v1
@@ -572,11 +572,11 @@ metadata:
     app: gateway-test
     app.kubernetes.io/name: gateway-ref-override
   annotations:
-    ignition-sync.io/inject: "true"
-    ignition-sync.io/cr-name: "test-sync"
-    ignition-sync.io/sync-profile: "test-site-profile"
-    ignition-sync.io/gateway-name: "override-gw"
-    ignition-sync.io/ref-override: "v1.0.0-rc1"
+    stoker.io/inject: "true"
+    stoker.io/cr-name: "test-sync"
+    stoker.io/sync-profile: "test-site-profile"
+    stoker.io/gateway-name: "override-gw"
+    stoker.io/ref-override: "v1.0.0-rc1"
 spec:
   containers:
     - name: ignition
@@ -590,7 +590,7 @@ wait_for_named_pod_phase "gateway-ref-override" "Running" 60
 deadline=$((SECONDS + 30))
 gw_name=""
 while [[ $SECONDS -lt $deadline ]]; do
-    gw_name=$(kubectl_jq "ignitionsync/test-sync" \
+    gw_name=$(kubectl_jq "stoker/test-sync" \
         '.status.discoveredGateways[] | select(.name=="override-gw") | .name')
     if [[ "$gw_name" == "override-gw" ]]; then
         break
@@ -601,7 +601,7 @@ assert_eq "override-gw" "$gw_name" "Gateway with ref-override annotation discove
 
 # Verify the annotation is preserved on the pod
 ref_val=$($KUBECTL get pod gateway-ref-override -n "$TEST_NAMESPACE" \
-    -o jsonpath='{.metadata.annotations.ignition-sync\.io/ref-override}' 2>/dev/null || echo "")
+    -o jsonpath='{.metadata.annotations.stoker\.io/ref-override}' 2>/dev/null || echo "")
 assert_eq "v1.0.0-rc1" "$ref_val" "ref-override annotation preserved on pod"
 
 $KUBECTL delete pod gateway-ref-override -n "$TEST_NAMESPACE" --ignore-not-found 2>/dev/null || true

@@ -1,0 +1,20 @@
+apiVersion: stoker.io/v1alpha1
+kind: Stoker
+metadata:
+  labels:
+    app.kubernetes.io/name: stoker-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: stoker-sample
+spec:
+  git:
+    repo: "git@github.com:example-org/ignition-config.git"
+    ref: "main"
+    auth:
+      sshKey:
+        secretRef:
+          name: "git-sync-secret"
+          key: "ssh-privatekey"
+  gateway:
+    apiKeySecretRef:
+      name: "ignition-api-key"
+      key: "apiKey"
