@@ -23,7 +23,7 @@ is limited.
 - M1: Webhook receiver HMAC signature validation (currently accepts all requests)
 - M2: Agent Dockerfile health endpoint (liveness/readiness for the sidecar)
 - M3: Structured logging alignment (controller uses `logr`, agent should match)
-- M4: Helm chart values documentation via helm-docs
+- ~~M4: Helm chart values documentation via helm-docs~~ — done (PR #27)
 - M5: Integration test for full sync cycle (controller + agent in kind)
 
 ## v0.2.0 — Reliability
