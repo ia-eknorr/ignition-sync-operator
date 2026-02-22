@@ -14,6 +14,15 @@ env:
 jobs:
   build-images:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: controller
+            file: Dockerfile
+            image_name: ignition-sync-operator
+          - name: agent
+            file: Dockerfile.agent
+            image_name: ignition-sync-agent
     steps:
       - uses: actions/checkout@v4
 
@@ -31,27 +40,18 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push controller image
+      - name: Build and push ${{ matrix.name }} image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile
+          file: ${{ matrix.file }}
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}:${{ steps.version.outputs.version }}
-            ${{ env.REGISTRY }}/${{ github.repository }}:latest
-
-      - name: Build and push agent image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.agent
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/ignition-sync-agent:${{ steps.version.outputs.version }}
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/ignition-sync-agent:latest
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image_name }}:${{ steps.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image_name }}:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image_name }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image_name }}:buildcache,mode=max
 
   publish-chart:
     runs-on: ubuntu-latest
