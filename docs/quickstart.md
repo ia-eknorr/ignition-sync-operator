@@ -190,10 +190,7 @@ Once the gateway pod shows **2/2**, walk through these checks to confirm everyth
 Verify the pod has both containers — the gateway and the injected `stoker-agent` sidecar:
 
 ```bash
-kubectl get pod -n quickstart -o custom-columns=\
-NAME:.metadata.name,\
-CONTAINERS:.spec.initContainers[*].name,\
-STATUS:.status.phase
+kubectl get pod -n quickstart -o 'custom-columns=NAME:.metadata.name,SIDECARS:.spec.initContainers[*].name,STATUS:.status.phase'
 ```
 
 You should see `stoker-agent` listed as an init container (native sidecar).
