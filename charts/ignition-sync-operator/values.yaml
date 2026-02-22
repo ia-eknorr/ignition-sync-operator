@@ -89,6 +89,17 @@ certManager:
 webhookReceiver:
   # -- Port for the inbound git webhook receiver. Set to 0 to disable.
   port: 9444
+  # -- HMAC secret for validating webhook signatures (X-Hub-Signature-256).
+  # Provide either a literal value or a reference to an existing Secret.
+  hmac:
+    # -- HMAC secret value. Ignored if secretRef is set.
+    secret: ""
+    # -- Reference to an existing Secret containing the HMAC key.
+    secretRef:
+      # -- Name of the Secret.
+      name: ""
+      # -- Key within the Secret.
+      key: "webhook-secret"
 
 # -- Node selector labels for scheduling the controller pod.
 # Example:
