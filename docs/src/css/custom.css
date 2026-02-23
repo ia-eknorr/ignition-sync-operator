@@ -39,15 +39,27 @@
 }
 
 .features {
+  padding: 3rem 0;
+  width: 100%;
+}
+
+.features .row {
   display: flex;
   align-items: stretch;
-  padding: 2rem 0;
-  width: 100%;
+}
+
+.features .col {
+  display: flex;
 }
 
 .feature {
   flex: 1;
-  padding: 1rem;
+  padding: 1.5rem;
+  text-align: center;
+  background: #f8fafc;
+  border: 1px solid var(--ifm-color-emphasis-300, #cbd5e1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
 }
 
 .feature h3 {
@@ -56,4 +68,9 @@
 
 .feature p {
   font-size: 0.95rem;
+  color: var(--ifm-color-emphasis-700);
+}
+
+[data-theme="dark"] .feature {
+  background: var(--ifm-card-background-color);
 }

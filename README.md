@@ -19,7 +19,7 @@ Stoker tends your Ignition gateways, continuously feeding them configuration fro
 ## Features
 
 - **Git-driven configuration sync** — gateway projects, tags, and resources managed in Git
-- **No shared storage** — controller resolves refs via `ls-remote`; agent clones independently to a local emptyDir
+- **Multi-gateway support** — manage any number of gateways from a single repository with template variables
 - **SyncProfile mappings** — declarative source-to-destination file mappings with glob patterns and template variables
 - **Automatic sidecar injection** — MutatingWebhook injects the sync agent into annotated pods
 - **Gateway discovery** — controller discovers annotated pods and aggregates sync status

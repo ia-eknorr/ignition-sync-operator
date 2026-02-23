@@ -10,9 +10,9 @@ const features = [
       "Manage Ignition gateway projects, tags, and resources in Git. Stoker continuously syncs configuration to your gateways.",
   },
   {
-    title: "No Shared Storage",
+    title: "Multi-Gateway Support",
     description:
-      "The controller resolves refs via ls-remote. The agent sidecar clones independently to a local emptyDir — no PVCs required.",
+      "Manage any number of gateways from a single repository. Template variables route the right config to the right gateway automatically.",
   },
   {
     title: "Automatic Sidecar Injection",
