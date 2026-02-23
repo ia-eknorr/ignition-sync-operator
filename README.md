@@ -9,6 +9,7 @@
   <a href="https://github.com/ia-eknorr/stoker-operator/actions/workflows/test.yml"><img src="https://github.com/ia-eknorr/stoker-operator/actions/workflows/test.yml/badge.svg" alt="Test"></a>
   <a href="https://github.com/ia-eknorr/stoker-operator/releases/latest"><img src="https://img.shields.io/github/v/release/ia-eknorr/stoker-operator" alt="Release"></a>
   <a href="https://github.com/ia-eknorr/stoker-operator/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"></a>
+  <a href="https://ia-eknorr.github.io/stoker-operator/"><img src="https://img.shields.io/badge/docs-ia--eknorr.github.io-blue" alt="Docs"></a>
 </p>
 
 > **stok·er** /ˈstōkər/ — *a person who tends the fire in a furnace, feeding it fuel to keep it burning.*
@@ -24,12 +25,6 @@ Stoker tends your Ignition gateways, continuously feeding them configuration fro
 - **Gateway discovery** — controller discovers annotated pods and aggregates sync status
 - **Webhook receiver** — push-event-driven sync via `POST /webhook/{namespace}/{crName}`
 - **Deployment mode overlays** — per-profile overlays applied after mappings
-
-## Prerequisites
-
-- Kubernetes >= 1.28
-- [cert-manager](https://cert-manager.io/) (for webhook TLS)
-- Helm 3
 
 ## Quick Start
 
@@ -68,33 +63,12 @@ flowchart LR
 
 | CRD | Description |
 | --- | --- |
-| `Stoker` | Defines the git repository, auth, polling, and gateway connection settings |
-| `SyncProfile` | Defines file mappings, deployment mode overlays, exclude patterns, and template variables |
+| [`Stoker`](https://ia-eknorr.github.io/stoker-operator/configuration/stoker-cr) | Defines the git repository, auth, polling, and gateway connection settings |
+| [`SyncProfile`](https://ia-eknorr.github.io/stoker-operator/configuration/sync-profile) | Defines file mappings, deployment mode overlays, exclude patterns, and template variables |
 
 ## Development
 
-```bash
-# Build controller and agent binaries
-make build
-
-# Run tests
-make test
-
-# Run the controller locally (requires kubeconfig)
-make run
-
-# Generate CRDs and RBAC
-make manifests
-
-# Sync CRDs to Helm chart
-make helm-sync
-
-# Run functional tests in kind
-make functional-test
-
-# Lint
-make lint
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for build commands, testing, and development workflow.
 
 ## License
 
