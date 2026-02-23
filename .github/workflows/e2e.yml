@@ -4,15 +4,45 @@ on:
   push:
     branches: [main]
   pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - 'LICENSE'
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
 
 jobs:
   e2e:
     name: Chainsaw E2E
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    if: >-
+      github.event_name == 'push' ||
+      github.event_name == 'pull_request' ||
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        contains(github.event.comment.body, '/test-e2e')
+      )
     steps:
+      - name: React to comment
+        if: github.event_name == 'issue_comment'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            });
+
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'issue_comment' && format('refs/pull/{0}/merge', github.event.issue.number) || '' }}
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -24,16 +54,30 @@ jobs:
         with:
           install_only: true
 
+      - name: Cache kind node image
+        id: kind-image-cache
+        uses: actions/cache@v4
+        with:
+          path: _kind-image.tar
+          key: kind-node-image-${{ hashFiles('.github/workflows/e2e.yml') }}
+
+      - name: Load cached kind image
+        if: steps.kind-image-cache.outputs.cache-hit == 'true'
+        run: docker load -i _kind-image.tar
+
       - name: Install Helm
         uses: azure/setup-helm@v4
 
       - name: Install Chainsaw
         run: |
-          go install github.com/kyverno/chainsaw@v0.2.12
-          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+          curl -sSL https://github.com/kyverno/chainsaw/releases/download/v0.2.14/chainsaw_linux_amd64.tar.gz | tar xz -C /usr/local/bin chainsaw
 
       - name: Setup cluster and operator
         run: test/e2e/setup.sh
+
+      - name: Save kind image to cache
+        if: steps.kind-image-cache.outputs.cache-hit != 'true'
+        run: docker save -o _kind-image.tar $(docker images --filter=reference='kindest/node' -q)
 
       - name: Run Chainsaw tests
         run: chainsaw test --test-dir test/e2e/ --config test/e2e/.chainsaw.yaml
