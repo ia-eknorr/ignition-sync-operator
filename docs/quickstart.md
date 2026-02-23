@@ -310,7 +310,6 @@ kind delete cluster --name stoker-quickstart
 ## Next steps
 
 - **Multiple gateways:** Instead of hardcoding paths per gateway, use `{{.GatewayName}}` in your SyncProfile source paths and the `stoker.io/gateway-name` annotation on each pod. One SyncProfile then serves any number of gateways.
-- **Deployment mode overlays:** Use `spec.deploymentMode` in your SyncProfile to apply environment-specific config.
 - **Webhook-driven sync:** Configure `POST /webhook/{namespace}/{crName}` to trigger syncs on git push events instead of polling.
 - **Private repos:** Add `spec.git.auth` with a token or SSH key secret reference to sync from private repositories.
 

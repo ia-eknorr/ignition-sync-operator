@@ -65,7 +65,7 @@ flowchart LR
 | CRD | Description |
 | --- | --- |
 | [`Stoker`](https://ia-eknorr.github.io/stoker-operator/configuration/stoker-cr) | Defines the git repository, auth, polling, and gateway connection settings |
-| [`SyncProfile`](https://ia-eknorr.github.io/stoker-operator/configuration/sync-profile) | Defines file mappings, deployment mode overlays, exclude patterns, and template variables |
+| [`SyncProfile`](https://ia-eknorr.github.io/stoker-operator/configuration/sync-profile) | Defines file mappings, exclude patterns, and template variables |
 
 ## Development
 

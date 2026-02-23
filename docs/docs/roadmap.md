@@ -13,7 +13,7 @@ The minimum viable release: controller + agent sidecar can sync Ignition gateway
 ### Completed
 
 - Stoker CRD with git ref resolution via `ls-remote`
-- SyncProfile CRD with declarative file mappings and deployment mode overlays
+- SyncProfile CRD with declarative file mappings
 - Agent sidecar with sync engine (clone, staging, merge, orphan cleanup)
 - MutatingWebhook for automatic sidecar injection
 - Gateway discovery via pod annotations

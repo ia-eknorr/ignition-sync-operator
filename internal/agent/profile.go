@@ -138,23 +138,6 @@ func buildSyncPlan(
 		})
 	}
 
-	// Add deployment mode as final overlay mapping.
-	if profile.DeploymentMode != nil {
-		src, err := resolveTemplate(profile.DeploymentMode.Source, tmplCtx)
-		if err != nil {
-			return nil, fmt.Errorf("deploymentMode.source: %w", err)
-		}
-		if err := validateResolvedPath(src, "deploymentMode.source"); err != nil {
-			return nil, err
-		}
-
-		plan.Mappings = append(plan.Mappings, syncengine.ResolvedMapping{
-			Source:      filepath.Join(repoPath, src),
-			Destination: "config/resources/core",
-			Type:        "dir",
-		})
-	}
-
 	// Merge excludes from three sources: engine defaults, profile, CR.
 	allExcludes := make([]string, 0, len(crExcludes)+len(profile.ExcludePatterns))
 	allExcludes = append(allExcludes, crExcludes...)

@@ -73,12 +73,6 @@ func validateSyncProfile(profile *stokerv1alpha1.SyncProfile) error {
 		}
 	}
 
-	if profile.Spec.DeploymentMode != nil {
-		if err := validatePath(profile.Spec.DeploymentMode.Source, "deploymentMode.source"); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 

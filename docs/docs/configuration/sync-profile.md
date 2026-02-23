@@ -6,7 +6,7 @@ description: Full reference for the SyncProfile custom resource.
 
 # SyncProfile Reference
 
-The `SyncProfile` custom resource defines file mappings, deployment mode overlays, exclude patterns, and sync behavior for gateways.
+The `SyncProfile` custom resource defines file mappings, exclude patterns, and sync behavior for gateways.
 
 ```yaml
 apiVersion: stoker.io/v1alpha1
@@ -23,9 +23,6 @@ spec:
     - source: "services/{{.GatewayName}}/config/"
       destination: "config/"
       type: dir
-  deploymentMode:
-    name: production
-    source: "overlays/production/"
   syncPeriod: 30
   designerSessionPolicy: wait
 ```
@@ -51,15 +48,6 @@ Both `source` and `destination` support Go template variables:
 | `{{.Vars.key}}` | Custom variable from `spec.vars` |
 
 Using `{{.GatewayName}}` in source paths lets a single SyncProfile serve multiple gateways, each syncing from its own directory in the repo.
-
-## `spec.deploymentMode`
-
-Configures an Ignition deployment mode overlay. The overlay directory is merged on top of `config/` after all mappings are applied.
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | string | Yes | Mode name (informational, shown in status) |
-| `source` | string | Yes | Repo-relative overlay directory |
 
 ## `spec.excludePatterns`
 

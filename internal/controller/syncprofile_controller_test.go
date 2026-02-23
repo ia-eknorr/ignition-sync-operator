@@ -154,48 +154,6 @@ var _ = Describe("SyncProfile Controller", func() {
 		})
 	})
 
-	Context("Deployment mode validation", func() {
-		const profileName = "test-depmode-profile"
-		ctx := context.Background()
-		nn := types.NamespacedName{Name: profileName, Namespace: "default"}
-
-		AfterEach(func() {
-			profile := &stokerv1alpha1.SyncProfile{}
-			if err := k8sClient.Get(ctx, nn, profile); err == nil {
-				_ = k8sClient.Delete(ctx, profile)
-			}
-		})
-
-		It("should reject path traversal in deploymentMode.source", func() {
-			createSyncProfile(ctx, profileName, stokerv1alpha1.SyncProfileSpec{
-				Mappings: []stokerv1alpha1.SyncMapping{
-					{Source: "services/site", Destination: "site"},
-				},
-				DeploymentMode: &stokerv1alpha1.DeploymentModeSpec{
-					Name:   "bad-mode",
-					Source: "../../malicious",
-				},
-			})
-
-			r := newProfileReconciler()
-			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
-			Expect(err).NotTo(HaveOccurred())
-
-			profile := &stokerv1alpha1.SyncProfile{}
-			Expect(k8sClient.Get(ctx, nn, profile)).To(Succeed())
-
-			var acceptedCond *metav1.Condition
-			for i := range profile.Status.Conditions {
-				if profile.Status.Conditions[i].Type == conditions.TypeAccepted {
-					acceptedCond = &profile.Status.Conditions[i]
-					break
-				}
-			}
-			Expect(acceptedCond).NotTo(BeNil())
-			Expect(acceptedCond.Status).To(Equal(metav1.ConditionFalse))
-		})
-	})
-
 	Context("Profile with optional fields", func() {
 		const profileName = "test-optional-fields"
 		ctx := context.Background()

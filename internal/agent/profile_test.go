@@ -116,45 +116,6 @@ func TestBuildSyncPlan_Basic(t *testing.T) {
 	}
 }
 
-func TestBuildSyncPlan_WithDeploymentMode(t *testing.T) {
-	tmp := t.TempDir()
-	repoPath := filepath.Join(tmp, "repo")
-	liveDir := filepath.Join(tmp, "live")
-
-	writeFile(t, filepath.Join(repoPath, "shared", "a.txt"), "a")
-	writeFile(t, filepath.Join(repoPath, "modes", "dev", "b.txt"), "b")
-
-	profile := &stokerv1alpha1.SyncProfileSpec{
-		Mappings: []stokerv1alpha1.SyncMapping{
-			{Source: "shared", Destination: "config/resources/core", Type: "dir"},
-		},
-		DeploymentMode: &stokerv1alpha1.DeploymentModeSpec{
-			Name:   "dev",
-			Source: "modes/dev",
-		},
-	}
-
-	ctx := &TemplateContext{GatewayName: "gw", Namespace: "default", Vars: map[string]string{}}
-
-	plan, err := buildSyncPlan(profile, ctx, repoPath, liveDir, nil)
-	if err != nil {
-		t.Fatalf("buildSyncPlan: %v", err)
-	}
-
-	// Should have 2 mappings: user mapping + deployment mode.
-	if len(plan.Mappings) != 2 {
-		t.Fatalf("expected 2 mappings, got %d", len(plan.Mappings))
-	}
-
-	last := plan.Mappings[len(plan.Mappings)-1]
-	if last.Destination != "config/resources/core" {
-		t.Errorf("deployment mode destination = %q, want config/resources/core", last.Destination)
-	}
-	if last.Source != filepath.Join(repoPath, "modes", "dev") {
-		t.Errorf("deployment mode source = %q", last.Source)
-	}
-}
-
 func TestBuildSyncPlan_RequiredMissing(t *testing.T) {
 	tmp := t.TempDir()
 	repoPath := filepath.Join(tmp, "repo")

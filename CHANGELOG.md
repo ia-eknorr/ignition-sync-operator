@@ -23,7 +23,7 @@ Initial release — controller + agent sidecar for Git-driven Ignition gateway c
 ### Added
 
 - **Stoker CRD** (`stoker.io/v1alpha1`) with git ref resolution via `ls-remote`, polling configuration, and gateway connection settings
-- **SyncProfile CRD** with declarative source-to-destination file mappings, glob patterns, deployment mode overlays, template variables, and `dependsOn` ordering
+- **SyncProfile CRD** with declarative source-to-destination file mappings, glob patterns, template variables, and `dependsOn` ordering
 - **Sync agent** with 3-layer architecture (syncengine → agent → ignition): clone/fetch, staged file sync with orphan cleanup, Ignition scan API integration
 - **Mutating webhook** for automatic sidecar injection into annotated pods (native sidecar pattern, K8s 1.28+)
 - **Gateway discovery** via pod annotations with status aggregation from agent ConfigMaps

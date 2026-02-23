@@ -17,9 +17,6 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.deploymentMode.name
-      name: Mode
-      type: string
     - jsonPath: .status.gatewayCount
       name: Gateways
       type: integer
@@ -82,23 +79,6 @@ spec:
                   - profileName
                   type: object
                 type: array
-              deploymentMode:
-                description: |-
-                  deploymentMode configures an Ignition deployment mode overlay.
-                  Applied after all mappings onto config/resources/core/.
-                properties:
-                  name:
-                    description: name is the mode name (informational, shown in status).
-                    minLength: 1
-                    type: string
-                  source:
-                    description: source is the repo-relative overlay directory.
-                    minLength: 1
-                    type: string
-                required:
-                - name
-                - source
-                type: object
               designerSessionPolicy:
                 default: proceed
                 description: |-
