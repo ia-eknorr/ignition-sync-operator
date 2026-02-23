@@ -27,5 +27,10 @@ vendor/
 # kubebuilder
 testbin/
 
+# Docusaurus
+docs/node_modules/
+docs/build/
+docs/.docusaurus/
+
 # Claude
 .claude/

@@ -41,7 +41,7 @@ helm install stoker oci://ghcr.io/ia-eknorr/charts/stoker-operator \
   -n stoker-system --create-namespace
 ```
 
-For a complete walkthrough — from installing the operator to syncing projects to an Ignition gateway — see the **[Quickstart Guide](docs/quickstart.md)**.
+For a complete walkthrough — from installing the operator to syncing projects to an Ignition gateway — see the **[Quickstart Guide](https://ia-eknorr.github.io/stoker-operator/quickstart)**.
 
 ## Architecture
 
