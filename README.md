@@ -10,6 +10,7 @@
   <a href="https://github.com/ia-eknorr/stoker-operator/releases/latest"><img src="https://img.shields.io/github/v/release/ia-eknorr/stoker-operator" alt="Release"></a>
   <a href="https://github.com/ia-eknorr/stoker-operator/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"></a>
   <a href="https://ia-eknorr.github.io/stoker-operator/"><img src="https://img.shields.io/badge/docs-ia--eknorr.github.io-blue" alt="Docs"></a>
+  <a href="https://goreportcard.com/report/github.com/ia-eknorr/stoker-operator"><img src="https://goreportcard.com/badge/github.com/ia-eknorr/stoker-operator" alt="Go Report Card"></a>
 </p>
 
 > **stok·er** /ˈstōkər/ — *a person who tends the fire in a furnace, feeding it fuel to keep it burning.*
