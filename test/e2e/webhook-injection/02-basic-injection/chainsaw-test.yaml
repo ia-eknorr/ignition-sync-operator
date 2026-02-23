@@ -1,0 +1,130 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: basic-injection
+spec:
+  description: Verify webhook injects stoker-agent sidecar with correct volumes and annotations
+  steps:
+    - name: Deploy git server, api-key secret, and git-token secret
+      try:
+        - apply:
+            file: ../../fixtures/git-server.yaml
+        - apply:
+            file: ../../fixtures/api-key-secret.yaml
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: git-token-secret
+              type: Opaque
+              stringData:
+                token: "fake-token-for-e2e"
+
+    - name: Wait for git server ready
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=condition=Ready pod/test-git-server -n $NAMESPACE --timeout=60s
+
+    - name: Create SyncProfile
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: SyncProfile
+              metadata:
+                name: standard
+              spec:
+                mappings:
+                  - source: services/ignition-blue/projects
+                    destination: projects
+
+    - name: Create Stoker CR with token auth
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-basic
+              spec:
+                git:
+                  repo: git://test-git-server:9418/test-repo.git
+                  ref: main
+                  auth:
+                    token:
+                      secretRef:
+                        name: git-token-secret
+                        key: token
+                gateway:
+                  port: 8088
+                  tls: false
+                  apiKeySecretRef:
+                    name: ignition-api-key
+                    key: apiKey
+
+    - name: Wait for RefResolved
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-basic
+              status:
+                conditions:
+                  - type: RefResolved
+                    status: "True"
+
+    - name: Create pod requesting injection
+      try:
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-basic
+                annotations:
+                  stoker.io/inject: "true"
+                  stoker.io/cr-name: test-basic
+                  stoker.io/sync-profile: standard
+              spec:
+                containers:
+                  - name: gateway
+                    image: busybox:latest
+                    command: ["sleep", "3600"]
+
+    - name: Assert sidecar injected with correct structure
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-basic
+                annotations:
+                  stoker.io/injected: "true"
+              spec:
+                initContainers:
+                  - name: stoker-agent
+                    restartPolicy: Always
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              # Verify volumes exist
+              VOLS=$(kubectl get pod gateway-basic -n $NAMESPACE -o jsonpath='{.spec.volumes[*].name}')
+              for VOL in sync-repo api-key git-credentials; do
+                if ! echo "$VOLS" | grep -q "$VOL"; then
+                  echo "FAIL: missing volume $VOL"
+                  exit 1
+                fi
+              done
+              echo "PASS: all expected volumes present"

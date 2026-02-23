@@ -1,9 +1,0 @@
-apiVersion: stoker.io/v1alpha1
-kind: Stoker
-metadata:
-  name: test-sync-invalid
-spec:
-  gateway:
-    apiKeySecretRef:
-      name: ignition-api-key
-      key: apiKey

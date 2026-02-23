@@ -1,0 +1,113 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: gateway-port-tls-defaults
+spec:
+  description: Verify GATEWAY_PORT and GATEWAY_TLS env vars are set from CR spec
+  steps:
+    - name: Deploy git server and api-key secret
+      try:
+        - apply:
+            file: ../../fixtures/git-server.yaml
+        - apply:
+            file: ../../fixtures/api-key-secret.yaml
+
+    - name: Wait for git server ready
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=condition=Ready pod/test-git-server -n $NAMESPACE --timeout=60s
+
+    - name: Create Stoker CR with port 8088 and tls false
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-port-tls
+              spec:
+                git:
+                  repo: git://test-git-server:9418/test-repo.git
+                  ref: main
+                gateway:
+                  port: 8088
+                  tls: false
+                  apiKeySecretRef:
+                    name: ignition-api-key
+                    key: apiKey
+
+    - name: Wait for RefResolved
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-port-tls
+              status:
+                conditions:
+                  - type: RefResolved
+                    status: "True"
+
+    - name: Create pod requesting injection
+      try:
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-port-tls
+                annotations:
+                  stoker.io/inject: "true"
+                  stoker.io/cr-name: test-port-tls
+              spec:
+                containers:
+                  - name: gateway
+                    image: busybox:latest
+                    command: ["sleep", "3600"]
+
+    - name: Assert sidecar injected
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-port-tls
+                annotations:
+                  stoker.io/injected: "true"
+              spec:
+                initContainers:
+                  - name: stoker-agent
+                    restartPolicy: Always
+
+    - name: Assert GATEWAY_PORT and GATEWAY_TLS env vars
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              POD="gateway-port-tls"
+
+              GATEWAY_PORT=$(kubectl get pod $POD -n $NAMESPACE \
+                -o jsonpath='{.spec.initContainers[?(@.name=="stoker-agent")].env[?(@.name=="GATEWAY_PORT")].value}')
+              if [ "$GATEWAY_PORT" != "8088" ]; then
+                echo "FAIL: expected GATEWAY_PORT=8088, got GATEWAY_PORT=$GATEWAY_PORT"
+                exit 1
+              fi
+
+              GATEWAY_TLS=$(kubectl get pod $POD -n $NAMESPACE \
+                -o jsonpath='{.spec.initContainers[?(@.name=="stoker-agent")].env[?(@.name=="GATEWAY_TLS")].value}')
+              if [ "$GATEWAY_TLS" != "false" ]; then
+                echo "FAIL: expected GATEWAY_TLS=false, got GATEWAY_TLS=$GATEWAY_TLS"
+                exit 1
+              fi
+
+              echo "PASS: GATEWAY_PORT=8088 and GATEWAY_TLS=false"

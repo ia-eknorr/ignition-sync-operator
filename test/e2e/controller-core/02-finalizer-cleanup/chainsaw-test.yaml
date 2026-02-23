@@ -1,0 +1,101 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: finalizer-cleanup
+spec:
+  description: Verify finalizer is added and ConfigMaps are cleaned up on deletion
+  steps:
+    - name: Deploy git server and api-key secret
+      try:
+        - apply:
+            file: ../../fixtures/git-server.yaml
+        - apply:
+            file: ../../fixtures/api-key-secret.yaml
+
+    - name: Wait for git server ready
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=condition=Ready pod/test-git-server -n $NAMESPACE --timeout=60s
+
+    - name: Create Stoker CR
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-fc
+              spec:
+                git:
+                  repo: git://test-git-server:9418/test-repo.git
+                  ref: main
+                gateway:
+                  port: 8088
+                  tls: false
+                  apiKeySecretRef:
+                    name: ignition-api-key
+                    key: apiKey
+
+    - name: Assert finalizer is present
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-fc
+                finalizers:
+                  - stoker.io/finalizer
+
+    - name: Assert metadata ConfigMap exists
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: stoker-metadata-test-fc
+
+    - name: Delete the Stoker CR
+      try:
+        - delete:
+            ref:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              name: test-fc
+
+    - name: Wait for CR deletion
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=delete stoker/test-fc -n $NAMESPACE --timeout=30s
+
+    - name: Assert ConfigMaps are cleaned up
+      try:
+        - error:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: stoker-metadata-test-fc
+        - error:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: stoker-status-test-fc
+        - error:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: stoker-changes-test-fc

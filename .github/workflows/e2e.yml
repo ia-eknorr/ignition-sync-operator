@@ -1,0 +1,53 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  e2e:
+    name: Chainsaw E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install kind
+        uses: helm/kind-action@v1
+        with:
+          install_only: true
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Install Chainsaw
+        run: |
+          go install github.com/kyverno/chainsaw@v0.2.12
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+      - name: Setup cluster and operator
+        run: test/e2e/setup.sh
+
+      - name: Run Chainsaw tests
+        run: chainsaw test --test-dir test/e2e/ --config test/e2e/.chainsaw.yaml
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          echo "=== Controller logs ==="
+          kubectl logs -n stoker-system -l app.kubernetes.io/name=stoker-operator --tail=200 || true
+          echo "=== Events ==="
+          kubectl get events -A --sort-by='.lastTimestamp' | tail -100 || true
+          echo "=== Stoker CRs ==="
+          kubectl get stokers -A -o yaml || true
+          echo "=== SyncProfiles ==="
+          kubectl get syncprofiles -A -o yaml || true
+          echo "=== Pods ==="
+          kubectl get pods -A -o wide || true

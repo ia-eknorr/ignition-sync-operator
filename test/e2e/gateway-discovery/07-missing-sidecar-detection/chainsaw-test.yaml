@@ -1,0 +1,104 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: gw-missing-sidecar-detection
+spec:
+  description: >
+    A pod with stoker.io/inject=true but no stoker-agent initContainer should
+    be reported with syncStatus=MissingSidecar and condition SidecarInjected=False.
+    The pod is created without the inject annotation (to avoid webhook injection),
+    then patched to add it after reaching Running state.
+  steps:
+    - name: deploy git server and api-key secret
+      try:
+        - apply:
+            file: ../../fixtures/git-server.yaml
+        - apply:
+            file: ../../fixtures/api-key-secret.yaml
+    - name: wait for git server ready
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=condition=Ready pod/test-git-server -n $NAMESPACE --timeout=60s
+    - name: create stoker cr
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-msd
+              spec:
+                git:
+                  repo: git://test-git-server:9418/test-repo.git
+                  ref: main
+                gateway:
+                  apiKeySecretRef:
+                    name: ignition-api-key
+                    key: apiKey
+    - name: wait for ref resolved
+      try:
+        - assert:
+            timeout: 60s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-msd
+              status:
+                conditions:
+                  - type: RefResolved
+                    status: "True"
+    - name: create pod without inject annotation
+      try:
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-msd
+                annotations:
+                  stoker.io/cr-name: test-msd
+              spec:
+                containers:
+                  - name: pause
+                    image: registry.k8s.io/pause:3.9
+    - name: wait for pod running then patch inject annotation
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=condition=Ready pod/gateway-msd -n $NAMESPACE --timeout=60s
+              kubectl annotate pod gateway-msd stoker.io/inject=true -n $NAMESPACE
+    - name: assert missing sidecar detected
+      try:
+        - assert:
+            timeout: 60s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-msd
+              status:
+                discoveredGateways:
+                  - podName: gateway-msd
+                    syncStatus: MissingSidecar
+    - name: assert sidecar injected condition false
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-msd
+              status:
+                conditions:
+                  - type: SidecarInjected
+                    status: "False"
+                    reason: SidecarMissing

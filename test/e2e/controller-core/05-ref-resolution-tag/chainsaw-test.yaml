@@ -1,0 +1,57 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: ref-resolution-tag
+spec:
+  description: Verify ref resolution succeeds for a tag ref
+  steps:
+    - name: Deploy git server and api-key secret
+      try:
+        - apply:
+            file: ../../fixtures/git-server.yaml
+        - apply:
+            file: ../../fixtures/api-key-secret.yaml
+
+    - name: Wait for git server ready
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=condition=Ready pod/test-git-server -n $NAMESPACE --timeout=60s
+
+    - name: Create Stoker CR with tag ref
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-ref-tag
+              spec:
+                git:
+                  repo: git://test-git-server:9418/test-repo.git
+                  ref: v1.0.0
+                gateway:
+                  port: 8088
+                  tls: false
+                  apiKeySecretRef:
+                    name: ignition-api-key
+                    key: apiKey
+
+    - name: Assert RefResolved=True and lastSyncRef is v1.0.0
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-ref-tag
+              status:
+                lastSyncRef: v1.0.0
+                conditions:
+                  - type: RefResolved
+                    status: "True"
+                    reason: RefResolved

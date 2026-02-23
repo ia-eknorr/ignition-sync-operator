@@ -1,0 +1,65 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: auto-discover-multiple-crs
+spec:
+  description: Verify webhook denies pod when multiple Stoker CRs exist and cr-name is omitted
+  steps:
+    - name: Create api-key secret
+      try:
+        - apply:
+            file: ../../fixtures/api-key-secret.yaml
+
+    - name: Create two Stoker CRs
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-multi-a
+              spec:
+                git:
+                  repo: git://test-git-server:9418/test-repo.git
+                  ref: main
+                gateway:
+                  port: 8088
+                  tls: false
+                  apiKeySecretRef:
+                    name: ignition-api-key
+                    key: apiKey
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-multi-b
+              spec:
+                git:
+                  repo: git://test-git-server:9418/test-repo.git
+                  ref: main
+                gateway:
+                  port: 8088
+                  tls: false
+                  apiKeySecretRef:
+                    name: ignition-api-key
+                    key: apiKey
+
+    - name: Create pod without cr-name annotation
+      try:
+        - apply:
+            expect:
+              - check:
+                  ($error != null): true
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-multi-crs
+                annotations:
+                  stoker.io/inject: "true"
+              spec:
+                containers:
+                  - name: gateway
+                    image: busybox:latest
+                    command: ["sleep", "3600"]

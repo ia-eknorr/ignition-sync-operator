@@ -1,0 +1,106 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: already-injected
+spec:
+  description: Verify webhook is idempotent — does not double-inject stoker-agent
+  steps:
+    - name: Deploy git server and secrets
+      try:
+        - apply:
+            file: ../../fixtures/git-server.yaml
+        - apply:
+            file: ../../fixtures/api-key-secret.yaml
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: git-token-secret
+              type: Opaque
+              stringData:
+                token: "fake-token-for-e2e"
+
+    - name: Wait for git server ready
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=condition=Ready pod/test-git-server -n $NAMESPACE --timeout=60s
+
+    - name: Create Stoker CR
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-idempotent
+              spec:
+                git:
+                  repo: git://test-git-server:9418/test-repo.git
+                  ref: main
+                  auth:
+                    token:
+                      secretRef:
+                        name: git-token-secret
+                        key: token
+                gateway:
+                  port: 8088
+                  tls: false
+                  apiKeySecretRef:
+                    name: ignition-api-key
+                    key: apiKey
+
+    - name: Wait for RefResolved
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-idempotent
+              status:
+                conditions:
+                  - type: RefResolved
+                    status: "True"
+
+    - name: Create pod with pre-existing stoker-agent initContainer
+      try:
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-already-injected
+                annotations:
+                  stoker.io/inject: "true"
+                  stoker.io/cr-name: test-idempotent
+              spec:
+                initContainers:
+                  - name: stoker-agent
+                    image: busybox:latest
+                    command: ["sleep", "1"]
+                    restartPolicy: Always
+                containers:
+                  - name: gateway
+                    image: busybox:latest
+                    command: ["sleep", "3600"]
+
+    - name: Assert exactly 1 stoker-agent initContainer
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              COUNT=$(kubectl get pod gateway-already-injected -n $NAMESPACE \
+                -o jsonpath='{.spec.initContainers[*].name}' | tr ' ' '\n' | grep -c "stoker-agent")
+              if [ "$COUNT" -ne 1 ]; then
+                echo "FAIL: expected 1 stoker-agent initContainer, found $COUNT"
+                exit 1
+              fi
+              echo "PASS: exactly 1 stoker-agent initContainer"

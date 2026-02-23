@@ -1,0 +1,33 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: syncprofile-absolute-source-path
+spec:
+  description: A SyncProfile with an absolute source path should be rejected.
+  steps:
+    - name: create syncprofile with absolute source
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: SyncProfile
+              metadata:
+                name: absolute-source
+              spec:
+                mappings:
+                  - source: "/etc/secrets"
+                    destination: projects
+    - name: assert validation failed
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: SyncProfile
+              metadata:
+                name: absolute-source
+              status:
+                conditions:
+                  - type: Accepted
+                    status: "False"
+                    reason: ValidationFailed

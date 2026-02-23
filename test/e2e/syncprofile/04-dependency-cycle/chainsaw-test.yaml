@@ -1,0 +1,49 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: syncprofile-dependency-cycle
+spec:
+  description: Two SyncProfiles with circular dependencies should be detected as a cycle.
+  steps:
+    - name: create profile-b depending on profile-a
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: SyncProfile
+              metadata:
+                name: profile-b
+              spec:
+                mappings:
+                  - source: services/red/projects
+                    destination: projects
+                dependsOn:
+                  - profileName: profile-a
+    - name: create profile-a depending on profile-b
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: SyncProfile
+              metadata:
+                name: profile-a
+              spec:
+                mappings:
+                  - source: services/blue/projects
+                    destination: projects
+                dependsOn:
+                  - profileName: profile-b
+    - name: assert cycle detected on profile-a
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: SyncProfile
+              metadata:
+                name: profile-a
+              status:
+                conditions:
+                  - type: Accepted
+                    status: "False"
+                    reason: CycleDetected

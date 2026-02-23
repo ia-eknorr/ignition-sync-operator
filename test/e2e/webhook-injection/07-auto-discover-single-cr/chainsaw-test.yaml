@@ -1,0 +1,99 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: auto-discover-single-cr
+spec:
+  description: Verify webhook auto-discovers a single Stoker CR when cr-name annotation is omitted
+  steps:
+    - name: Deploy git server and api-key secret
+      try:
+        - apply:
+            file: ../../fixtures/git-server.yaml
+        - apply:
+            file: ../../fixtures/api-key-secret.yaml
+
+    - name: Wait for git server ready
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=condition=Ready pod/test-git-server -n $NAMESPACE --timeout=60s
+
+    - name: Create single Stoker CR
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-autodiscover
+              spec:
+                git:
+                  repo: git://test-git-server:9418/test-repo.git
+                  ref: main
+                gateway:
+                  port: 8088
+                  tls: false
+                  apiKeySecretRef:
+                    name: ignition-api-key
+                    key: apiKey
+
+    - name: Wait for RefResolved
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-autodiscover
+              status:
+                conditions:
+                  - type: RefResolved
+                    status: "True"
+
+    - name: Create pod without cr-name annotation
+      try:
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-autodiscover
+                annotations:
+                  stoker.io/inject: "true"
+              spec:
+                containers:
+                  - name: gateway
+                    image: busybox:latest
+                    command: ["sleep", "3600"]
+
+    - name: Assert sidecar injected with auto-discovered CR name
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-autodiscover
+                annotations:
+                  stoker.io/injected: "true"
+              spec:
+                initContainers:
+                  - name: stoker-agent
+                    restartPolicy: Always
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              CR_NAME=$(kubectl get pod gateway-autodiscover -n $NAMESPACE \
+                -o jsonpath='{.spec.initContainers[?(@.name=="stoker-agent")].env[?(@.name=="CR_NAME")].value}')
+              if [ "$CR_NAME" != "test-autodiscover" ]; then
+                echo "FAIL: expected CR_NAME=test-autodiscover, got CR_NAME=$CR_NAME"
+                exit 1
+              fi
+              echo "PASS: CR_NAME correctly auto-discovered as test-autodiscover"

@@ -1,0 +1,128 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: gw-multiple-gateways
+spec:
+  description: >
+    Three Running pods with stoker.io/cr-name should all appear in
+    status.discoveredGateways and AllGatewaysSynced message should
+    reflect the count (0/3 gateways synced).
+  steps:
+    - name: deploy git server and api-key secret
+      try:
+        - apply:
+            file: ../../fixtures/git-server.yaml
+        - apply:
+            file: ../../fixtures/api-key-secret.yaml
+    - name: wait for git server ready
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=condition=Ready pod/test-git-server -n $NAMESPACE --timeout=60s
+    - name: create stoker cr
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-mg
+              spec:
+                git:
+                  repo: git://test-git-server:9418/test-repo.git
+                  ref: main
+                gateway:
+                  apiKeySecretRef:
+                    name: ignition-api-key
+                    key: apiKey
+    - name: wait for ref resolved
+      try:
+        - assert:
+            timeout: 60s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-mg
+              status:
+                conditions:
+                  - type: RefResolved
+                    status: "True"
+    - name: create three gateway pods
+      try:
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-mg-1
+                annotations:
+                  stoker.io/cr-name: test-mg
+              spec:
+                containers:
+                  - name: pause
+                    image: registry.k8s.io/pause:3.9
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-mg-2
+                annotations:
+                  stoker.io/cr-name: test-mg
+              spec:
+                containers:
+                  - name: pause
+                    image: registry.k8s.io/pause:3.9
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-mg-3
+                annotations:
+                  stoker.io/cr-name: test-mg
+              spec:
+                containers:
+                  - name: pause
+                    image: registry.k8s.io/pause:3.9
+    - name: wait for all pods running
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=condition=Ready pod/gateway-mg-1 pod/gateway-mg-2 pod/gateway-mg-3 -n $NAMESPACE --timeout=60s
+    - name: assert all three gateways discovered
+      try:
+        - assert:
+            timeout: 60s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-mg
+              status:
+                discoveredGateways:
+                  - podName: gateway-mg-1
+                  - podName: gateway-mg-2
+                  - podName: gateway-mg-3
+    - name: assert sync in progress with count
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-mg
+              status:
+                conditions:
+                  - type: AllGatewaysSynced
+                    status: "False"
+                    reason: SyncInProgress
+                    message: "0/3 gateways synced"

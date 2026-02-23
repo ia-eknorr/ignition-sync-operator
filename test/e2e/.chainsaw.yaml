@@ -1,0 +1,22 @@
+apiVersion: chainsaw.kyverno.io/v1alpha2
+kind: Configuration
+metadata:
+  name: stoker-e2e
+spec:
+  timeouts:
+    apply: 30s
+    assert: 60s
+    cleanup: 60s
+    delete: 30s
+    error: 30s
+    exec: 60s
+  cleanup:
+    skipDelete: false
+  execution:
+    failFast: false
+    parallel: 4
+  namespace:
+    template:
+      metadata:
+        labels:
+          stoker.io/injection: "enabled"

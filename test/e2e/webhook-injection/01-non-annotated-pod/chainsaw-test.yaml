@@ -1,0 +1,43 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: non-annotated-pod
+spec:
+  description: Verify pods without stoker annotations are not injected
+  steps:
+    - name: Create a plain pod without stoker annotations
+      try:
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: plain-gateway
+              spec:
+                containers:
+                  - name: gateway
+                    image: busybox:latest
+                    command: ["sleep", "3600"]
+
+    - name: Assert pod has no stoker-agent initContainer and no injected annotation
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=condition=Ready pod/plain-gateway -n $NAMESPACE --timeout=30s || true
+
+              INIT=$(kubectl get pod plain-gateway -n $NAMESPACE -o jsonpath='{.spec.initContainers[*].name}')
+              if echo "$INIT" | grep -q "stoker-agent"; then
+                echo "FAIL: stoker-agent initContainer found on non-annotated pod"
+                exit 1
+              fi
+
+              ANNOT=$(kubectl get pod plain-gateway -n $NAMESPACE -o jsonpath='{.metadata.annotations.stoker\.io/injected}')
+              if [ "$ANNOT" = "true" ]; then
+                echo "FAIL: stoker.io/injected annotation found on non-annotated pod"
+                exit 1
+              fi
+
+              echo "PASS: pod has no stoker-agent sidecar and no injected annotation"

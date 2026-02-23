@@ -1,0 +1,93 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: webhook-invalid-payload
+spec:
+  description: Verify webhook receiver rejects payload with no extractable ref and returns 400
+  steps:
+    - name: Deploy git server and api-key secret
+      try:
+        - apply:
+            file: ../../fixtures/git-server.yaml
+        - apply:
+            file: ../../fixtures/api-key-secret.yaml
+
+    - name: Wait for git server ready
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=condition=Ready pod/test-git-server -n $NAMESPACE --timeout=60s
+
+    - name: Create Stoker CR
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-wr
+              spec:
+                git:
+                  repo: git://test-git-server:9418/test-repo.git
+                  ref: main
+                polling:
+                  enabled: false
+                gateway:
+                  port: 8088
+                  tls: false
+                  apiKeySecretRef:
+                    name: ignition-api-key
+                    key: apiKey
+
+    - name: Wait for initial ref resolution
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-wr
+              status:
+                conditions:
+                  - type: RefResolved
+                    status: "True"
+
+    - name: Send invalid payload and assert HTTP 400
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            timeout: 30s
+            content: |
+              POD_IP=$(kubectl get pod -n stoker-system -l app.kubernetes.io/name=stoker-operator \
+                -o jsonpath='{.items[0].status.podIP}')
+              STATUS=$(kubectl run curl-$RANDOM --rm -i --restart=Never \
+                --image=curlimages/curl:latest \
+                -n $NAMESPACE --timeout=20s -- \
+                curl -s -o /dev/null -w '%{http_code}' -X POST \
+                -H "Content-Type: application/json" \
+                -d '{"foo":"bar"}' \
+                "http://${POD_IP}:9444/webhook/${NAMESPACE}/test-wr")
+              echo "HTTP status: $STATUS"
+              [ "$STATUS" = "400" ]
+
+    - name: Assert CR does NOT have requested-ref annotation
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            timeout: 10s
+            content: |
+              REF=$(kubectl get stoker test-wr -n $NAMESPACE \
+                -o jsonpath='{.metadata.annotations.stoker\.io/requested-ref}')
+              if [ -n "$REF" ]; then
+                echo "FAIL: expected no requested-ref annotation, got: $REF"
+                exit 1
+              fi
+              echo "PASS: no requested-ref annotation present"

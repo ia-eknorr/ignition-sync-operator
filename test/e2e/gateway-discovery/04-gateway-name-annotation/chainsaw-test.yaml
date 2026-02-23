@@ -1,0 +1,90 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: gw-name-annotation-priority
+spec:
+  description: >
+    When a pod has both stoker.io/gateway-name annotation and
+    app.kubernetes.io/name label, the annotation takes priority.
+  steps:
+    - name: deploy git server and api-key secret
+      try:
+        - apply:
+            file: ../../fixtures/git-server.yaml
+        - apply:
+            file: ../../fixtures/api-key-secret.yaml
+    - name: wait for git server ready
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=condition=Ready pod/test-git-server -n $NAMESPACE --timeout=60s
+    - name: create stoker cr
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-gna
+              spec:
+                git:
+                  repo: git://test-git-server:9418/test-repo.git
+                  ref: main
+                gateway:
+                  apiKeySecretRef:
+                    name: ignition-api-key
+                    key: apiKey
+    - name: wait for ref resolved
+      try:
+        - assert:
+            timeout: 60s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-gna
+              status:
+                conditions:
+                  - type: RefResolved
+                    status: "True"
+    - name: create pod with annotation and label
+      try:
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-gna
+                annotations:
+                  stoker.io/cr-name: test-gna
+                  stoker.io/gateway-name: custom-gw
+                labels:
+                  app.kubernetes.io/name: label-gw
+              spec:
+                containers:
+                  - name: pause
+                    image: registry.k8s.io/pause:3.9
+    - name: wait for pod running
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=condition=Ready pod/gateway-gna -n $NAMESPACE --timeout=60s
+    - name: assert gateway name from annotation
+      try:
+        - assert:
+            timeout: 60s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-gna
+              status:
+                discoveredGateways:
+                  - name: custom-gw
+                    podName: gateway-gna

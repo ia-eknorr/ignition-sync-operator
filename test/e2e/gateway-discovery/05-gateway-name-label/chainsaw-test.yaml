@@ -1,0 +1,89 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: gw-name-label-fallback
+spec:
+  description: >
+    When a pod has app.kubernetes.io/name label but no stoker.io/gateway-name
+    annotation, the label value is used as the gateway name.
+  steps:
+    - name: deploy git server and api-key secret
+      try:
+        - apply:
+            file: ../../fixtures/git-server.yaml
+        - apply:
+            file: ../../fixtures/api-key-secret.yaml
+    - name: wait for git server ready
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=condition=Ready pod/test-git-server -n $NAMESPACE --timeout=60s
+    - name: create stoker cr
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-gnl
+              spec:
+                git:
+                  repo: git://test-git-server:9418/test-repo.git
+                  ref: main
+                gateway:
+                  apiKeySecretRef:
+                    name: ignition-api-key
+                    key: apiKey
+    - name: wait for ref resolved
+      try:
+        - assert:
+            timeout: 60s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-gnl
+              status:
+                conditions:
+                  - type: RefResolved
+                    status: "True"
+    - name: create pod with label only
+      try:
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-gnl
+                annotations:
+                  stoker.io/cr-name: test-gnl
+                labels:
+                  app.kubernetes.io/name: label-gw
+              spec:
+                containers:
+                  - name: pause
+                    image: registry.k8s.io/pause:3.9
+    - name: wait for pod running
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=condition=Ready pod/gateway-gnl -n $NAMESPACE --timeout=60s
+    - name: assert gateway name from label
+      try:
+        - assert:
+            timeout: 60s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-gnl
+              status:
+                discoveredGateways:
+                  - name: label-gw
+                    podName: gateway-gnl

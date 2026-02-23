@@ -1,0 +1,120 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-git-server
+  labels:
+    app: test-git-server
+spec:
+  initContainers:
+    - name: init-repo
+      image: alpine:3.20
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          set -e
+          apk add --no-cache git
+          mkdir -p /git/test-repo.git
+
+          # Create a temp working directory
+          cd /tmp
+          git init -b main test-repo
+          cd test-repo
+          git config user.email "test@test.local"
+          git config user.name "Test"
+
+          # Create realistic Ignition project structure
+          mkdir -p services/ignition-blue/projects/MyProject
+          mkdir -p services/ignition-blue/config
+          mkdir -p services/ignition-red/projects/RedProject
+          mkdir -p tags/default
+
+          cat > services/ignition-blue/projects/MyProject/project.json <<'EOF'
+          {
+            "title": "MyProject",
+            "description": "Test project",
+            "enabled": true,
+            "inheritable": false
+          }
+          EOF
+
+          cat > services/ignition-blue/config/gateway.xml <<'EOF'
+          <gateway><name>blue</name></gateway>
+          EOF
+
+          cat > services/ignition-red/projects/RedProject/project.json <<'EOF'
+          {
+            "title": "RedProject",
+            "enabled": true
+          }
+          EOF
+
+          cat > tags/default/tags.json <<'EOF'
+          {
+            "tags": [{"name": "TestTag", "tagType": "AtomicTag", "value": 0}]
+          }
+          EOF
+
+          git add -A
+          git commit -m "initial"
+          git tag v1.0.0
+
+          # Second commit
+          mkdir -p services/ignition-blue/projects/SecondProject
+          cat > services/ignition-blue/projects/SecondProject/project.json <<'EOF'
+          {
+            "title": "SecondProject",
+            "enabled": true
+          }
+          EOF
+
+          git add -A
+          git commit -m "add second project"
+          git tag v2.0.0
+
+          # Push into bare repo
+          cd /tmp
+          git clone --bare test-repo /git/test-repo.git
+          cd /git/test-repo.git
+          git update-server-info
+
+          echo "Git repo initialized successfully"
+      volumeMounts:
+        - name: git-data
+          mountPath: /git
+  containers:
+    - name: git-daemon
+      image: alpine:3.20
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          apk add --no-cache git git-daemon &&
+          git daemon --verbose --export-all --enable=receive-pack --base-path=/git /git
+      ports:
+        - containerPort: 9418
+          name: git
+          protocol: TCP
+      volumeMounts:
+        - name: git-data
+          mountPath: /git
+      readinessProbe:
+        tcpSocket:
+          port: 9418
+        initialDelaySeconds: 2
+        periodSeconds: 5
+  volumes:
+    - name: git-data
+      emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-git-server
+spec:
+  selector:
+    app: test-git-server
+  ports:
+    - port: 9418
+      targetPort: 9418
+      protocol: TCP
+  type: ClusterIP

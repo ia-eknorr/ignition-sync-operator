@@ -1,0 +1,132 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: public-repo-no-git-creds
+spec:
+  description: "Regression test: verify no git-credentials volume or env vars when auth is nil (public repo)"
+  steps:
+    - name: Deploy git server and api-key secret
+      try:
+        - apply:
+            file: ../../fixtures/git-server.yaml
+        - apply:
+            file: ../../fixtures/api-key-secret.yaml
+
+    - name: Wait for git server ready
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=condition=Ready pod/test-git-server -n $NAMESPACE --timeout=60s
+
+    - name: Create Stoker CR with no auth (public repo)
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-public
+              spec:
+                git:
+                  repo: git://test-git-server:9418/test-repo.git
+                  ref: main
+                gateway:
+                  port: 8088
+                  tls: false
+                  apiKeySecretRef:
+                    name: ignition-api-key
+                    key: apiKey
+
+    - name: Wait for RefResolved
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-public
+              status:
+                conditions:
+                  - type: RefResolved
+                    status: "True"
+
+    - name: Create pod requesting injection
+      try:
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-public
+                annotations:
+                  stoker.io/inject: "true"
+                  stoker.io/cr-name: test-public
+              spec:
+                containers:
+                  - name: gateway
+                    image: busybox:latest
+                    command: ["sleep", "3600"]
+
+    - name: Assert sidecar injected
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-public
+                annotations:
+                  stoker.io/injected: "true"
+              spec:
+                initContainers:
+                  - name: stoker-agent
+                    restartPolicy: Always
+
+    - name: Assert no git-credentials volume or env vars
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              POD="gateway-public"
+
+              # Check sync-repo volume exists
+              VOLS=$(kubectl get pod $POD -n $NAMESPACE -o jsonpath='{.spec.volumes[*].name}')
+              if ! echo "$VOLS" | grep -q "sync-repo"; then
+                echo "FAIL: sync-repo volume not found"
+                exit 1
+              fi
+
+              # Check api-key volume exists
+              if ! echo "$VOLS" | grep -q "api-key"; then
+                echo "FAIL: api-key volume not found"
+                exit 1
+              fi
+
+              # Check no git-credentials volume
+              if echo "$VOLS" | grep -q "git-credentials"; then
+                echo "FAIL: git-credentials volume found on public repo pod"
+                exit 1
+              fi
+
+              # Check no GIT_TOKEN_FILE env var
+              ENVS=$(kubectl get pod $POD -n $NAMESPACE \
+                -o jsonpath='{.spec.initContainers[?(@.name=="stoker-agent")].env[*].name}')
+              if echo "$ENVS" | grep -q "GIT_TOKEN_FILE"; then
+                echo "FAIL: GIT_TOKEN_FILE env found on public repo pod"
+                exit 1
+              fi
+
+              # Check no GIT_SSH_KEY_FILE env var
+              if echo "$ENVS" | grep -q "GIT_SSH_KEY_FILE"; then
+                echo "FAIL: GIT_SSH_KEY_FILE env found on public repo pod"
+                exit 1
+              fi
+
+              echo "PASS: no git-credentials artifacts found on public repo pod"

@@ -1,0 +1,114 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: data-volume-ignition-data
+spec:
+  description: Verify webhook mounts existing "ignition-data" volume into stoker-agent at discovered path
+  steps:
+    - name: Deploy git server and api-key secret
+      try:
+        - apply:
+            file: ../../fixtures/git-server.yaml
+        - apply:
+            file: ../../fixtures/api-key-secret.yaml
+
+    - name: Wait for git server ready
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=condition=Ready pod/test-git-server -n $NAMESPACE --timeout=60s
+
+    - name: Create Stoker CR
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-datavol-ign
+              spec:
+                git:
+                  repo: git://test-git-server:9418/test-repo.git
+                  ref: main
+                gateway:
+                  port: 8088
+                  tls: false
+                  apiKeySecretRef:
+                    name: ignition-api-key
+                    key: apiKey
+
+    - name: Wait for RefResolved
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-datavol-ign
+              status:
+                conditions:
+                  - type: RefResolved
+                    status: "True"
+
+    - name: Create pod with ignition-data volume
+      try:
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-datavol-ign
+                annotations:
+                  stoker.io/inject: "true"
+                  stoker.io/cr-name: test-datavol-ign
+              spec:
+                volumes:
+                  - name: ignition-data
+                    emptyDir: {}
+                containers:
+                  - name: gateway
+                    image: busybox:latest
+                    command: ["sleep", "3600"]
+                    volumeMounts:
+                      - name: ignition-data
+                        mountPath: /usr/local/bin/ignition/data
+
+    - name: Assert stoker-agent mounts ignition-data at discovered path
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-datavol-ign
+                annotations:
+                  stoker.io/injected: "true"
+              spec:
+                initContainers:
+                  - name: stoker-agent
+                    restartPolicy: Always
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              # Check stoker-agent has ignition-data volumeMount at /usr/local/bin/ignition/data
+              MOUNT_PATH=$(kubectl get pod gateway-datavol-ign -n $NAMESPACE \
+                -o jsonpath='{.spec.initContainers[?(@.name=="stoker-agent")].volumeMounts[?(@.name=="ignition-data")].mountPath}')
+              if [ "$MOUNT_PATH" != "/usr/local/bin/ignition/data" ]; then
+                echo "FAIL: expected mountPath /usr/local/bin/ignition/data, got $MOUNT_PATH"
+                exit 1
+              fi
+              # Check DATA_PATH env var matches
+              DATA_PATH=$(kubectl get pod gateway-datavol-ign -n $NAMESPACE \
+                -o jsonpath='{.spec.initContainers[?(@.name=="stoker-agent")].env[?(@.name=="DATA_PATH")].value}')
+              if [ "$DATA_PATH" != "/usr/local/bin/ignition/data" ]; then
+                echo "FAIL: expected DATA_PATH=/usr/local/bin/ignition/data, got DATA_PATH=$DATA_PATH"
+                exit 1
+              fi
+              echo "PASS: ignition-data volume mounted at /usr/local/bin/ignition/data with matching DATA_PATH"

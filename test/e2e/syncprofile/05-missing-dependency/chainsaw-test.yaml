@@ -1,0 +1,35 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: syncprofile-missing-dependency
+spec:
+  description: A SyncProfile depending on a nonexistent profile should report DependencyNotFound.
+  steps:
+    - name: create syncprofile with missing dependency
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: SyncProfile
+              metadata:
+                name: depends-on-ghost
+              spec:
+                mappings:
+                  - source: services/gateway/projects
+                    destination: projects
+                dependsOn:
+                  - profileName: nonexistent-profile
+    - name: assert dependency not found
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: SyncProfile
+              metadata:
+                name: depends-on-ghost
+              status:
+                conditions:
+                  - type: Accepted
+                    status: "False"
+                    reason: DependencyNotFound

@@ -1,0 +1,105 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: syncprofile-gateway-count-update
+spec:
+  description: >
+    A SyncProfile's status.gatewayCount should reflect the number of
+    running gateway pods that reference it via annotations.
+  steps:
+    - name: deploy git server and api-key secret
+      try:
+        - apply:
+            file: ../../fixtures/git-server.yaml
+        - apply:
+            file: ../../fixtures/api-key-secret.yaml
+    - name: wait for git server ready
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=condition=Ready pod/test-git-server -n $NAMESPACE --timeout=60s
+    - name: create stoker cr
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-stoker
+              spec:
+                git:
+                  repo: git://test-git-server:9418/test-repo.git
+                  ref: main
+                gateway:
+                  port: 8088
+                  tls: false
+                  apiKeySecretRef:
+                    name: ignition-api-key
+                    key: apiKey
+    - name: create syncprofile
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: SyncProfile
+              metadata:
+                name: gateway-profile
+              spec:
+                mappings:
+                  - source: services/gateway/projects
+                    destination: projects
+    - name: create two annotated gateway pods
+      try:
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-blue
+                annotations:
+                  stoker.io/cr-name: test-stoker
+                  stoker.io/sync-profile: gateway-profile
+                  stoker.io/inject: "true"
+              spec:
+                containers:
+                  - name: ignition
+                    image: alpine:3.20
+                    command: ["sleep", "3600"]
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-red
+                annotations:
+                  stoker.io/cr-name: test-stoker
+                  stoker.io/sync-profile: gateway-profile
+                  stoker.io/inject: "true"
+              spec:
+                containers:
+                  - name: ignition
+                    image: alpine:3.20
+                    command: ["sleep", "3600"]
+    - name: wait for pods running
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=jsonpath='{.status.phase}'=Running pod/gateway-blue -n $NAMESPACE --timeout=60s
+              kubectl wait --for=jsonpath='{.status.phase}'=Running pod/gateway-red -n $NAMESPACE --timeout=60s
+    - name: assert gateway count is 2
+      try:
+        - assert:
+            timeout: 60s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: SyncProfile
+              metadata:
+                name: gateway-profile
+              status:
+                gatewayCount: 2

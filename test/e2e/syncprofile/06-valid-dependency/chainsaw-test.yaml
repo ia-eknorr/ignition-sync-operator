@@ -1,0 +1,61 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: syncprofile-valid-dependency
+spec:
+  description: A SyncProfile depending on an existing profile should be accepted.
+  steps:
+    - name: create base profile (no dependencies)
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: SyncProfile
+              metadata:
+                name: base-profile
+              spec:
+                mappings:
+                  - source: services/shared/config
+                    destination: config
+    - name: assert base profile accepted
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: SyncProfile
+              metadata:
+                name: base-profile
+              status:
+                conditions:
+                  - type: Accepted
+                    status: "True"
+                    reason: ValidationPassed
+    - name: create dependent profile
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: SyncProfile
+              metadata:
+                name: dependent-profile
+              spec:
+                mappings:
+                  - source: services/gateway/projects
+                    destination: projects
+                dependsOn:
+                  - profileName: base-profile
+    - name: assert dependent profile accepted
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: SyncProfile
+              metadata:
+                name: dependent-profile
+              status:
+                conditions:
+                  - type: Accepted
+                    status: "True"
+                    reason: ValidationPassed

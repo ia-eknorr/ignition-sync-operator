@@ -1,0 +1,25 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: auto-discover-zero-crs
+spec:
+  description: Verify webhook denies pod when no Stoker CRs exist and cr-name is omitted
+  steps:
+    - name: Create pod without cr-name annotation and no CRs in namespace
+      try:
+        - apply:
+            expect:
+              - check:
+                  ($error != null): true
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-no-crs
+                annotations:
+                  stoker.io/inject: "true"
+              spec:
+                containers:
+                  - name: gateway
+                    image: busybox:latest
+                    command: ["sleep", "3600"]

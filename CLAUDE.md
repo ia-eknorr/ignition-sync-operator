@@ -20,8 +20,11 @@ make manifests          # Regenerate CRDs, RBAC, webhook config via controller-g
 make generate           # Regenerate DeepCopy methods
 make helm-sync          # Copy CRDs to Helm chart + verify RBAC drift
 make run                # Run controller locally against current kubeconfig
-make functional-test    # Full functional test suite in kind cluster
-make functional-test-phase PHASE=02  # Run single phase (02-09)
+make e2e                # Full e2e: setup kind cluster + run Chainsaw tests
+make e2e-setup          # Set up kind cluster and deploy operator
+make e2e-test           # Run all Chainsaw e2e tests (cluster must exist)
+make e2e-test-focus TEST=controller-core/08-public-repo-no-auth  # Run single test
+make e2e-teardown       # Delete the e2e kind cluster
 make setup              # Configure git hooks (.githooks/pre-commit runs lint)
 ```
 
@@ -31,7 +34,9 @@ go test ./internal/controller/ -run TestControllers -v
 go test ./internal/syncengine/ -run TestBuildPlan -v
 ```
 
-**Tests use Ginkgo/Gomega with envtest.** The suite bootstraps a real API server with CRDs from `config/crd/bases/`. Run `make setup-envtest` before running tests from an IDE.
+**Unit tests use Ginkgo/Gomega with envtest.** The suite bootstraps a real API server with CRDs from `config/crd/bases/`. Run `make setup-envtest` before running tests from an IDE.
+
+**E2E tests use [Chainsaw](https://kyverno.github.io/chainsaw/) (by Kyverno).** Tests live in `test/e2e/` and run against a real kind cluster with the operator deployed via Helm. Each test gets its own namespace. An in-cluster git server provides repos without external dependencies. Tests cover: controller reconciliation, SyncProfile validation, gateway discovery, webhook injection, and webhook receiver.
 
 ## Architecture
 

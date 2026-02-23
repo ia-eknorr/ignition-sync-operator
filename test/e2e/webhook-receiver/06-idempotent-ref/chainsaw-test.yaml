@@ -1,0 +1,135 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: webhook-idempotent-ref
+spec:
+  description: Verify webhook receiver is idempotent — duplicate ref does not update requested-at
+  steps:
+    - name: Deploy git server and api-key secret
+      try:
+        - apply:
+            file: ../../fixtures/git-server.yaml
+        - apply:
+            file: ../../fixtures/api-key-secret.yaml
+
+    - name: Wait for git server ready
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=condition=Ready pod/test-git-server -n $NAMESPACE --timeout=60s
+
+    - name: Create Stoker CR
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-wr
+              spec:
+                git:
+                  repo: git://test-git-server:9418/test-repo.git
+                  ref: main
+                polling:
+                  enabled: false
+                gateway:
+                  port: 8088
+                  tls: false
+                  apiKeySecretRef:
+                    name: ignition-api-key
+                    key: apiKey
+
+    - name: Wait for initial ref resolution
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-wr
+              status:
+                conditions:
+                  - type: RefResolved
+                    status: "True"
+
+    - name: Send first webhook with ref v1.0.0
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            timeout: 30s
+            content: |
+              POD_IP=$(kubectl get pod -n stoker-system -l app.kubernetes.io/name=stoker-operator \
+                -o jsonpath='{.items[0].status.podIP}')
+              kubectl run curl-$RANDOM --rm -i --restart=Never \
+                --image=curlimages/curl:latest \
+                -n $NAMESPACE --timeout=20s -- \
+                curl -sf -X POST \
+                -H "Content-Type: application/json" \
+                -d '{"ref":"v1.0.0"}' \
+                "http://${POD_IP}:9444/webhook/${NAMESPACE}/test-wr"
+
+    - name: Assert CR annotated with v1.0.0
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-wr
+                annotations:
+                  stoker.io/requested-ref: v1.0.0
+                  stoker.io/requested-by: generic
+
+    - name: Record requested-at timestamp then send duplicate
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            timeout: 30s
+            content: |
+              # Record the current requested-at value
+              FIRST_TS=$(kubectl get stoker test-wr -n $NAMESPACE \
+                -o jsonpath='{.metadata.annotations.stoker\.io/requested-at}')
+              echo "First requested-at: $FIRST_TS"
+
+              if [ -z "$FIRST_TS" ]; then
+                echo "FAIL: expected requested-at annotation after first webhook"
+                exit 1
+              fi
+
+              # Small delay to ensure any update would produce a different timestamp
+              sleep 2
+
+              # Send duplicate webhook with same ref
+              POD_IP=$(kubectl get pod -n stoker-system -l app.kubernetes.io/name=stoker-operator \
+                -o jsonpath='{.items[0].status.podIP}')
+              kubectl run curl-$RANDOM --rm -i --restart=Never \
+                --image=curlimages/curl:latest \
+                -n $NAMESPACE --timeout=20s -- \
+                curl -sf -X POST \
+                -H "Content-Type: application/json" \
+                -d '{"ref":"v1.0.0"}' \
+                "http://${POD_IP}:9444/webhook/${NAMESPACE}/test-wr"
+
+              # Small delay to let any potential update propagate
+              sleep 1
+
+              # Verify requested-at has NOT changed
+              SECOND_TS=$(kubectl get stoker test-wr -n $NAMESPACE \
+                -o jsonpath='{.metadata.annotations.stoker\.io/requested-at}')
+              echo "Second requested-at: $SECOND_TS"
+
+              if [ "$FIRST_TS" != "$SECOND_TS" ]; then
+                echo "FAIL: requested-at changed from $FIRST_TS to $SECOND_TS"
+                exit 1
+              fi
+
+              echo "PASS: requested-at unchanged (idempotent)"

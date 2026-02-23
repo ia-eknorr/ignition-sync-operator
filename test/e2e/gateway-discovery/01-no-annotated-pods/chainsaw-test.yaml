@@ -1,0 +1,66 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: gw-no-annotated-pods
+spec:
+  description: >
+    When no pods carry the stoker.io/cr-name annotation, the controller should
+    set AllGatewaysSynced=False with reason NoGatewaysDiscovered.
+  steps:
+    - name: deploy git server and api-key secret
+      try:
+        - apply:
+            file: ../../fixtures/git-server.yaml
+        - apply:
+            file: ../../fixtures/api-key-secret.yaml
+    - name: wait for git server ready
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=condition=Ready pod/test-git-server -n $NAMESPACE --timeout=60s
+    - name: create stoker cr
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-nap
+              spec:
+                git:
+                  repo: git://test-git-server:9418/test-repo.git
+                  ref: main
+                gateway:
+                  apiKeySecretRef:
+                    name: ignition-api-key
+                    key: apiKey
+    - name: assert ref resolved
+      try:
+        - assert:
+            timeout: 60s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-nap
+              status:
+                conditions:
+                  - type: RefResolved
+                    status: "True"
+    - name: assert no gateways discovered
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-nap
+              status:
+                conditions:
+                  - type: AllGatewaysSynced
+                    status: "False"
+                    reason: NoGatewaysDiscovered

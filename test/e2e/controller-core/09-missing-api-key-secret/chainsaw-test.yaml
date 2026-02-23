@@ -1,0 +1,39 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: missing-api-key-secret
+spec:
+  description: Verify controller sets Ready=False when API key secret is missing
+  steps:
+    - name: Create Stoker CR referencing nonexistent api-key secret
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-no-api
+              spec:
+                git:
+                  repo: git://test-git-server:9418/test-repo.git
+                  ref: main
+                gateway:
+                  port: 8088
+                  tls: false
+                  apiKeySecretRef:
+                    name: missing-secret
+                    key: apiKey
+
+    - name: Assert Ready=False
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-no-api
+              status:
+                conditions:
+                  - type: Ready
+                    status: "False"

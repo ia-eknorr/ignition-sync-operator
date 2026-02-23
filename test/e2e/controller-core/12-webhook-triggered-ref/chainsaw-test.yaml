@@ -1,0 +1,79 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: webhook-triggered-ref
+spec:
+  description: Verify webhook annotation triggers ref resolution to a new ref
+  steps:
+    - name: Deploy git server and api-key secret
+      try:
+        - apply:
+            file: ../../fixtures/git-server.yaml
+        - apply:
+            file: ../../fixtures/api-key-secret.yaml
+
+    - name: Wait for git server ready
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl wait --for=condition=Ready pod/test-git-server -n $NAMESPACE --timeout=60s
+
+    - name: Create Stoker CR at v1.0.0
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-wtr
+              spec:
+                git:
+                  repo: git://test-git-server:9418/test-repo.git
+                  ref: v1.0.0
+                polling:
+                  enabled: false
+                gateway:
+                  port: 8088
+                  tls: false
+                  apiKeySecretRef:
+                    name: ignition-api-key
+                    key: apiKey
+
+    - name: Wait for initial ref resolution
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-wtr
+              status:
+                lastSyncRef: v1.0.0
+                conditions:
+                  - type: RefResolved
+                    status: "True"
+
+    - name: Annotate CR with requested-ref v2.0.0
+      try:
+        - script:
+            env:
+              - name: NAMESPACE
+                value: ($namespace)
+            content: |
+              kubectl annotate stoker test-wtr stoker.io/requested-ref=v2.0.0 -n $NAMESPACE
+
+    - name: Assert lastSyncRef changes to v2.0.0
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-wtr
+              status:
+                lastSyncRef: v2.0.0

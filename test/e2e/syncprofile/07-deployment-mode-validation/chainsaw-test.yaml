@@ -1,0 +1,36 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: syncprofile-deployment-mode-validation
+spec:
+  description: A SyncProfile with an absolute deploymentMode.source should be rejected.
+  steps:
+    - name: create syncprofile with absolute deployment mode source
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: SyncProfile
+              metadata:
+                name: bad-deploy-mode
+              spec:
+                mappings:
+                  - source: services/gateway/projects
+                    destination: projects
+                deploymentMode:
+                  name: production
+                  source: "/absolute/path"
+    - name: assert validation failed
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: SyncProfile
+              metadata:
+                name: bad-deploy-mode
+              status:
+                conditions:
+                  - type: Accepted
+                    status: "False"
+                    reason: ValidationFailed

@@ -1,0 +1,49 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: missing-git-token-secret
+spec:
+  description: Verify controller sets Ready=False when git token secret is missing
+  steps:
+    - name: Create api-key secret
+      try:
+        - apply:
+            file: ../../fixtures/api-key-secret.yaml
+
+    - name: Create Stoker CR with token auth referencing nonexistent secret
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-no-token
+              spec:
+                git:
+                  repo: https://github.com/example/repo.git
+                  ref: main
+                  auth:
+                    token:
+                      secretRef:
+                        name: missing-git-token
+                        key: token
+                gateway:
+                  port: 8088
+                  tls: false
+                  apiKeySecretRef:
+                    name: ignition-api-key
+                    key: apiKey
+
+    - name: Assert Ready=False
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-no-token
+              status:
+                conditions:
+                  - type: Ready
+                    status: "False"

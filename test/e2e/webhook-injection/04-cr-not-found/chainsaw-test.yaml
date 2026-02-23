@@ -1,0 +1,26 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: cr-not-found
+spec:
+  description: Verify webhook denies pod when referenced Stoker CR does not exist
+  steps:
+    - name: Create pod referencing nonexistent Stoker CR
+      try:
+        - apply:
+            expect:
+              - check:
+                  ($error != null): true
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-no-cr
+                annotations:
+                  stoker.io/inject: "true"
+                  stoker.io/cr-name: nonexistent
+              spec:
+                containers:
+                  - name: gateway
+                    image: busybox:latest
+                    command: ["sleep", "3600"]

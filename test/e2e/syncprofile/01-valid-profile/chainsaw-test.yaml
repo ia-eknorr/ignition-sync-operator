@@ -1,0 +1,35 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: syncprofile-valid-profile
+spec:
+  description: A valid SyncProfile with basic mappings should be accepted.
+  steps:
+    - name: create valid syncprofile
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: SyncProfile
+              metadata:
+                name: basic-profile
+              spec:
+                mappings:
+                  - source: services/gateway/projects
+                    destination: projects
+                  - source: tags/default
+                    destination: tags
+    - name: assert accepted condition is true
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: SyncProfile
+              metadata:
+                name: basic-profile
+              status:
+                conditions:
+                  - type: Accepted
+                    status: "True"
+                    reason: ValidationPassed

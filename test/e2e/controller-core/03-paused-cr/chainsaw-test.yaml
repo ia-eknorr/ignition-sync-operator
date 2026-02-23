@@ -1,0 +1,46 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: paused-cr
+spec:
+  description: Verify paused CR sets Ready=False with reason Paused
+  steps:
+    - name: Create api-key secret
+      try:
+        - apply:
+            file: ../../fixtures/api-key-secret.yaml
+
+    - name: Create paused Stoker CR
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-paused
+              spec:
+                paused: true
+                git:
+                  repo: git://test-git-server:9418/test-repo.git
+                  ref: main
+                gateway:
+                  port: 8088
+                  tls: false
+                  apiKeySecretRef:
+                    name: ignition-api-key
+                    key: apiKey
+
+    - name: Assert Ready=False with reason Paused
+      try:
+        - assert:
+            timeout: 30s
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-paused
+              status:
+                conditions:
+                  - type: Ready
+                    status: "False"
+                    reason: Paused

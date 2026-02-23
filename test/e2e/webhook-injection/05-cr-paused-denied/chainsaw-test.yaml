@@ -1,0 +1,51 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: cr-paused-denied
+spec:
+  description: Verify webhook denies pod when Stoker CR is paused
+  steps:
+    - name: Create api-key secret
+      try:
+        - apply:
+            file: ../../fixtures/api-key-secret.yaml
+
+    - name: Create paused Stoker CR
+      try:
+        - apply:
+            resource:
+              apiVersion: stoker.io/v1alpha1
+              kind: Stoker
+              metadata:
+                name: test-paused
+              spec:
+                paused: true
+                git:
+                  repo: git://test-git-server:9418/test-repo.git
+                  ref: main
+                gateway:
+                  port: 8088
+                  tls: false
+                  apiKeySecretRef:
+                    name: ignition-api-key
+                    key: apiKey
+
+    - name: Create pod requesting injection from paused CR
+      try:
+        - apply:
+            expect:
+              - check:
+                  ($error != null): true
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: gateway-paused
+                annotations:
+                  stoker.io/inject: "true"
+                  stoker.io/cr-name: test-paused
+              spec:
+                containers:
+                  - name: gateway
+                    image: busybox:latest
+                    command: ["sleep", "3600"]
