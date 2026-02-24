@@ -1,8 +1,6 @@
 # Quickstart
 
-Get a single Ignition gateway syncing projects from Git in under 15 minutes.
-
-This guide walks through a complete end-to-end setup: installing the operator, deploying an Ignition gateway, and configuring Stoker to sync project files from a Git repository.
+Get a single Ignition gateway syncing projects from Git in 7 steps.
 
 ## Prerequisites
 
@@ -111,7 +109,7 @@ Verify the controller resolved the git ref:
 kubectl get gatewaysyncs -n quickstart
 ```
 
-The `REF` column should show `main` and `READY` should be `True`.
+The `REF` column should show `main` and `COMMIT` should show a short hash. `READY` will be `False` until a gateway is deployed and synced.
 
 ## 6. Grant agent RBAC
 
@@ -179,7 +177,7 @@ kubectl get pods -n quickstart -w
 
 You should see the Ignition pod with **2/2** containers ready (the gateway + the `stoker-agent` sidecar).
 
-## 8. Verify the deployment
+## Verify the deployment
 
 Once the gateway pod shows **2/2**, walk through these checks to confirm everything is wired up correctly.
 
@@ -210,8 +208,8 @@ kubectl get gs -n quickstart
 After about 60 seconds you should see:
 
 ```text
-NAME         REF    SYNCED   GATEWAYS             READY   AGE
-quickstart   main   True     1/1 gateways synced  True    5m
+NAME         REF    COMMIT    PROFILES   SYNCED   GATEWAYS             READY   AGE
+quickstart   main   4d19160   1          True     1/1 gateways synced  True    5m
 ```
 
 ### Describe the GatewaySync CR
@@ -224,8 +222,8 @@ kubectl describe gatewaysync quickstart -n quickstart
 
 Look for:
 
-- **Conditions:** `RefResolved=True` and `GatewaysReady=True`
-- **Gateway Statuses:** should list the gateway pod with its sync status and commit hash
+- **Conditions:** `RefResolved=True`, `AllGatewaysSynced=True`, and `Ready=True`
+- **Discovered Gateways:** should list the gateway pod with its sync status and commit hash
 
 ### Read the agent logs
 
@@ -237,7 +235,7 @@ Look for:
 
 - `clone complete` — the repo was cloned successfully
 - `files synced` with `added` and `projects` — files were delivered to the gateway
-- `scan API success` — Ignition acknowledged the project reload
+- `scan complete` with `projects=200 config=200` — Ignition acknowledged the sync
 
 ### Inspect the status ConfigMap
 
@@ -249,7 +247,7 @@ kubectl get cm stoker-status-quickstart -n quickstart -o jsonpath='{.data}' | py
 
 This shows the synced commit, file counts, project names, and any error messages per gateway.
 
-## 9. Explore
+## Explore
 
 Open the Ignition web UI to see the synced projects:
 
@@ -293,4 +291,4 @@ kind delete cluster --name stoker-quickstart
 - **Webhook-driven sync:** Configure `POST /webhook/{namespace}/{crName}` to trigger syncs on git push events instead of polling.
 - **Private repos:** Add `spec.git.auth` with a token or SSH key secret reference to sync from private repositories.
 
-See the [architecture docs](architecture/) for deeper technical detail.
+- **[GatewaySync CR Reference](docs/configuration/gatewaysync-cr.md)** — full spec reference including git auth, polling, sync profiles, and agent configuration

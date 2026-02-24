@@ -16,7 +16,7 @@ rules:
 - apiGroups:
   - stoker.io
   resources:
-  - stokers
+  - gatewaysyncs
   verbs:
   - get
   - list
@@ -24,6 +24,6 @@ rules:
 - apiGroups:
   - stoker.io
   resources:
-  - stokers/status
+  - gatewaysyncs/status
   verbs:
   - get

@@ -16,12 +16,12 @@ rules:
 - apiGroups:
   - stoker.io
   resources:
-  - stokers
+  - gatewaysyncs
   verbs:
   - '*'
 - apiGroups:
   - stoker.io
   resources:
-  - stokers/status
+  - gatewaysyncs/status
   verbs:
   - get

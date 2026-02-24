@@ -2,8 +2,7 @@
 # since it depends on service name and namespace that are out of this kustomize package.
 # It should be run by config/default
 resources:
-- bases/stoker.io_stokers.yaml
-- bases/stoker.io_syncprofiles.yaml
+- bases/stoker.io_gatewaysyncs.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 #patches:

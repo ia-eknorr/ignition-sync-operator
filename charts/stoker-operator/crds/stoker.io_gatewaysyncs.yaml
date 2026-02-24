@@ -20,9 +20,8 @@ spec:
     - jsonPath: .spec.git.ref
       name: Ref
       type: string
-    - jsonPath: .status.lastSyncCommit
+    - jsonPath: .status.lastSyncCommitShort
       name: Commit
-      priority: 1
       type: string
     - jsonPath: .status.profileCount
       name: Profiles
@@ -36,6 +35,10 @@ spec:
     - jsonPath: .status.conditions[?(@.type=="Ready")].status
       name: Ready
       type: string
+    - jsonPath: .status.lastSyncTime
+      name: Last Sync
+      priority: 1
+      type: date
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -72,15 +75,12 @@ spec:
                     description: image configures the agent container image.
                     properties:
                       pullPolicy:
-                        default: IfNotPresent
                         description: pullPolicy is the image pull policy.
                         type: string
                       repository:
-                        default: ghcr.io/ia-eknorr/stoker-agent
                         description: repository is the container image repository.
                         type: string
                       tag:
-                        default: latest
                         description: tag is the container image tag.
                         type: string
                     type: object
@@ -573,6 +573,10 @@ spec:
                 type: array
               lastSyncCommit:
                 description: lastSyncCommit is the git commit SHA that was last synced.
+                type: string
+              lastSyncCommitShort:
+                description: lastSyncCommitShort is the abbreviated (7-char) git commit
+                  SHA for display.
                 type: string
               lastSyncRef:
                 description: lastSyncRef is the git ref that was last synced.

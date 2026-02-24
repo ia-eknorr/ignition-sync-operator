@@ -25,8 +25,8 @@ secrets, applying CRs, labeling namespaces, and granting agent RBAC.
 
 The operator has two components:
 
-- **Controller** — watches Stoker and SyncProfile CRs, resolves git refs
-  via `ls-remote`, and manages metadata ConfigMaps.
+- **Controller** — watches GatewaySync CRs, resolves git refs via `ls-remote`,
+  and manages metadata ConfigMaps.
 - **Agent sidecar** — injected into gateway pods via MutatingWebhook, clones the
   repo and syncs files to the Ignition data directory.
 

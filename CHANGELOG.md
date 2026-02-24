@@ -22,15 +22,14 @@ Initial release — controller + agent sidecar for Git-driven Ignition gateway c
 
 ### Added
 
-- **Stoker CRD** (`stoker.io/v1alpha1`) with git ref resolution via `ls-remote`, polling configuration, and gateway connection settings
-- **SyncProfile CRD** with declarative source-to-destination file mappings, glob patterns, template variables, and `dependsOn` ordering
+- **GatewaySync CRD** (`stoker.io/v1alpha1`) with git ref resolution via `ls-remote`, polling configuration, gateway connection settings, and embedded sync profiles with declarative source-to-destination file mappings, glob patterns, and template variables
 - **Sync agent** with 3-layer architecture (syncengine → agent → ignition): clone/fetch, staged file sync with orphan cleanup, Ignition scan API integration
 - **Mutating webhook** for automatic sidecar injection into annotated pods (native sidecar pattern, K8s 1.28+)
 - **Gateway discovery** via pod annotations with status aggregation from agent ConfigMaps
 - **Webhook receiver** (`POST /webhook/{namespace}/{crName}`) with auto-detection of GitHub release, ArgoCD, Kargo, and generic payloads; HMAC signature validation
 - **Designer session detection** with configurable policy (`proceed`, `wait`, `fail`)
-- **Dry-run mode** on SyncProfile for diffing without writing to gateway
-- **Pause support** on both Stoker CR and SyncProfile levels
+- **Dry-run mode** per profile for diffing without writing to gateway
+- **Pause support** at defaults and per-profile levels
 - **Helm chart** with cert-manager TLS, agent RBAC, configurable agent image, and helm-docs generated README
 - **CI/CD**: lint, test, and release workflows; multi-arch Docker image builds (amd64/arm64)
 - **Functional test suite** with phased kind cluster tests (phases 02-09)

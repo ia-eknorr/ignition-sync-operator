@@ -38,14 +38,15 @@ go test ./internal/syncengine/ -run TestBuildPlan -v
 
 Unit tests use **Ginkgo/Gomega with envtest** — a real API server is bootstrapped with CRDs. If running tests from an IDE, run `make setup-envtest` first to download the required binaries.
 
-### Functional Tests
+### E2E Tests
 
 ```bash
-make functional-test                     # full suite in kind
-make functional-test-phase PHASE=02      # single phase (02-09)
+make e2e                                                       # full suite: setup kind + run tests
+make e2e-test                                                  # run all Chainsaw tests (cluster must exist)
+make e2e-test-focus TEST=controller-core/08-public-repo-no-auth  # single test
 ```
 
-Phases are numbered scripts in `test/functional/` that run sequentially against a kind cluster with an in-cluster git server.
+Tests use [Chainsaw](https://kyverno.github.io/chainsaw/) and run against a kind cluster with an in-cluster git server. Each test gets its own namespace.
 
 ## Modifying CRD Types
 
@@ -70,15 +71,15 @@ make helm-sync    # copy CRDs to Helm chart + verify RBAC parity
 - Keep PRs focused — one feature or fix per PR.
 - Ensure `make lint` and `make test` pass before opening.
 - New CRD fields need `make manifests && make generate && make helm-sync`.
-- Functional test coverage is encouraged for end-to-end behavior changes.
+- E2E test coverage (Chainsaw) is encouraged for end-to-end behavior changes.
 
 ## Project Layout
 
 ```
-api/v1alpha1/          # CRD type definitions (Stoker, SyncProfile)
+api/v1alpha1/          # CRD type definitions (GatewaySync)
 cmd/controller/        # Controller binary entrypoint
 cmd/agent/             # Agent binary entrypoint
-internal/controller/   # Reconcilers (Stoker, SyncProfile)
+internal/controller/   # GatewaySync reconciler
 internal/agent/        # Agent orchestration (K8s-aware sync loop)
 internal/syncengine/   # File sync engine (K8s-unaware, Ignition-unaware)
 internal/ignition/     # Ignition gateway API client
@@ -88,5 +89,5 @@ pkg/types/             # Shared annotations, labels, status types
 pkg/conditions/        # Condition type/reason constants
 config/                # Kustomize manifests (CRDs, RBAC, webhook, manager)
 charts/stoker-operator/# Helm chart
-test/functional/       # Functional test scripts (kind-based)
+test/e2e/              # Chainsaw e2e tests (kind-based)
 ```

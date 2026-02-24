@@ -281,8 +281,42 @@ Gateways are discovered by pod annotations. These are typically set via `podAnno
 
 The GatewaySync CR status is managed by the controller and reports:
 
-- **`lastSyncRef`** / **`lastSyncCommit`** — the last resolved git reference and commit SHA
-- **`refResolutionStatus`** — `NotResolved`, `Resolving`, `Resolved`, or `Error`
-- **`profileCount`** — number of profiles defined in `spec.sync.profiles`
-- **`discoveredGateways`** — list of gateway pods with per-gateway sync status, commit, projects synced
-- **`conditions`** — standard Kubernetes conditions including `RefResolved`, `AllGatewaysSynced`, and `Ready`
+| Field | Description |
+|-------|-------------|
+| `lastSyncRef` | The git ref that was last resolved |
+| `lastSyncCommit` | Full 40-character git commit SHA |
+| `lastSyncCommitShort` | Abbreviated 7-character commit SHA (used in printer columns) |
+| `lastSyncTime` | Timestamp of the last commit change (only updates when the resolved commit changes) |
+| `refResolutionStatus` | `NotResolved`, `Resolving`, `Resolved`, or `Error` |
+| `profileCount` | Number of profiles defined in `spec.sync.profiles` |
+| `discoveredGateways` | List of gateway pods with per-gateway sync status, commit, projects synced |
+| `conditions` | Standard Kubernetes conditions: `RefResolved`, `AllGatewaysSynced`, and `Ready` |
+
+### Printer columns
+
+`kubectl get gs` shows these columns by default:
+
+```text
+NAME         REF    COMMIT    PROFILES   SYNCED   GATEWAYS             READY   AGE
+my-gateway   main   4d19160   1          True     1/1 gateways synced  True    5m
+```
+
+`kubectl get gs -o wide` adds `LAST SYNC` (relative time since last commit change).
+
+### Sync status lifecycle
+
+Gateways progress through these sync states:
+
+1. **Pending** — initial sync completes (files written) but gateway hasn't been validated yet
+2. **Synced** — the Ignition scan API confirmed both `/scan/projects` and `/scan/config` returned HTTP 200
+3. **Error** — the scan API returned a non-200 status or was unreachable
+
+The `AllGatewaysSynced` condition is `True` only when all discovered gateways report `Synced`.
+
+### Conditions
+
+| Type | Description |
+|------|-------------|
+| `RefResolved` | The controller successfully resolved the git ref to a commit SHA |
+| `AllGatewaysSynced` | All discovered gateway pods report `Synced` status |
+| `Ready` | Both `RefResolved` and `AllGatewaysSynced` are `True` |

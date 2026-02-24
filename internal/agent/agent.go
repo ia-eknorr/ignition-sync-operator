@@ -403,21 +403,19 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 		"dryRun", isDryRun,
 	)
 
-	// Trigger Ignition scan API (skip on initial sync and dry-run).
+	// Trigger Ignition scan API on every non-initial sync (regardless of filesChanged).
+	// Only report "Synced" if both scan endpoints return 200.
 	var scanResultStr string
 	if isDryRun {
 		log.Info("dry-run mode, skipping scan API")
 	} else if !isInitial {
-		filesChanged := int32(syncResult.FilesAdded + syncResult.FilesModified + syncResult.FilesDeleted)
-		if filesChanged > 0 {
-			log.Info("triggering Ignition scan API")
-			scanResult := a.IgnitionAPI.TriggerScan()
-			scanResultStr = scanResult.String()
-			if scanResult.Error != "" {
-				log.Info("scan API warning (non-fatal)", "error", scanResult.Error)
-			} else {
-				log.Info("scan complete", "result", scanResultStr)
-			}
+		log.Info("triggering Ignition scan API")
+		scanResult := a.IgnitionAPI.TriggerScan()
+		scanResultStr = scanResult.String()
+		if scanResult.Error != "" {
+			log.Info("scan API failed (non-fatal)", "error", scanResult.Error)
+		} else {
+			log.Info("scan complete", "result", scanResultStr)
 		}
 	} else {
 		// On initial sync, attempt a health check but don't require it.
@@ -427,12 +425,20 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 		}
 	}
 
-	// Determine status.
+	// Determine status: only "Synced" if scan succeeded (both 200).
+	// Initial sync reports "Pending" since gateway isn't running yet to validate.
 	syncStatus := stokertypes.SyncStatusSynced
 	var errorMsg string
-	if scanResultStr != "" && strings.Contains(scanResultStr, "error") {
+	if isInitial {
+		syncStatus = stokertypes.SyncStatusPending
+	} else if isDryRun {
+		// dry-run: no scan, report Synced (files validated via diff)
+	} else if scanResultStr == "" || strings.Contains(scanResultStr, "error") {
 		syncStatus = stokertypes.SyncStatusError
 		errorMsg = scanResultStr
+		if errorMsg == "" {
+			errorMsg = "scan not performed"
+		}
 	}
 
 	// Report status to ConfigMap.

@@ -138,19 +138,18 @@ type AgentSpec struct {
 }
 
 // AgentImageSpec configures the agent container image.
+// When unset, the webhook falls through to the DEFAULT_AGENT_IMAGE env var
+// (set by the Helm chart's agentImage values).
 type AgentImageSpec struct {
 	// repository is the container image repository.
-	// +kubebuilder:default="ghcr.io/ia-eknorr/stoker-agent"
 	// +optional
 	Repository string `json:"repository,omitempty"`
 
 	// tag is the container image tag.
-	// +kubebuilder:default="latest"
 	// +optional
 	Tag string `json:"tag,omitempty"`
 
 	// pullPolicy is the image pull policy.
-	// +kubebuilder:default="IfNotPresent"
 	// +optional
 	PullPolicy string `json:"pullPolicy,omitempty"`
 }
@@ -374,6 +373,10 @@ type GatewaySyncStatus struct {
 	// +optional
 	LastSyncCommit string `json:"lastSyncCommit,omitempty"`
 
+	// lastSyncCommitShort is the abbreviated (7-char) git commit SHA for display.
+	// +optional
+	LastSyncCommitShort string `json:"lastSyncCommitShort,omitempty"`
+
 	// refResolutionStatus indicates the state of git ref resolution.
 	// +kubebuilder:validation:Enum=NotResolved;Resolving;Resolved;Error
 	// +optional
@@ -403,11 +406,12 @@ type GatewaySyncStatus struct {
 // +kubebuilder:storageversion
 // +kubebuilder:resource:shortName=gs
 // +kubebuilder:printcolumn:name="Ref",type="string",JSONPath=`.spec.git.ref`
-// +kubebuilder:printcolumn:name="Commit",type="string",JSONPath=`.status.lastSyncCommit`,priority=1
+// +kubebuilder:printcolumn:name="Commit",type="string",JSONPath=`.status.lastSyncCommitShort`
 // +kubebuilder:printcolumn:name="Profiles",type="integer",JSONPath=`.status.profileCount`
 // +kubebuilder:printcolumn:name="Synced",type="string",JSONPath=`.status.conditions[?(@.type=="AllGatewaysSynced")].status`
 // +kubebuilder:printcolumn:name="Gateways",type="string",JSONPath=`.status.conditions[?(@.type=="AllGatewaysSynced")].message`
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=`.status.conditions[?(@.type=="Ready")].status`
+// +kubebuilder:printcolumn:name="Last Sync",type="date",JSONPath=`.status.lastSyncTime`,priority=1
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=`.metadata.creationTimestamp`
 
 // GatewaySync is the Schema for the gatewaysyncs API.

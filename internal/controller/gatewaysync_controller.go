@@ -129,10 +129,13 @@ func (r *GatewaySyncReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Ref resolved successfully
 	r.setCondition(ctx, &gs, conditions.TypeRefResolved, metav1.ConditionTrue, conditions.ReasonRefResolved, result.Commit)
 	gs.Status.RefResolutionStatus = "Resolved"
-	gs.Status.LastSyncCommit = result.Commit
-	gs.Status.LastSyncRef = result.Ref
-	now := metav1.Now()
-	gs.Status.LastSyncTime = &now
+	if gs.Status.LastSyncCommit != result.Commit {
+		gs.Status.LastSyncCommit = result.Commit
+		gs.Status.LastSyncCommitShort = shortCommit(result.Commit)
+		gs.Status.LastSyncRef = result.Ref
+		now := metav1.Now()
+		gs.Status.LastSyncTime = &now
+	}
 
 	// --- Step 4: Create/update metadata ConfigMap ---
 
@@ -363,6 +366,14 @@ func (r *GatewaySyncReconciler) validateSecrets(ctx context.Context, gs *stokerv
 	}
 
 	return nil
+}
+
+// shortCommit returns the first 7 characters of a commit SHA, or the full string if shorter.
+func shortCommit(sha string) string {
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
 }
 
 // ensureMetadataConfigMap creates or updates the metadata ConfigMap that signals agents.
