@@ -24,5 +24,8 @@ rules:
     resources: ["syncprofiles"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]
+  - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]

@@ -267,13 +267,15 @@ type SyncProfileSpec struct {
 // SyncMapping defines a single source→destination file mapping.
 type SyncMapping struct {
     // source is the repo-relative path to copy from.
-    // Supports Go template variables: {{.Vars.key}}, {{.GatewayName}}.
+    // Supports Go template variables: {{.GatewayName}}, {{.CRName}},
+    // {{.Labels.key}}, {{.Vars.key}}, {{.Namespace}}, {{.Ref}}, {{.Commit}}.
     // +kubebuilder:validation:Required
     // +kubebuilder:validation:MinLength=1
     Source string `json:"source"`
 
     // destination is the gateway-relative path to copy to.
-    // Supports Go template variables: {{.Vars.key}}, {{.GatewayName}}.
+    // Supports Go template variables: {{.GatewayName}}, {{.CRName}},
+    // {{.Labels.key}}, {{.Vars.key}}, {{.Namespace}}, {{.Ref}}, {{.Commit}}.
     // +kubebuilder:validation:Required
     // +kubebuilder:validation:MinLength=1
     Destination string `json:"destination"`
@@ -428,6 +430,8 @@ The `vars` map on `SyncProfileSpec` replaces the removed `siteNumber` and `norma
 |--------|----------------|-------------|
 | Profile `vars` map | `{{.Vars.siteNumber}}` | User-defined key-value pairs from the SyncProfile |
 | Built-in: gateway | `{{.GatewayName}}` | Gateway identity (from annotation or pod label) |
+| Built-in: CR name | `{{.CRName}}` | Name of the Stoker CR that owns this sync |
+| Built-in: pod labels | `{{.Labels.key}}` | Any label on the gateway pod (read at sync time) |
 | Built-in: namespace | `{{.Namespace}}` | Pod namespace |
 | Built-in: git | `{{.Ref}}`, `{{.Commit}}` | Resolved git ref and commit SHA |
 
@@ -460,7 +464,7 @@ spec:
 ### Resolution Order
 
 Variables are resolved in this order:
-1. Built-in variables (`GatewayName`, `Namespace`, `Ref`, `Commit`) are populated from pod metadata and the metadata ConfigMap.
+1. Built-in variables (`GatewayName`, `CRName`, `Labels`, `Namespace`, `Ref`, `Commit`) are populated from pod metadata, the Stoker CR name, and the metadata ConfigMap.
 2. Profile `vars` are layered on top. A profile var cannot override a built-in — if a profile defines `vars.GatewayName`, it is ignored and the built-in wins.
 3. Go `text/template` is used for resolution. Invalid templates cause the `Accepted` condition to be set to `False`.
 

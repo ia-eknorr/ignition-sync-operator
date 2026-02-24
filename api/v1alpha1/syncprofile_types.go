@@ -62,13 +62,15 @@ type SyncProfileSpec struct {
 // SyncMapping defines a single source→destination file mapping.
 type SyncMapping struct {
 	// source is the repo-relative path to copy from.
-	// Supports Go template variables: {{.Vars.key}}, {{.GatewayName}}.
+	// Supports Go template variables: {{.GatewayName}}, {{.CRName}},
+	// {{.Labels.key}}, {{.Vars.key}}, {{.Namespace}}, {{.Ref}}, {{.Commit}}.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	Source string `json:"source"`
 
 	// destination is the gateway-relative path to copy to.
-	// Supports Go template variables: {{.Vars.key}}, {{.GatewayName}}.
+	// Supports Go template variables: {{.GatewayName}}, {{.CRName}},
+	// {{.Labels.key}}, {{.Vars.key}}, {{.Namespace}}, {{.Ref}}, {{.Commit}}.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	Destination string `json:"destination"`

@@ -114,7 +114,8 @@ spec:
                     destination:
                       description: |-
                         destination is the gateway-relative path to copy to.
-                        Supports Go template variables: {{.Vars.key}}, {{.GatewayName}}.
+                        Supports Go template variables: {{.GatewayName}}, {{.CRName}},
+                        {{.Labels.key}}, {{.Vars.key}}, {{.Namespace}}, {{.Ref}}, {{.Commit}}.
                       minLength: 1
                       type: string
                     required:
@@ -125,7 +126,8 @@ spec:
                     source:
                       description: |-
                         source is the repo-relative path to copy from.
-                        Supports Go template variables: {{.Vars.key}}, {{.GatewayName}}.
+                        Supports Go template variables: {{.GatewayName}}, {{.CRName}},
+                        {{.Labels.key}}, {{.Vars.key}}, {{.Namespace}}, {{.Ref}}, {{.Commit}}.
                       minLength: 1
                       type: string
                     type:

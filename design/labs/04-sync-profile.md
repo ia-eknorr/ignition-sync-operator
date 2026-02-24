@@ -590,6 +590,66 @@ kubectl delete syncprofile lab-with-vars -n lab
 
 ---
 
+## Lab 4.14a: Profile with pod label routing
+
+### Purpose
+Verify the agent resolves `{{.Labels.key}}` from the gateway pod's labels at sync time. This enables per-gateway file routing without per-gateway SyncProfiles — one profile serves many gateways, each pulling files by their own labels.
+
+### Available Variables
+
+| Variable | Source | Description |
+|----------|--------|-------------|
+| `{{.GatewayName}}` | Pod annotation/label | Gateway identity |
+| `{{.CRName}}` | Stoker CR | Name of the Stoker CR that owns this sync |
+| `{{.Labels.key}}` | Pod labels | Any label on the gateway pod |
+| `{{.Namespace}}` | Pod metadata | Pod namespace |
+| `{{.Ref}}`, `{{.Commit}}` | Metadata ConfigMap | Resolved git ref and commit SHA |
+| `{{.Vars.key}}` | SyncProfile | Custom variable from `spec.vars` |
+
+### Steps
+
+```bash
+cat <<EOF | kubectl apply -n lab -f -
+apiVersion: stoker.io/v1alpha1
+kind: SyncProfile
+metadata:
+  name: lab-label-routing
+spec:
+  mappings:
+    - source: "services/{{.Labels.site}}/projects"
+      destination: "projects"
+      type: dir
+      required: true
+    - source: "services/{{.Labels.site}}/config"
+      destination: "config"
+      type: dir
+EOF
+```
+
+### What to Verify
+
+1. **Accepted=True** (template syntax is valid):
+   ```bash
+   kubectl get syncprofile lab-label-routing -n lab \
+     -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}'
+   ```
+   Expected: `True`
+
+2. **Agent resolves label** — deploy a gateway pod with `site: ignition-blue` label and check agent logs:
+   ```bash
+   kubectl logs -n lab -l app.kubernetes.io/name=ignition -c stoker-agent --tail=10
+   ```
+   Expected: `"projects":["blue"]` — the agent resolved `{{.Labels.site}}` → `ignition-blue` and synced from `services/ignition-blue/projects/`.
+
+3. **Different label, different files** — deploy a second gateway with `site: ignition-red`. The same SyncProfile should sync the `red` project instead.
+
+### Cleanup
+```bash
+kubectl delete syncprofile lab-label-routing -n lab
+```
+
+---
+
 ## Lab 4.14: Profile with `dryRun`
 
 ### Purpose

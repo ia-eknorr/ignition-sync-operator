@@ -465,8 +465,14 @@ func (a *Agent) syncWithProfile(ctx context.Context) (*syncengine.SyncResult, st
 		return nil, profileName, profile.DryRun, fmt.Errorf("reading metadata for excludes: %w", err)
 	}
 
+	// Read pod labels for template context.
+	var pod corev1.Pod
+	if err := a.K8sClient.Get(ctx, client.ObjectKey{Name: a.Config.PodName, Namespace: a.Config.PodNamespace}, &pod); err != nil {
+		return nil, profileName, profile.DryRun, fmt.Errorf("reading pod labels: %w", err)
+	}
+
 	// Build template context.
-	tmplCtx := buildTemplateContext(a.Config, meta, profile.Vars)
+	tmplCtx := buildTemplateContext(a.Config, meta, profile.Vars, pod.Labels)
 
 	// Build sync plan.
 	crExcludes := parseCRExcludes(meta.ExcludePatterns)
