@@ -14,17 +14,9 @@ on:
 
 jobs:
   e2e:
-    name: Chainsaw E2E (${{ matrix.group }})
+    name: Chainsaw E2E
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - group: core
-            suites: controller-core syncprofile webhook-receiver
-          - group: integration
-            suites: gateway-discovery webhook-injection
     if: >-
       github.event_name == 'push' ||
       github.event_name == 'pull_request' ||
@@ -89,11 +81,13 @@ jobs:
 
       - name: Run Chainsaw tests
         run: |
-          args=""
-          for suite in ${{ matrix.suites }}; do
-            args="$args --test-dir test/e2e/$suite"
-          done
-          chainsaw test $args --config test/e2e/.chainsaw.yaml
+          chainsaw test \
+            --test-dir test/e2e/controller-core \
+            --test-dir test/e2e/syncprofile \
+            --test-dir test/e2e/webhook-receiver \
+            --test-dir test/e2e/gateway-discovery \
+            --test-dir test/e2e/webhook-injection \
+            --config test/e2e/.chainsaw.yaml
 
       - name: Collect logs on failure
         if: failure()
