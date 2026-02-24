@@ -55,10 +55,13 @@ type GatewaySyncReconciler struct {
 func (r *GatewaySyncReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
-	// Fetch the CR
+	// Fetch the CR — NotFound is expected after finalizer cleanup race
 	var gs stokerv1alpha1.GatewaySync
 	if err := r.Get(ctx, req.NamespacedName, &gs); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if errors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
 	}
 
 	// Capture the original for merge-patch base (avoids resourceVersion conflicts).
