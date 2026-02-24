@@ -16,6 +16,7 @@ type Watcher struct {
 	cmName    string
 	syncCh    chan struct{}
 	period    time.Duration
+	resetCh   chan time.Duration // signals Run() to reset the fallback ticker
 }
 
 // NewWatcher creates a Watcher for the metadata ConfigMap.
@@ -26,6 +27,27 @@ func NewWatcher(c client.Client, namespace, crName string, syncPeriod time.Durat
 		cmName:    MetadataConfigMapName(crName),
 		syncCh:    make(chan struct{}, 1),
 		period:    syncPeriod,
+		resetCh:   make(chan time.Duration, 1),
+	}
+}
+
+// UpdatePeriod changes the fallback sync interval. If the watcher is already
+// running, the ticker is reset on the next iteration.
+func (w *Watcher) UpdatePeriod(d time.Duration) {
+	if d == w.period {
+		return
+	}
+	w.period = d
+	// Non-blocking send; if a reset is already pending the latest wins.
+	select {
+	case w.resetCh <- d:
+	default:
+		// drain and resend to ensure the latest value is used
+		select {
+		case <-w.resetCh:
+		default:
+		}
+		w.resetCh <- d
 	}
 }
 
@@ -61,6 +83,9 @@ func (w *Watcher) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
+		case newPeriod := <-w.resetCh:
+			ticker.Reset(newPeriod)
+			log.Info("fallback period updated", "period", newPeriod)
 		case <-ticker.C:
 			log.V(1).Info("fallback timer triggered sync")
 			w.trigger()

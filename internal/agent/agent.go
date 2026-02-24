@@ -9,6 +9,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	gogithttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	gogitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"github.com/go-logr/logr"
 	"golang.org/x/crypto/ssh"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -95,6 +96,9 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 
 	log.Info("metadata loaded", "gitURL", meta.GitURL, "commit", meta.Commit, "ref", meta.Ref)
+
+	// Apply profile-level syncPeriod if present (overrides env var default).
+	a.applySyncPeriodFromMeta(meta, log)
 
 	// Cache GatewaySync CR reference for event emission.
 	a.fetchCRRef(ctx)
@@ -252,6 +256,9 @@ func (a *Agent) handleSyncTrigger(ctx context.Context, gitURL string, auth trans
 		return
 	}
 
+	// Update watcher period if profile specifies a different syncPeriod.
+	a.applySyncPeriod(profile, log)
+
 	if !profile.Paused && !profile.DryRun {
 		if blocked := a.checkDesignerSessions(ctx, profile.DesignerSessionPolicy, result.Commit, result.Ref); blocked {
 			return
@@ -262,6 +269,26 @@ func (a *Agent) handleSyncTrigger(ctx context.Context, gitURL string, auth trans
 
 	if syncErr := a.syncOnce(ctx, result.Commit, result.Ref, false); syncErr != nil {
 		log.Error(syncErr, "sync had errors")
+	}
+}
+
+// applySyncPeriodFromMeta looks up the resolved profile and applies its
+// syncPeriod to the watcher if set.
+func (a *Agent) applySyncPeriodFromMeta(meta *Metadata, log logr.Logger) {
+	profile, _, err := a.lookupProfile(meta)
+	if err != nil {
+		return
+	}
+	a.applySyncPeriod(profile, log)
+}
+
+// applySyncPeriod updates the watcher's fallback interval if the profile
+// specifies a non-zero syncPeriod.
+func (a *Agent) applySyncPeriod(profile *stokertypes.ResolvedProfile, log logr.Logger) {
+	if profile.SyncPeriod > 0 {
+		newPeriod := time.Duration(profile.SyncPeriod) * time.Second
+		a.Watcher.UpdatePeriod(newPeriod)
+		log.Info("using profile-level syncPeriod", "syncPeriod", profile.SyncPeriod)
 	}
 }
 
