@@ -6,11 +6,9 @@ description: Planned features and milestones for Stoker.
 
 # Roadmap
 
-## v0.1.0 — MVP
+## v0.1.0 — MVP ✓
 
-The minimum viable release: controller + agent sidecar can sync Ignition gateway configuration from a Git repository. End-to-end flow works but operational polish is limited.
-
-### Completed
+The minimum viable release: controller + agent sidecar can sync Ignition gateway configuration from a Git repository.
 
 - GatewaySync CRD with git ref resolution via `ls-remote`
 - Embedded sync profiles with declarative file mappings
@@ -18,17 +16,13 @@ The minimum viable release: controller + agent sidecar can sync Ignition gateway
 - MutatingWebhook for automatic sidecar injection
 - Gateway discovery via pod annotations
 - Status aggregation from agent ConfigMaps
-- Webhook receiver for push-event-driven sync
+- Webhook receiver for push-event-driven sync (HMAC validation)
+- Post-sync verification via Ignition scan API
+- Designer session awareness (proceed, wait, fail policies)
 - CI/CD: release workflow (Docker images + Helm chart OCI push)
 - Helm chart with cert-manager TLS, agent image configuration, agent RBAC
-- Helm chart values documentation via helm-docs
-- Webhook receiver HMAC signature validation
 - Agent health endpoint (liveness/readiness for sidecar)
-- Structured logging alignment (controller uses `logr`, agent matches)
-
-### Remaining
-
-- Integration test for full sync cycle (controller + agent in kind)
+- E2E test suite (Chainsaw + kind)
 
 ## v0.2.0 — Reliability
 
@@ -38,8 +32,6 @@ Focus on observability, conflict handling, and recovery.
 - Prometheus metrics for agent (sync duration, files changed, error counts)
 - Conflict detection when multiple profiles map to the same destination path
 - Exponential backoff for transient git errors
-- Post-sync verification against Ignition REST API
-- Sync diff report in changes ConfigMap
 - K8s informer-based ConfigMap watch (replace polling with scoped informer)
 - In-flight sync completion deadline on shutdown
 
@@ -65,5 +57,4 @@ Focus on condition types, multi-tenancy, and dependency ordering.
 - Drift detection: periodic comparison of live state vs. Git
 - Approval gates for production gateways
 - Multi-cluster support via hub-spoke model
-- Designer session awareness
 - Web UI dashboard for sync status visualization

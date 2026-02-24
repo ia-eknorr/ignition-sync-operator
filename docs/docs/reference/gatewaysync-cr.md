@@ -1,5 +1,6 @@
 ---
 sidebar_position: 1
+slug: /reference/gatewaysync-cr
 title: GatewaySync CR
 description: Full reference for the GatewaySync custom resource.
 ---
@@ -129,7 +130,7 @@ auth:
 | `interval` | string | No | `"60s"` | Polling period (e.g., `"60s"`, `"5m"`) |
 
 :::tip
-If you configure a [webhook receiver](/configuration/helm-values#push-receiver-webhook) for push-event-driven sync, you can set `polling.enabled: false` or increase the interval to reduce API calls.
+If you configure a [webhook receiver](/reference/helm-values#push-receiver-webhook) for push-event-driven sync, you can set `polling.enabled: false` or increase the interval to reduce API calls.
 :::
 
 ## `spec.gateway`

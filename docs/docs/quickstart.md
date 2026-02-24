@@ -293,8 +293,8 @@ kind delete cluster --name stoker-quickstart
 
 ## Next steps
 
-- **Multiple gateways:** Instead of hardcoding paths per gateway, use `{{.GatewayName}}` or `{{.Labels.key}}` in your profile source paths. For example, add a `site` label to each pod and use `source: "services/{{.Labels.site}}/projects/"` — one profile then serves any number of gateways, each syncing from its own directory.
-- **Webhook-driven sync:** Configure `POST /webhook/{namespace}/{crName}` to trigger syncs on git push events instead of polling.
-- **Private repos:** Add `spec.git.auth` with a token or SSH key secret reference to sync from private repositories.
-- **[GatewaySync CR Reference](./configuration/gatewaysync-cr.md)** — full spec reference including git auth, polling, sync profiles, and agent configuration
-- **[Helm Values](./configuration/helm-values.md)** — all configurable values for the operator chart
+- **[Multi-Gateway Profiles](./guides/multi-gateway.md)** — use `{{.GatewayName}}` or `{{.Labels.key}}` to serve multiple gateways from one profile
+- **[Webhook Sync](./guides/webhook-sync.md)** — trigger syncs on git push events instead of polling
+- **[Git Authentication](./guides/git-authentication.md)** — set up token, SSH, or GitHub App auth for private repositories
+- **[GatewaySync CR Reference](./reference/gatewaysync-cr.md)** — full spec reference including git auth, polling, sync profiles, and agent configuration
+- **[Helm Values](./reference/helm-values.md)** — all configurable values for the operator chart

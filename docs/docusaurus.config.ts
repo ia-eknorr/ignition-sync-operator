@@ -16,10 +16,12 @@ const config: Config = {
   onBrokenLinks: "throw",
 
   markdown: {
+    mermaid: true,
     hooks: {
       onBrokenMarkdownLinks: "warn",
     },
   },
+  themes: ["@docusaurus/theme-mermaid"],
 
   i18n: {
     defaultLocale: "en",
@@ -74,7 +76,7 @@ const config: Config = {
           items: [
             { label: "Quickstart", to: "/quickstart" },
             { label: "Installation", to: "/installation" },
-            { label: "Helm Values", to: "/configuration/helm-values" },
+            { label: "Helm Values", to: "/reference/helm-values" },
           ],
         },
         {

@@ -1,5 +1,6 @@
 ---
-sidebar_position: 3
+sidebar_position: 2
+slug: /reference/helm-values
 title: Helm Values
 description: All configurable values for the Stoker operator Helm chart.
 ---

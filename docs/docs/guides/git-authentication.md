@@ -1,0 +1,130 @@
+---
+sidebar_position: 1
+title: Git Authentication
+description: Configure token, SSH, or GitHub App authentication for private repositories.
+---
+
+# Git Authentication
+
+Stoker supports three authentication methods for private Git repositories. Public repositories need no auth configuration — just set `spec.git.repo` and `spec.git.ref`.
+
+## Token authentication
+
+Use a personal access token (classic or fine-grained) for HTTPS repositories. This is the simplest method for GitHub, GitLab, and Bitbucket.
+
+Create a secret containing the token:
+
+```bash
+kubectl create secret generic git-token -n <namespace> \
+  --from-literal=token=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+Reference it in the GatewaySync CR:
+
+```yaml
+apiVersion: stoker.io/v1alpha1
+kind: GatewaySync
+metadata:
+  name: my-sync
+  namespace: my-namespace
+spec:
+  git:
+    repo: "https://github.com/org/private-repo.git"
+    ref: "main"
+    auth:
+      token:
+        secretRef:
+          name: git-token
+          key: token
+  # ... gateway, sync config
+```
+
+**When to use:** Quick setup, CI-generated tokens, or when SSH is blocked by network policy.
+
+:::tip Fine-grained tokens
+GitHub fine-grained tokens let you scope access to a single repository with read-only permissions. This is the recommended approach for production.
+:::
+
+## SSH key authentication
+
+Use an SSH key for repositories accessed via `git@` URLs.
+
+Generate a deploy key:
+
+```bash
+ssh-keygen -t ed25519 -f stoker-deploy-key -N "" -C "stoker"
+```
+
+Add the public key (`stoker-deploy-key.pub`) as a read-only deploy key in your repository settings.
+
+Create a secret from the private key:
+
+```bash
+kubectl create secret generic ssh-key -n <namespace> \
+  --from-file=id_ed25519=stoker-deploy-key
+```
+
+Reference it in the GatewaySync CR:
+
+```yaml
+spec:
+  git:
+    repo: "git@github.com:org/private-repo.git"
+    ref: "main"
+    auth:
+      sshKey:
+        secretRef:
+          name: ssh-key
+          key: id_ed25519
+```
+
+**When to use:** Organizations that prefer SSH-based access or need deploy keys scoped to individual repositories.
+
+## GitHub App authentication
+
+Use a GitHub App for fine-grained, organization-wide access without personal tokens.
+
+### Setup
+
+1. [Create a GitHub App](https://docs.github.com/en/apps/creating-github-apps) with **Contents: Read** permission
+2. Install the app on the repository (or organization)
+3. Note the **App ID** and **Installation ID** from the app settings
+4. Generate a private key and download the PEM file
+
+Create a secret from the PEM key:
+
+```bash
+kubectl create secret generic github-app-key -n <namespace> \
+  --from-file=private-key.pem=your-app-key.pem
+```
+
+Reference it in the GatewaySync CR:
+
+```yaml
+spec:
+  git:
+    repo: "https://github.com/org/private-repo.git"
+    ref: "main"
+    auth:
+      githubApp:
+        appId: 12345
+        installationId: 67890
+        privateKeySecretRef:
+          name: github-app-key
+          key: private-key.pem
+```
+
+**When to use:** Organizations managing many repos, where individual tokens are impractical or against policy. App tokens auto-rotate and provide audit trails.
+
+## Auth method comparison
+
+| Method | Protocol | Scope | Rotation |
+|--------|----------|-------|----------|
+| Token | HTTPS | Per-token | Manual |
+| SSH key | SSH | Per-repo (deploy key) | Manual |
+| GitHub App | HTTPS | Per-installation | Automatic |
+
+## Next steps
+
+- [GatewaySync CR Reference](../reference/gatewaysync-cr.md#specgitauth) — full auth field reference
+- [Multi-Gateway Profiles](./multi-gateway.md) — route different gateways to different repo paths

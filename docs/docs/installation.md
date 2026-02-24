@@ -80,4 +80,4 @@ Uninstalling the operator removes the mutating webhook. Existing agent sidecars 
 
 ## Configuration
 
-See [Helm Values](./configuration/helm-values.md) for all configurable chart values.
+See [Helm Values](./reference/helm-values.md) for all configurable chart values.
