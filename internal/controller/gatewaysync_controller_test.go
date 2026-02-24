@@ -322,7 +322,7 @@ var _ = Describe("GatewaySync Controller", func() {
 			}
 		})
 
-		It("should fail reconcile when gateway API key secret is missing", func() {
+		It("should resolve ref but requeue when gateway API key secret is missing", func() {
 			cr := &stokerv1alpha1.GatewaySync{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      resourceName,
@@ -352,16 +352,38 @@ var _ = Describe("GatewaySync Controller", func() {
 			}
 			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
 
-			r := newReconciler(&fakeGitClient{result: git.Result{Commit: "abc123", Ref: "main"}})
+			gitClient := &fakeGitClient{result: git.Result{Commit: "abc123", Ref: "main"}}
+			r := newReconciler(gitClient)
 
 			// Reconcile 1: add finalizer
 			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 
-			// Reconcile 2: should fail on secret validation
-			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("not found"))
+			// Reconcile 2: ref resolves successfully, but API key secret missing triggers requeue
+			result, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(30 * time.Second))
+
+			// Git client should have been called (ref resolution not blocked)
+			Expect(gitClient.calls).To(Equal(1))
+
+			// Verify ref was resolved despite missing API key secret
+			updated := &stokerv1alpha1.GatewaySync{}
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			Expect(updated.Status.RefResolutionStatus).To(Equal("Resolved"))
+			Expect(updated.Status.LastSyncCommit).To(Equal("abc123"))
+
+			// Verify Ready condition reflects the missing secret
+			var readyCond *metav1.Condition
+			for i := range updated.Status.Conditions {
+				if updated.Status.Conditions[i].Type == conditions.TypeReady {
+					readyCond = &updated.Status.Conditions[i]
+					break
+				}
+			}
+			Expect(readyCond).NotTo(BeNil())
+			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(readyCond.Message).To(ContainSubstring("not found"))
 		})
 	})
 

@@ -107,12 +107,12 @@ func (r *GatewaySyncReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		r.setCondition(ctx, &gs, conditions.TypeProfilesValid, metav1.ConditionTrue, conditions.ReasonProfilesValid, "All profiles valid")
 	}
 
-	// --- Step 2: Validate secrets exist ---
+	// --- Step 2: Validate git auth secrets exist ---
 
-	if err := r.validateSecrets(ctx, &gs); err != nil {
+	if err := r.validateGitSecrets(ctx, &gs); err != nil {
 		r.setCondition(ctx, &gs, conditions.TypeReady, metav1.ConditionFalse, conditions.ReasonReconciling, err.Error())
 		_ = r.patchStatus(ctx, &gs, base)
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	// --- Step 3: Resolve git ref via ls-remote ---
@@ -138,6 +138,14 @@ func (r *GatewaySyncReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		gs.Status.LastSyncRef = result.Ref
 		now := metav1.Now()
 		gs.Status.LastSyncTime = &now
+	}
+
+	// --- Step 3.5: Validate gateway API key secret ---
+
+	if err := r.validateAPIKeySecret(ctx, &gs); err != nil {
+		r.setCondition(ctx, &gs, conditions.TypeReady, metav1.ConditionFalse, conditions.ReasonReconciling, err.Error())
+		_ = r.patchStatus(ctx, &gs, base)
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
 	// --- Step 4: Create/update metadata ConfigMap ---
@@ -334,9 +342,39 @@ func (r *GatewaySyncReconciler) cleanupOwnedResources(ctx context.Context, gs *s
 	return nil
 }
 
-// validateSecrets checks that referenced secrets exist.
-func (r *GatewaySyncReconciler) validateSecrets(ctx context.Context, gs *stokerv1alpha1.GatewaySync) error {
-	// Gateway API key secret is always required
+// validateGitSecrets checks that git auth secrets exist (if configured).
+func (r *GatewaySyncReconciler) validateGitSecrets(ctx context.Context, gs *stokerv1alpha1.GatewaySync) error {
+	if gs.Spec.Git.Auth == nil {
+		return nil
+	}
+
+	secret := &corev1.Secret{}
+	key := types.NamespacedName{Namespace: gs.Namespace}
+
+	if gs.Spec.Git.Auth.SSHKey != nil {
+		key.Name = gs.Spec.Git.Auth.SSHKey.SecretRef.Name
+		if err := r.Get(ctx, key, secret); err != nil {
+			return fmt.Errorf("SSH key secret %q not found: %w", key.Name, err)
+		}
+	}
+	if gs.Spec.Git.Auth.Token != nil {
+		key.Name = gs.Spec.Git.Auth.Token.SecretRef.Name
+		if err := r.Get(ctx, key, secret); err != nil {
+			return fmt.Errorf("token secret %q not found: %w", key.Name, err)
+		}
+	}
+	if gs.Spec.Git.Auth.GitHubApp != nil {
+		key.Name = gs.Spec.Git.Auth.GitHubApp.PrivateKeySecretRef.Name
+		if err := r.Get(ctx, key, secret); err != nil {
+			return fmt.Errorf("GitHub App private key secret %q not found: %w", key.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// validateAPIKeySecret checks that the gateway API key secret exists.
+func (r *GatewaySyncReconciler) validateAPIKeySecret(ctx context.Context, gs *stokerv1alpha1.GatewaySync) error {
 	secret := &corev1.Secret{}
 	key := types.NamespacedName{
 		Name:      gs.Spec.Gateway.APIKeySecretRef.Name,
@@ -345,29 +383,6 @@ func (r *GatewaySyncReconciler) validateSecrets(ctx context.Context, gs *stokerv
 	if err := r.Get(ctx, key, secret); err != nil {
 		return fmt.Errorf("gateway API key secret %q not found: %w", key.Name, err)
 	}
-
-	// Validate git auth secret if specified
-	if gs.Spec.Git.Auth != nil {
-		if gs.Spec.Git.Auth.SSHKey != nil {
-			key.Name = gs.Spec.Git.Auth.SSHKey.SecretRef.Name
-			if err := r.Get(ctx, key, secret); err != nil {
-				return fmt.Errorf("SSH key secret %q not found: %w", key.Name, err)
-			}
-		}
-		if gs.Spec.Git.Auth.Token != nil {
-			key.Name = gs.Spec.Git.Auth.Token.SecretRef.Name
-			if err := r.Get(ctx, key, secret); err != nil {
-				return fmt.Errorf("token secret %q not found: %w", key.Name, err)
-			}
-		}
-		if gs.Spec.Git.Auth.GitHubApp != nil {
-			key.Name = gs.Spec.Git.Auth.GitHubApp.PrivateKeySecretRef.Name
-			if err := r.Get(ctx, key, secret); err != nil {
-				return fmt.Errorf("GitHub App private key secret %q not found: %w", key.Name, err)
-			}
-		}
-	}
-
 	return nil
 }
 
