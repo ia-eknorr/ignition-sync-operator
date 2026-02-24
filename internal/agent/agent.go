@@ -454,12 +454,13 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 
 	// Determine status: only "Synced" if scan succeeded (both 200).
 	// Initial sync reports "Pending" since gateway isn't running yet to validate.
+	// Dry-run is always "Synced" on success — staging files IS the success state.
 	syncStatus := stokertypes.SyncStatusSynced
 	var errorMsg string
-	if isInitial {
+	if isDryRun {
+		// dry-run: no scan needed, staging files successfully is the success state
+	} else if isInitial {
 		syncStatus = stokertypes.SyncStatusPending
-	} else if isDryRun {
-		// dry-run: no scan, report Synced (files validated via diff)
 	} else if scanResultStr == "" || strings.Contains(scanResultStr, "error") {
 		syncStatus = stokertypes.SyncStatusError
 		errorMsg = scanResultStr
