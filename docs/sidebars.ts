@@ -9,8 +9,7 @@ const sidebars: SidebarsConfig = {
       label: "Configuration",
       collapsed: false,
       items: [
-        "configuration/stoker-cr",
-        "configuration/sync-profile",
+        "configuration/gatewaysync-cr",
         "configuration/helm-values",
       ],
     },

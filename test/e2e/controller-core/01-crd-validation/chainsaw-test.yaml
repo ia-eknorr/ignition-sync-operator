@@ -5,21 +5,14 @@ metadata:
 spec:
   description: Verify CRDs are installed and schema validation rejects invalid resources
   steps:
-    - name: Assert Stoker CRD exists and is established
+    - name: Assert GatewaySync CRD exists and is established
       try:
         - script:
             timeout: 10s
             content: |
-              kubectl get crd stokers.stoker.io -o jsonpath='{.status.conditions[?(@.type=="Established")].status}' | grep -q True
+              kubectl get crd gatewaysyncs.stoker.io -o jsonpath='{.status.conditions[?(@.type=="Established")].status}' | grep -q True
 
-    - name: Assert SyncProfile CRD exists and is established
-      try:
-        - script:
-            timeout: 10s
-            content: |
-              kubectl get crd syncprofiles.stoker.io -o jsonpath='{.status.conditions[?(@.type=="Established")].status}' | grep -q True
-
-    - name: Reject Stoker CR missing spec.git
+    - name: Reject GatewaySync CR missing spec.git
       try:
         - apply:
             expect:
@@ -27,7 +20,7 @@ spec:
                   ($error != null): true
             resource:
               apiVersion: stoker.io/v1alpha1
-              kind: Stoker
+              kind: GatewaySync
               metadata:
                 name: test-invalid
               spec:

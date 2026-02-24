@@ -19,7 +19,6 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	stokerv1alpha1 "github.com/ia-eknorr/stoker-operator/api/v1alpha1"
 	"github.com/ia-eknorr/stoker-operator/internal/agent"
 )
 
@@ -67,7 +66,6 @@ func main() {
 func buildK8sClient() (client.Client, error) {
 	scheme := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(stokerv1alpha1.AddToScheme(scheme))
 
 	config, err := rest.InClusterConfig()
 	if err != nil {
@@ -94,7 +92,6 @@ func buildEventRecorder(log logr.Logger) (record.EventRecorder, func()) {
 
 	scheme := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(stokerv1alpha1.AddToScheme(scheme))
 
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{

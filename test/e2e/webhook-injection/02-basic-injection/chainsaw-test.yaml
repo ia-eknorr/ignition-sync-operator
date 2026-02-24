@@ -40,25 +40,12 @@ spec:
               echo "git server not reachable via Service DNS"
               exit 1
 
-    - name: Create SyncProfile
+    - name: Create GatewaySync CR with token auth and standard profile
       try:
         - apply:
             resource:
               apiVersion: stoker.io/v1alpha1
-              kind: SyncProfile
-              metadata:
-                name: standard
-              spec:
-                mappings:
-                  - source: services/ignition-blue/projects
-                    destination: projects
-
-    - name: Create Stoker CR with token auth
-      try:
-        - apply:
-            resource:
-              apiVersion: stoker.io/v1alpha1
-              kind: Stoker
+              kind: GatewaySync
               metadata:
                 name: test-basic
               spec:
@@ -70,6 +57,12 @@ spec:
                       secretRef:
                         name: git-token-secret
                         key: token
+                sync:
+                  profiles:
+                    standard:
+                      mappings:
+                        - source: services/ignition-blue/projects
+                          destination: projects
                 gateway:
                   port: 8088
                   tls: false
@@ -88,7 +81,7 @@ spec:
                 annotations:
                   stoker.io/inject: "true"
                   stoker.io/cr-name: test-basic
-                  stoker.io/sync-profile: standard
+                  stoker.io/profile: standard
               spec:
                 containers:
                   - name: gateway

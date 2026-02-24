@@ -168,23 +168,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&controller.StokerReconciler{
+	if err := (&controller.GatewaySyncReconciler{
 		Client:    mgr.GetClient(),
 		Scheme:    mgr.GetScheme(),
 		GitClient: &git.GoGitClient{},
 		//nolint:staticcheck // TODO: migrate to events.EventRecorder
-		Recorder: mgr.GetEventRecorderFor("stoker-controller"),
+		Recorder: mgr.GetEventRecorderFor("gatewaysync-controller"),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Stoker")
-		os.Exit(1)
-	}
-	//nolint:staticcheck // TODO: migrate to events.EventRecorder
-	if err := (&controller.SyncProfileReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("syncprofile-controller"),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "SyncProfile")
+		setupLog.Error(err, "unable to create controller", "controller", "GatewaySync")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

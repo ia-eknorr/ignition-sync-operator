@@ -5,18 +5,25 @@ metadata:
 spec:
   description: Verify controller sets Ready=False when API key secret is missing
   steps:
-    - name: Create Stoker CR referencing nonexistent api-key secret
+    - name: Create GatewaySync CR referencing nonexistent api-key secret
       try:
         - apply:
             resource:
               apiVersion: stoker.io/v1alpha1
-              kind: Stoker
+              kind: GatewaySync
               metadata:
                 name: test-no-api
               spec:
                 git:
                   repo: (join('', ['git://test-git-server.', $namespace, '.svc.cluster.local:9418/test-repo.git']))
                   ref: main
+                sync:
+                  profiles:
+                    default:
+                      mappings:
+                        - source: "config"
+                          destination: "config"
+                          type: dir
                 gateway:
                   port: 8088
                   tls: false
@@ -33,7 +40,7 @@ spec:
             timeout: 60s
             content: |
               for i in $(seq 1 30); do
-                STATUS=$(kubectl get stoker test-no-api -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)
+                STATUS=$(kubectl get gatewaysync test-no-api -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)
                 [ "$STATUS" = "False" ] && exit 0
                 sleep 2
               done

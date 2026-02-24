@@ -31,18 +31,25 @@ spec:
               echo "git server not reachable via Service DNS"
               exit 1
 
-    - name: Create Stoker CR with nonexistent ref
+    - name: Create GatewaySync CR with nonexistent ref
       try:
         - apply:
             resource:
               apiVersion: stoker.io/v1alpha1
-              kind: Stoker
+              kind: GatewaySync
               metadata:
                 name: test-ref-invalid
               spec:
                 git:
                   repo: (join('', ['git://test-git-server.', $namespace, '.svc.cluster.local:9418/test-repo.git']))
                   ref: nonexistent-branch
+                sync:
+                  profiles:
+                    default:
+                      mappings:
+                        - source: "config"
+                          destination: "config"
+                          type: dir
                 gateway:
                   port: 8088
                   tls: false
@@ -59,8 +66,8 @@ spec:
             timeout: 60s
             content: |
               for i in $(seq 1 30); do
-                STATUS=$(kubectl get stoker test-ref-invalid -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}' 2>/dev/null)
-                REASON=$(kubectl get stoker test-ref-invalid -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].reason}' 2>/dev/null)
+                STATUS=$(kubectl get gatewaysync test-ref-invalid -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}' 2>/dev/null)
+                REASON=$(kubectl get gatewaysync test-ref-invalid -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].reason}' 2>/dev/null)
                 [ "$STATUS" = "False" ] && [ "$REASON" = "RefResolutionFailed" ] && exit 0
                 sleep 2
               done

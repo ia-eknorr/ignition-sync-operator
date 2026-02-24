@@ -37,13 +37,13 @@ func newInjector(objects ...runtime.Object) *PodInjector {
 	}
 }
 
-func testStoker() *stokerv1alpha1.Stoker {
-	return &stokerv1alpha1.Stoker{
+func testGatewaySync() *stokerv1alpha1.GatewaySync {
+	return &stokerv1alpha1.GatewaySync{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-sync",
 			Namespace: testNamespace,
 		},
-		Spec: stokerv1alpha1.StokerSpec{
+		Spec: stokerv1alpha1.GatewaySyncSpec{
 			Git: stokerv1alpha1.GitSpec{
 				Repo: "git@github.com:example/test.git",
 				Ref:  "main",
@@ -63,19 +63,14 @@ func testStoker() *stokerv1alpha1.Stoker {
 					Key:  "apiKey",
 				},
 			},
-		},
-	}
-}
-
-func testSyncProfile() *stokerv1alpha1.SyncProfile {
-	return &stokerv1alpha1.SyncProfile{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "my-profile",
-			Namespace: testNamespace,
-		},
-		Spec: stokerv1alpha1.SyncProfileSpec{
-			Mappings: []stokerv1alpha1.SyncMapping{
-				{Source: "config/", Destination: "config/"},
+			Sync: stokerv1alpha1.SyncSpec{
+				Profiles: map[string]stokerv1alpha1.SyncProfileSpec{
+					"my-profile": {
+						Mappings: []stokerv1alpha1.SyncMapping{
+							{Source: "config/", Destination: "config/"},
+						},
+					},
+				},
 			},
 		},
 	}
@@ -109,14 +104,13 @@ func basePod(annotations map[string]string) *corev1.Pod {
 // --- Test Cases ---
 
 func TestInject_WithAllAnnotations(t *testing.T) {
-	stk := testStoker()
-	profile := testSyncProfile()
-	injector := newInjector(stk, profile)
+	gs := testGatewaySync()
+	injector := newInjector(gs)
 
 	pod := basePod(map[string]string{
 		stokertypes.AnnotationInject:      "true",
 		stokertypes.AnnotationCRName:      "my-sync",
-		stokertypes.AnnotationSyncProfile: "my-profile",
+		stokertypes.AnnotationProfile:     "my-profile",
 		stokertypes.AnnotationGatewayName: "blue-gw",
 	})
 	resp := injector.Handle(context.Background(), makeAdmissionRequest(pod))
@@ -129,7 +123,7 @@ func TestInject_WithAllAnnotations(t *testing.T) {
 	}
 
 	// Verify mutation content via direct injection
-	patched := injectDirect(t, pod, stk)
+	patched := injectDirect(t, pod, gs)
 	assertHasInitContainer(t, patched, agentContainerName)
 	assertHasVolume(t, patched, volumeSyncRepo)
 	assertHasVolume(t, patched, volumeGitCredentials)
@@ -138,7 +132,7 @@ func TestInject_WithAllAnnotations(t *testing.T) {
 }
 
 func TestInject_WithoutInjectAnnotation(t *testing.T) {
-	injector := newInjector(testStoker())
+	injector := newInjector(testGatewaySync())
 
 	pod := basePod(map[string]string{})
 	resp := injector.Handle(context.Background(), makeAdmissionRequest(pod))
@@ -167,9 +161,9 @@ func TestInject_MissingCR(t *testing.T) {
 }
 
 func TestInject_PausedCR(t *testing.T) {
-	stk := testStoker()
-	stk.Spec.Paused = true
-	injector := newInjector(stk)
+	gs := testGatewaySync()
+	gs.Spec.Paused = true
+	injector := newInjector(gs)
 
 	pod := basePod(map[string]string{
 		stokertypes.AnnotationInject: "true",
@@ -183,24 +177,24 @@ func TestInject_PausedCR(t *testing.T) {
 	assertContains(t, resp.Result.Message, "paused")
 }
 
-func TestInject_InvalidSyncProfile(t *testing.T) {
-	injector := newInjector(testStoker()) // no profile
+func TestInject_InvalidProfile(t *testing.T) {
+	injector := newInjector(testGatewaySync()) // has "my-profile" but not "nonexistent-profile"
 
 	pod := basePod(map[string]string{
-		stokertypes.AnnotationInject:      "true",
-		stokertypes.AnnotationCRName:      "my-sync",
-		stokertypes.AnnotationSyncProfile: "nonexistent-profile",
+		stokertypes.AnnotationInject:  "true",
+		stokertypes.AnnotationCRName:  "my-sync",
+		stokertypes.AnnotationProfile: "nonexistent-profile",
 	})
 	resp := injector.Handle(context.Background(), makeAdmissionRequest(pod))
 
 	if resp.Allowed {
-		t.Fatal("expected denied for missing SyncProfile")
+		t.Fatal("expected denied for missing profile")
 	}
 	assertContains(t, resp.Result.Message, "not found")
 }
 
 func TestInject_AlreadyInjected(t *testing.T) {
-	injector := newInjector(testStoker())
+	injector := newInjector(testGatewaySync())
 
 	restartAlways := corev1.ContainerRestartPolicyAlways
 	pod := basePod(map[string]string{
@@ -221,7 +215,7 @@ func TestInject_AlreadyInjected(t *testing.T) {
 }
 
 func TestInject_AutoDeriveCRName_SingleCR(t *testing.T) {
-	injector := newInjector(testStoker())
+	injector := newInjector(testGatewaySync())
 
 	pod := basePod(map[string]string{
 		stokertypes.AnnotationInject: "true",
@@ -248,12 +242,12 @@ func TestInject_AutoDeriveCRName_NoCRs(t *testing.T) {
 	if resp.Allowed {
 		t.Fatal("expected denied when no CRs in namespace")
 	}
-	assertContains(t, resp.Result.Message, "no Stoker CR found")
+	assertContains(t, resp.Result.Message, "no GatewaySync CR found")
 }
 
 func TestInject_AutoDeriveCRName_MultipleCRs(t *testing.T) {
-	cr1 := testStoker()
-	cr2 := testStoker()
+	cr1 := testGatewaySync()
+	cr2 := testGatewaySync()
 	cr2.Name = "other-sync"
 	injector := newInjector(cr1, cr2)
 
@@ -265,12 +259,12 @@ func TestInject_AutoDeriveCRName_MultipleCRs(t *testing.T) {
 	if resp.Allowed {
 		t.Fatal("expected denied with multiple CRs")
 	}
-	assertContains(t, resp.Result.Message, "multiple Stoker CRs")
+	assertContains(t, resp.Result.Message, "multiple GatewaySync CRs")
 }
 
 func TestInject_SSHAuth(t *testing.T) {
-	stk := testStoker()
-	stk.Spec.Git.Auth = &stokerv1alpha1.GitAuthSpec{
+	gs := testGatewaySync()
+	gs.Spec.Git.Auth = &stokerv1alpha1.GitAuthSpec{
 		SSHKey: &stokerv1alpha1.SSHKeyAuth{
 			SecretRef: stokerv1alpha1.SecretKeyRef{
 				Name: "ssh-key-secret",
@@ -278,7 +272,7 @@ func TestInject_SSHAuth(t *testing.T) {
 			},
 		},
 	}
-	injector := newInjector(stk)
+	injector := newInjector(gs)
 
 	pod := basePod(map[string]string{
 		stokertypes.AnnotationInject: "true",
@@ -290,7 +284,7 @@ func TestInject_SSHAuth(t *testing.T) {
 		t.Fatalf("expected allowed, got: %s", resp.Result.Message)
 	}
 
-	patched := injectDirect(t, pod, stk)
+	patched := injectDirect(t, pod, gs)
 	agent := findInitContainer(patched)
 	if agent == nil {
 		t.Fatal("stoker-agent not found")
@@ -300,8 +294,8 @@ func TestInject_SSHAuth(t *testing.T) {
 }
 
 func TestInject_TokenAuth(t *testing.T) {
-	stk := testStoker()
-	injector := newInjector(stk)
+	gs := testGatewaySync()
+	injector := newInjector(gs)
 
 	pod := basePod(map[string]string{
 		stokertypes.AnnotationInject: "true",
@@ -313,7 +307,7 @@ func TestInject_TokenAuth(t *testing.T) {
 		t.Fatalf("expected allowed, got: %s", resp.Result.Message)
 	}
 
-	patched := injectDirect(t, pod, stk)
+	patched := injectDirect(t, pod, gs)
 	agent := findInitContainer(patched)
 	if agent == nil {
 		t.Fatal("stoker-agent not found")
@@ -323,8 +317,8 @@ func TestInject_TokenAuth(t *testing.T) {
 }
 
 func TestInject_AgentImageOverrideViaAnnotation(t *testing.T) {
-	stk := testStoker()
-	injector := newInjector(stk)
+	gs := testGatewaySync()
+	injector := newInjector(gs)
 
 	pod := basePod(map[string]string{
 		stokertypes.AnnotationInject:     "true",
@@ -339,7 +333,7 @@ func TestInject_AgentImageOverrideViaAnnotation(t *testing.T) {
 
 	// Verify via direct injection — annotation image takes priority
 	patched := pod.DeepCopy()
-	injectSidecar(patched, stk)
+	injectSidecar(patched, gs)
 	agent := findInitContainer(patched)
 	if agent == nil {
 		t.Fatal("stoker-agent not found")
@@ -350,8 +344,8 @@ func TestInject_AgentImageOverrideViaAnnotation(t *testing.T) {
 }
 
 func TestInject_AgentResourcesFromCR(t *testing.T) {
-	stk := testStoker()
-	stk.Spec.Agent.Resources = &corev1.ResourceRequirements{
+	gs := testGatewaySync()
+	gs.Spec.Agent.Resources = &corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("100m"),
 			corev1.ResourceMemory: resource.MustParse("128Mi"),
@@ -361,7 +355,7 @@ func TestInject_AgentResourcesFromCR(t *testing.T) {
 			corev1.ResourceMemory: resource.MustParse("512Mi"),
 		},
 	}
-	injector := newInjector(stk)
+	injector := newInjector(gs)
 
 	pod := basePod(map[string]string{
 		stokertypes.AnnotationInject: "true",
@@ -373,7 +367,7 @@ func TestInject_AgentResourcesFromCR(t *testing.T) {
 		t.Fatalf("expected allowed, got: %s", resp.Result.Message)
 	}
 
-	patched := injectDirect(t, pod, stk)
+	patched := injectDirect(t, pod, gs)
 	agent := findInitContainer(patched)
 	if agent == nil {
 		t.Fatal("stoker-agent not found")
@@ -392,10 +386,10 @@ func TestInject_AgentResourcesFromCR(t *testing.T) {
 // --- Helpers ---
 
 // injectDirect calls injectSidecar on a pod copy with the given CR for testing.
-func injectDirect(t *testing.T, pod *corev1.Pod, stk *stokerv1alpha1.Stoker) *corev1.Pod {
+func injectDirect(t *testing.T, pod *corev1.Pod, gs *stokerv1alpha1.GatewaySync) *corev1.Pod {
 	t.Helper()
 	p := pod.DeepCopy()
-	injectSidecar(p, stk)
+	injectSidecar(p, gs)
 	return p
 }
 

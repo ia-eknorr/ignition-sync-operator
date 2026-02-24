@@ -4,22 +4,28 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.0
-  name: stokers.stoker.io
+  name: gatewaysyncs.stoker.io
 spec:
   group: stoker.io
   names:
-    kind: Stoker
-    listKind: StokerList
-    plural: stokers
+    kind: GatewaySync
+    listKind: GatewaySyncList
+    plural: gatewaysyncs
     shortNames:
-    - stk
-    singular: stoker
+    - gs
+    singular: gatewaysync
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
     - jsonPath: .spec.git.ref
       name: Ref
       type: string
+    - jsonPath: .status.lastSyncCommitShort
+      name: Commit
+      type: string
+    - jsonPath: .status.profileCount
+      name: Profiles
+      type: integer
     - jsonPath: .status.conditions[?(@.type=="AllGatewaysSynced")].status
       name: Synced
       type: string
@@ -29,13 +35,17 @@ spec:
     - jsonPath: .status.conditions[?(@.type=="Ready")].status
       name: Ready
       type: string
+    - jsonPath: .status.lastSyncTime
+      name: Last Sync
+      priority: 1
+      type: date
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: Stoker is the Schema for the stokers API.
+        description: GatewaySync is the Schema for the gatewaysyncs API.
         properties:
           apiVersion:
             description: |-
@@ -55,7 +65,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec defines the desired state of Stoker.
+            description: spec defines the desired state of GatewaySync.
             properties:
               agent:
                 description: agent configures the sync agent sidecar injected by the
@@ -65,15 +75,12 @@ spec:
                     description: image configures the agent container image.
                     properties:
                       pullPolicy:
-                        default: IfNotPresent
                         description: pullPolicy is the image pull policy.
                         type: string
                       repository:
-                        default: ghcr.io/ia-eknorr/stoker-agent
                         description: repository is the container image repository.
                         type: string
                       tag:
-                        default: latest
                         description: tag is the container image tag.
                         type: string
                     type: object
@@ -138,17 +145,6 @@ spec:
                         type: object
                     type: object
                 type: object
-              excludePatterns:
-                default:
-                - '**/.git/'
-                - '**/.gitkeep'
-                - '**/.resources/**'
-                description: |-
-                  excludePatterns are glob patterns for files to exclude from sync.
-                  The pattern "**/.resources/**" is always enforced by the agent even if omitted.
-                items:
-                  type: string
-                type: array
               gateway:
                 description: gateway configures how the operator connects to Ignition
                   gateways.
@@ -300,15 +296,153 @@ spec:
                     description: interval is the polling period (e.g., "60s", "5m").
                     type: string
                 type: object
+              sync:
+                description: sync configures file sync behavior and profiles.
+                properties:
+                  defaults:
+                    description: defaults provides baseline settings inherited by
+                      all profiles unless overridden.
+                    properties:
+                      designerSessionPolicy:
+                        default: proceed
+                        description: |-
+                          designerSessionPolicy controls sync behavior when Ignition Designer
+                          sessions are active. "proceed" (default) logs a warning and continues,
+                          "wait" retries until sessions close (up to 5 min), "fail" aborts the sync.
+                        enum:
+                        - proceed
+                        - wait
+                        - fail
+                        type: string
+                      dryRun:
+                        description: |-
+                          dryRun causes the agent to sync to a staging directory without
+                          copying to /ignition-data/.
+                        type: boolean
+                      excludePatterns:
+                        default:
+                        - '**/.git/'
+                        - '**/.gitkeep'
+                        - '**/.resources/**'
+                        description: |-
+                          excludePatterns are glob patterns for files to exclude from sync.
+                          The pattern "**/.resources/**" is always enforced by the agent even if omitted.
+                        items:
+                          type: string
+                        type: array
+                      paused:
+                        description: |-
+                          paused halts sync for all gateways using profiles that don't
+                          explicitly override this setting.
+                        type: boolean
+                      syncPeriod:
+                        default: 30
+                        description: syncPeriod is the agent-side polling interval
+                          in seconds.
+                        format: int32
+                        maximum: 3600
+                        minimum: 5
+                        type: integer
+                    type: object
+                  profiles:
+                    additionalProperties:
+                      description: SyncProfileSpec defines a sync profile's configuration.
+                      properties:
+                        designerSessionPolicy:
+                          description: designerSessionPolicy overrides defaults.designerSessionPolicy.
+                          enum:
+                          - proceed
+                          - wait
+                          - fail
+                          type: string
+                        dryRun:
+                          description: dryRun overrides defaults.dryRun for this profile.
+                          type: boolean
+                        excludePatterns:
+                          description: |-
+                            excludePatterns are additional glob patterns for files to exclude.
+                            Merged with defaults.excludePatterns (additive).
+                          items:
+                            type: string
+                          type: array
+                        mappings:
+                          description: mappings is an ordered list of source->destination
+                            file mappings.
+                          items:
+                            description: SyncMapping defines a single source->destination
+                              file mapping.
+                            properties:
+                              destination:
+                                description: |-
+                                  destination is the gateway-relative path to copy to.
+                                  Supports Go template variables: {{.GatewayName}}, {{.CRName}},
+                                  {{.Labels.key}}, {{.Vars.key}}, {{.Namespace}}, {{.Ref}}, {{.Commit}}.
+                                minLength: 1
+                                type: string
+                              required:
+                                description: |-
+                                  required causes the sync to fail if the source path does not exist
+                                  in the repo at the resolved commit.
+                                type: boolean
+                              source:
+                                description: |-
+                                  source is the repo-relative path to copy from.
+                                  Supports Go template variables: {{.GatewayName}}, {{.CRName}},
+                                  {{.Labels.key}}, {{.Vars.key}}, {{.Namespace}}, {{.Ref}}, {{.Commit}}.
+                                minLength: 1
+                                type: string
+                              type:
+                                default: dir
+                                description: type is the entry type — "dir" (default)
+                                  or "file".
+                                enum:
+                                - dir
+                                - file
+                                type: string
+                            required:
+                            - destination
+                            - source
+                            type: object
+                          minItems: 1
+                          type: array
+                        paused:
+                          description: paused overrides defaults.paused for this profile.
+                          type: boolean
+                        syncPeriod:
+                          description: syncPeriod overrides defaults.syncPeriod for
+                            this profile.
+                          format: int32
+                          maximum: 3600
+                          minimum: 5
+                          type: integer
+                        vars:
+                          additionalProperties:
+                            type: string
+                          description: vars is a map of template variables resolved
+                            by the agent at sync time.
+                          type: object
+                      required:
+                      - mappings
+                      type: object
+                    description: |-
+                      profiles is a named map of sync profiles. Each profile defines mappings
+                      and optional behavioral overrides. Pods select a profile via the
+                      stoker.io/profile annotation. The "default" profile is used as fallback.
+                    minProperties: 1
+                    type: object
+                required:
+                - profiles
+                type: object
             required:
             - gateway
             - git
+            - sync
             type: object
           status:
-            description: status defines the observed state of Stoker.
+            description: status defines the observed state of GatewaySync.
             properties:
               conditions:
-                description: conditions represent the current state of the Stoker
+                description: conditions represent the current state of the GatewaySync
                   resource.
                 items:
                   description: Condition contains details for one aspect of the current
@@ -370,7 +504,7 @@ spec:
                 x-kubernetes-list-type: map
               discoveredGateways:
                 description: discoveredGateways lists all gateways discovered by the
-                  controller in this namespace.
+                  controller.
                 items:
                   description: DiscoveredGateway represents a single Ignition gateway
                     discovered by the controller.
@@ -405,16 +539,16 @@ spec:
                     podName:
                       description: podName is the name of the gateway pod.
                       type: string
+                    profile:
+                      description: profile is the name of the sync profile used by
+                        this gateway.
+                      type: string
                     projectsSynced:
                       description: projectsSynced lists the Ignition project names
                         synced to this gateway.
                       items:
                         type: string
                       type: array
-                    syncProfile:
-                      description: syncProfile is the name of the SyncProfile referenced
-                        by this gateway.
-                      type: string
                     syncStatus:
                       description: syncStatus is the current sync state of this gateway.
                       enum:
@@ -440,6 +574,10 @@ spec:
               lastSyncCommit:
                 description: lastSyncCommit is the git commit SHA that was last synced.
                 type: string
+              lastSyncCommitShort:
+                description: lastSyncCommitShort is the abbreviated (7-char) git commit
+                  SHA for display.
+                type: string
               lastSyncRef:
                 description: lastSyncRef is the git ref that was last synced.
                 type: string
@@ -451,6 +589,10 @@ spec:
                 description: observedGeneration is the most recent generation observed
                   by the controller.
                 format: int64
+                type: integer
+              profileCount:
+                description: profileCount is the number of profiles defined in spec.sync.profiles.
+                format: int32
                 type: integer
               refResolutionStatus:
                 description: refResolutionStatus indicates the state of git ref resolution.

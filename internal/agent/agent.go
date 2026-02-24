@@ -11,11 +11,12 @@ import (
 	gogitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"golang.org/x/crypto/ssh"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	stokerv1alpha1 "github.com/ia-eknorr/stoker-operator/api/v1alpha1"
 	"github.com/ia-eknorr/stoker-operator/internal/git"
 	"github.com/ia-eknorr/stoker-operator/internal/ignition"
 	"github.com/ia-eknorr/stoker-operator/internal/syncengine"
@@ -24,6 +25,13 @@ import (
 )
 
 const agentVersion = "0.1.0"
+
+// gatewaySyncGVK is the GVK for the GatewaySync CR, used with unstructured client.
+var gatewaySyncGVK = schema.GroupVersionKind{
+	Group:   "stoker.io",
+	Version: "v1alpha1",
+	Kind:    "GatewaySync",
+}
 
 // Agent orchestrates the sync process.
 type Agent struct {
@@ -36,7 +44,7 @@ type Agent struct {
 	Watcher      *Watcher
 	Recorder     record.EventRecorder // may be nil
 
-	stkRef           *stokerv1alpha1.Stoker // cached for event target
+	crRef            *unstructured.Unstructured // cached for event target
 	lastSyncedCommit string
 	initialSyncDone  bool
 }
@@ -88,8 +96,8 @@ func (a *Agent) Run(ctx context.Context) error {
 
 	log.Info("metadata loaded", "gitURL", meta.GitURL, "commit", meta.Commit, "ref", meta.Ref)
 
-	// Cache Stoker CR reference for event emission.
-	a.fetchISyncRef(ctx)
+	// Cache GatewaySync CR reference for event emission.
+	a.fetchCRRef(ctx)
 
 	// Resolve git auth from mounted files.
 	auth := a.resolveFileAuth()
@@ -236,11 +244,11 @@ func (a *Agent) handleSyncTrigger(ctx context.Context, gitURL string, auth trans
 
 	log.Info("git updated", "commit", result.Commit)
 
-	// Pre-sync designer session check.
-	profile, err := fetchSyncProfile(ctx, a.K8sClient, a.Config.CRNamespace, a.Config.SyncProfileName)
+	// Pre-sync designer session check via resolved profile from metadata.
+	profile, profileName, err := a.lookupProfile(meta)
 	if err != nil {
-		log.Error(err, "failed to fetch SyncProfile for designer check")
-		a.reportError(ctx, result.Commit, result.Ref, fmt.Sprintf("fetching profile: %v", err))
+		log.Error(err, "failed to look up profile for designer check")
+		a.reportError(ctx, result.Commit, result.Ref, fmt.Sprintf("looking up profile: %v", err))
 		return
 	}
 
@@ -250,9 +258,32 @@ func (a *Agent) handleSyncTrigger(ctx context.Context, gitURL string, auth trans
 		}
 	}
 
+	_ = profileName // used in syncWithProfile via metadata re-read
+
 	if syncErr := a.syncOnce(ctx, result.Commit, result.Ref, false); syncErr != nil {
 		log.Error(syncErr, "sync had errors")
 	}
+}
+
+// lookupProfile resolves the agent's profile from metadata ConfigMap profiles.
+// Falls back to "default" if no profile name is configured.
+func (a *Agent) lookupProfile(meta *Metadata) (*stokertypes.ResolvedProfile, string, error) {
+	profiles, err := ParseResolvedProfiles(meta.Profiles)
+	if err != nil {
+		return nil, "", fmt.Errorf("parsing profiles: %w", err)
+	}
+
+	profileName := a.Config.ProfileName
+	if profileName == "" {
+		profileName = "default"
+	}
+
+	profile, ok := profiles[profileName]
+	if !ok {
+		return nil, profileName, fmt.Errorf("profile %q not found in metadata ConfigMap", profileName)
+	}
+
+	return profile, profileName, nil
 }
 
 // checkDesignerSessions enforces the designer session policy before sync.
@@ -372,21 +403,19 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 		"dryRun", isDryRun,
 	)
 
-	// Trigger Ignition scan API (skip on initial sync and dry-run).
+	// Trigger Ignition scan API on every non-initial sync (regardless of filesChanged).
+	// Only report "Synced" if both scan endpoints return 200.
 	var scanResultStr string
 	if isDryRun {
 		log.Info("dry-run mode, skipping scan API")
 	} else if !isInitial {
-		filesChanged := int32(syncResult.FilesAdded + syncResult.FilesModified + syncResult.FilesDeleted)
-		if filesChanged > 0 {
-			log.Info("triggering Ignition scan API")
-			scanResult := a.IgnitionAPI.TriggerScan()
-			scanResultStr = scanResult.String()
-			if scanResult.Error != "" {
-				log.Info("scan API warning (non-fatal)", "error", scanResult.Error)
-			} else {
-				log.Info("scan complete", "result", scanResultStr)
-			}
+		log.Info("triggering Ignition scan API")
+		scanResult := a.IgnitionAPI.TriggerScan()
+		scanResultStr = scanResult.String()
+		if scanResult.Error != "" {
+			log.Info("scan API failed (non-fatal)", "error", scanResult.Error)
+		} else {
+			log.Info("scan complete", "result", scanResultStr)
 		}
 	} else {
 		// On initial sync, attempt a health check but don't require it.
@@ -396,12 +425,20 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 		}
 	}
 
-	// Determine status.
+	// Determine status: only "Synced" if scan succeeded (both 200).
+	// Initial sync reports "Pending" since gateway isn't running yet to validate.
 	syncStatus := stokertypes.SyncStatusSynced
 	var errorMsg string
-	if scanResultStr != "" && strings.Contains(scanResultStr, "error") {
+	if isInitial {
+		syncStatus = stokertypes.SyncStatusPending
+	} else if isDryRun {
+		// dry-run: no scan, report Synced (files validated via diff)
+	} else if scanResultStr == "" || strings.Contains(scanResultStr, "error") {
 		syncStatus = stokertypes.SyncStatusError
 		errorMsg = scanResultStr
+		if errorMsg == "" {
+			errorMsg = "scan not performed"
+		}
 	}
 
 	// Report status to ConfigMap.
@@ -417,7 +454,7 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 		FilesChanged:     filesChanged,
 		ProjectsSynced:   syncResult.ProjectsSynced,
 		ErrorMessage:     errorMsg,
-		SyncProfileName:  profileName,
+		ProfileName:      profileName,
 		DryRun:           isDryRun,
 	}
 
@@ -440,29 +477,29 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 	return nil
 }
 
-// syncWithProfile fetches the SyncProfile, builds a plan, and executes it.
-// Returns the sync result, profile name, dry-run flag, and any error.
+// syncWithProfile looks up the resolved profile from the metadata ConfigMap,
+// builds a plan, and executes it.
 func (a *Agent) syncWithProfile(ctx context.Context) (*syncengine.SyncResult, string, bool, error) {
 	log := logf.FromContext(ctx).WithName("profile-sync")
-	profileName := a.Config.SyncProfileName
 
-	// Fetch SyncProfile CR.
-	log.Info("fetching SyncProfile", "name", profileName)
-	profile, err := fetchSyncProfile(ctx, a.K8sClient, a.Config.CRNamespace, profileName)
+	// Read metadata ConfigMap (contains profiles JSON + git info).
+	meta, err := ReadMetadataConfigMap(ctx, a.K8sClient, a.Config.CRNamespace, a.Config.CRName)
 	if err != nil {
-		return nil, profileName, false, fmt.Errorf("fetching profile: %w", err)
+		return nil, "", false, fmt.Errorf("reading metadata: %w", err)
 	}
+
+	// Look up resolved profile.
+	profile, profileName, err := a.lookupProfile(meta)
+	if err != nil {
+		return nil, "", false, err
+	}
+
+	log.Info("using profile", "name", profileName)
 
 	// Check if profile is paused.
 	if profile.Paused {
-		log.Info("SyncProfile is paused, returning zero-change result")
+		log.Info("profile is paused, returning zero-change result")
 		return &syncengine.SyncResult{}, profileName, profile.DryRun, nil
-	}
-
-	// Read metadata for CR-level excludes.
-	meta, err := ReadMetadataConfigMap(ctx, a.K8sClient, a.Config.CRNamespace, a.Config.CRName)
-	if err != nil {
-		return nil, profileName, profile.DryRun, fmt.Errorf("reading metadata for excludes: %w", err)
 	}
 
 	// Read pod labels for template context.
@@ -474,9 +511,8 @@ func (a *Agent) syncWithProfile(ctx context.Context) (*syncengine.SyncResult, st
 	// Build template context.
 	tmplCtx := buildTemplateContext(a.Config, meta, profile.Vars, pod.Labels)
 
-	// Build sync plan.
-	crExcludes := parseCRExcludes(meta.ExcludePatterns)
-	plan, err := buildSyncPlan(profile, tmplCtx, a.Config.RepoPath, a.Config.DataPath, crExcludes)
+	// Build sync plan (no crExcludes — controller already merged excludes into profile).
+	plan, err := buildSyncPlan(profile, tmplCtx, a.Config.RepoPath, a.Config.DataPath)
 	if err != nil {
 		return nil, profileName, profile.DryRun, fmt.Errorf("building sync plan: %w", err)
 	}
@@ -513,24 +549,26 @@ func (a *Agent) reportError(ctx context.Context, commit, ref, errMsg string) {
 	_ = WriteStatusConfigMap(ctx, a.K8sClient, a.Config.CRNamespace, a.Config.CRName, a.Config.GatewayName, status)
 }
 
-// event emits a K8s event on the cached Stoker CR. No-op if recorder or
-// stkRef is nil (e.g. during tests or when recorder setup failed).
+// event emits a K8s event on the cached GatewaySync CR. No-op if recorder or
+// crRef is nil (e.g. during tests or when recorder setup failed).
 func (a *Agent) event(eventType, reason, msgFmt string, args ...any) {
-	if a.Recorder == nil || a.stkRef == nil {
+	if a.Recorder == nil || a.crRef == nil {
 		return
 	}
-	a.Recorder.Eventf(a.stkRef, eventType, reason, msgFmt, args...)
+	a.Recorder.Eventf(a.crRef, eventType, reason, msgFmt, args...)
 }
 
-// fetchISyncRef fetches the Stoker CR once and caches it as event target.
-func (a *Agent) fetchISyncRef(ctx context.Context) {
-	var stk stokerv1alpha1.Stoker
+// fetchCRRef fetches the GatewaySync CR once using unstructured client and caches
+// it as the event target. This avoids importing the CRD types package.
+func (a *Agent) fetchCRRef(ctx context.Context) {
+	u := &unstructured.Unstructured{}
+	u.SetGroupVersionKind(gatewaySyncGVK)
 	key := client.ObjectKey{Namespace: a.Config.CRNamespace, Name: a.Config.CRName}
-	if err := a.K8sClient.Get(ctx, key, &stk); err != nil {
-		logf.FromContext(ctx).Info("could not fetch Stoker for events (non-fatal)", "error", err)
+	if err := a.K8sClient.Get(ctx, key, u); err != nil {
+		logf.FromContext(ctx).Info("could not fetch GatewaySync for events (non-fatal)", "error", err)
 		return
 	}
-	a.stkRef = &stk
+	a.crRef = u
 }
 
 // resolveFileAuth builds a go-git transport.AuthMethod from mounted credential files.

@@ -16,7 +16,7 @@ rules:
 - apiGroups:
   - stoker.io
   resources:
-  - stokers
+  - gatewaysyncs
   verbs:
   - create
   - delete
@@ -28,6 +28,6 @@ rules:
 - apiGroups:
   - stoker.io
   resources:
-  - stokers/status
+  - gatewaysyncs/status
   verbs:
   - get

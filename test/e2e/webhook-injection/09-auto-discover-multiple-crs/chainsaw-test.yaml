@@ -3,25 +3,32 @@ kind: Test
 metadata:
   name: auto-discover-multiple-crs
 spec:
-  description: Verify webhook denies pod when multiple Stoker CRs exist and cr-name is omitted
+  description: Verify webhook denies pod when multiple GatewaySync CRs exist and cr-name is omitted
   steps:
     - name: Create api-key secret
       try:
         - apply:
             file: ../../fixtures/api-key-secret.yaml
 
-    - name: Create two Stoker CRs
+    - name: Create two GatewaySync CRs
       try:
         - apply:
             resource:
               apiVersion: stoker.io/v1alpha1
-              kind: Stoker
+              kind: GatewaySync
               metadata:
                 name: test-multi-a
               spec:
                 git:
                   repo: (join('', ['git://test-git-server.', $namespace, '.svc.cluster.local:9418/test-repo.git']))
                   ref: main
+                sync:
+                  profiles:
+                    default:
+                      mappings:
+                        - source: "config"
+                          destination: "config"
+                          type: dir
                 gateway:
                   port: 8088
                   tls: false
@@ -31,13 +38,20 @@ spec:
         - apply:
             resource:
               apiVersion: stoker.io/v1alpha1
-              kind: Stoker
+              kind: GatewaySync
               metadata:
                 name: test-multi-b
               spec:
                 git:
                   repo: (join('', ['git://test-git-server.', $namespace, '.svc.cluster.local:9418/test-repo.git']))
                   ref: main
+                sync:
+                  profiles:
+                    default:
+                      mappings:
+                        - source: "config"
+                          destination: "config"
+                          type: dir
                 gateway:
                   port: 8088
                   tls: false

@@ -21,18 +21,25 @@ spec:
                 value: ($namespace)
             content: |
               kubectl wait --for=condition=Ready pod/test-git-server -n $NAMESPACE --timeout=60s
-    - name: create stoker cr
+    - name: create GatewaySync CR
       try:
         - apply:
             resource:
               apiVersion: stoker.io/v1alpha1
-              kind: Stoker
+              kind: GatewaySync
               metadata:
                 name: test-gnl
               spec:
                 git:
                   repo: (join('', ['git://test-git-server.', $namespace, '.svc.cluster.local:9418/test-repo.git']))
                   ref: main
+                sync:
+                  profiles:
+                    default:
+                      mappings:
+                        - source: "config"
+                          destination: "config"
+                          type: dir
                 gateway:
                   apiKeySecretRef:
                     name: ignition-api-key
@@ -46,7 +53,7 @@ spec:
             timeout: 60s
             content: |
               for i in $(seq 1 30); do
-                STATUS=$(kubectl get stoker test-gnl -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}' 2>/dev/null)
+                STATUS=$(kubectl get gatewaysync test-gnl -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}' 2>/dev/null)
                 [ "$STATUS" = "True" ] && exit 0
                 sleep 2
               done
@@ -85,8 +92,8 @@ spec:
             timeout: 60s
             content: |
               for i in $(seq 1 30); do
-                NAME=$(kubectl get stoker test-gnl -n $NAMESPACE -o jsonpath='{.status.discoveredGateways[0].name}' 2>/dev/null)
-                POD=$(kubectl get stoker test-gnl -n $NAMESPACE -o jsonpath='{.status.discoveredGateways[0].podName}' 2>/dev/null)
+                NAME=$(kubectl get gatewaysync test-gnl -n $NAMESPACE -o jsonpath='{.status.discoveredGateways[0].name}' 2>/dev/null)
+                POD=$(kubectl get gatewaysync test-gnl -n $NAMESPACE -o jsonpath='{.status.discoveredGateways[0].podName}' 2>/dev/null)
                 [ "$NAME" = "label-gw" ] && [ "$POD" = "gateway-gnl" ] && break
                 sleep 2
               done

@@ -3,9 +3,9 @@ kind: Test
 metadata:
   name: cr-not-found
 spec:
-  description: Verify webhook denies pod when referenced Stoker CR does not exist
+  description: Verify webhook denies pod when referenced GatewaySync CR does not exist
   steps:
-    - name: Create pod referencing nonexistent Stoker CR
+    - name: Create pod referencing nonexistent GatewaySync CR
       try:
         - apply:
             expect:

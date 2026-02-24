@@ -9,15 +9,16 @@ const (
 	// AnnotationInject enables sidecar injection when set to "true".
 	AnnotationInject = AnnotationPrefix + "/inject"
 
-	// AnnotationCRName identifies which Stoker CR in this namespace to use.
+	// AnnotationCRName identifies which GatewaySync CR in this namespace to use.
 	// Auto-derived if exactly one CR exists in the namespace.
 	AnnotationCRName = AnnotationPrefix + "/cr-name"
 
 	// AnnotationGatewayName overrides gateway identity (defaults to pod label app.kubernetes.io/name).
 	AnnotationGatewayName = AnnotationPrefix + "/gateway-name"
 
-	// AnnotationSyncProfile names the SyncProfile to use for this gateway pod.
-	AnnotationSyncProfile = AnnotationPrefix + "/sync-profile"
+	// AnnotationProfile names the sync profile for this gateway pod.
+	// If unset, the "default" profile is used.
+	AnnotationProfile = AnnotationPrefix + "/profile"
 
 	// AnnotationRefOverride overrides the git ref for this pod only.
 	// Read by the agent sidecar, NOT the controller. The agent resolves
@@ -27,7 +28,7 @@ const (
 	// Intended for dev/test gateways in production namespaces.
 	AnnotationRefOverride = AnnotationPrefix + "/ref-override"
 
-	// CR annotations — set by the webhook receiver on the Stoker CR (not by users).
+	// CR annotations — set by the webhook receiver on the GatewaySync CR (not by users).
 
 	// AnnotationRequestedRef is set by the webhook receiver to request a ref update.
 	// The controller reads this and initiates a sync to the requested ref.
@@ -59,7 +60,7 @@ const (
 
 	// Finalizer
 
-	// Finalizer is added to Stoker CRs to ensure cleanup on deletion.
+	// Finalizer is added to GatewaySync CRs to ensure cleanup on deletion.
 	Finalizer = AnnotationPrefix + "/finalizer"
 
 	// Sync status values for missing sidecar detection.

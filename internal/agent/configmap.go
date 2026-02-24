@@ -32,6 +32,7 @@ type Metadata struct {
 	GitURL          string
 	Paused          string
 	ExcludePatterns string
+	Profiles        string
 }
 
 // ReadMetadataConfigMap reads the metadata ConfigMap and returns its data.
@@ -53,7 +54,20 @@ func ReadMetadataConfigMap(ctx context.Context, c client.Client, namespace, crNa
 		GitURL:          cm.Data["gitURL"],
 		Paused:          cm.Data["paused"],
 		ExcludePatterns: cm.Data["excludePatterns"],
+		Profiles:        cm.Data["profiles"],
 	}, nil
+}
+
+// ParseResolvedProfiles deserializes the profiles JSON from the metadata ConfigMap.
+func ParseResolvedProfiles(raw string) (map[string]*stokertypes.ResolvedProfile, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	var profiles map[string]*stokertypes.ResolvedProfile
+	if err := json.Unmarshal([]byte(raw), &profiles); err != nil {
+		return nil, fmt.Errorf("parsing resolved profiles: %w", err)
+	}
+	return profiles, nil
 }
 
 // WriteStatusConfigMap writes the agent's status to the status ConfigMap.

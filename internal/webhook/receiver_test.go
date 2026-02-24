@@ -102,13 +102,13 @@ func newTestReceiver(hmacSecret string, objects ...runtime.Object) (*Receiver, *
 	return rv, mux
 }
 
-func testCR() *stokerv1alpha1.Stoker {
-	return &stokerv1alpha1.Stoker{
+func testCR() *stokerv1alpha1.GatewaySync {
+	return &stokerv1alpha1.GatewaySync{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-sync",
 			Namespace: "default",
 		},
-		Spec: stokerv1alpha1.StokerSpec{
+		Spec: stokerv1alpha1.GatewaySyncSpec{
 			Git: stokerv1alpha1.GitSpec{
 				Repo: "git@github.com:example/test.git",
 				Ref:  "main",
@@ -198,7 +198,7 @@ func TestHandler_AnnotatesCR(t *testing.T) {
 	}
 
 	// Verify the CR was annotated
-	var cr stokerv1alpha1.Stoker
+	var cr stokerv1alpha1.GatewaySync
 	err := rv.Client.Get(req.Context(), types.NamespacedName{Name: "my-sync", Namespace: "default"}, &cr)
 	if err != nil {
 		t.Fatalf("failed to get CR: %v", err)

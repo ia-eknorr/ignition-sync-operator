@@ -47,8 +47,8 @@ type GatewayStatus struct {
 	// ErrorMessage contains error details if SyncStatus is Error.
 	ErrorMessage string `json:"errorMessage,omitempty"`
 
-	// SyncProfileName is the name of the SyncProfile used for this sync.
-	SyncProfileName string `json:"syncProfileName,omitempty"`
+	// ProfileName is the name of the sync profile used for this sync.
+	ProfileName string `json:"profileName,omitempty"`
 
 	// DryRun indicates the sync was a dry-run (no files written to live dir).
 	DryRun bool `json:"dryRun,omitempty"`

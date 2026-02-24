@@ -1,9 +1,9 @@
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
-  name: syncprofile-not-found
+  name: profile-not-found
 spec:
-  description: Verify webhook denies pod when referenced SyncProfile does not exist
+  description: Verify webhook denies pod when referenced profile does not exist in the GatewaySync CR
   steps:
     - name: Deploy git server and api-key secret
       try:
@@ -31,18 +31,25 @@ spec:
               echo "git server not reachable via Service DNS"
               exit 1
 
-    - name: Create Stoker CR
+    - name: Create GatewaySync CR
       try:
         - apply:
             resource:
               apiVersion: stoker.io/v1alpha1
-              kind: Stoker
+              kind: GatewaySync
               metadata:
                 name: test-sp-missing
               spec:
                 git:
                   repo: (join('', ['git://test-git-server.', $namespace, '.svc.cluster.local:9418/test-repo.git']))
                   ref: main
+                sync:
+                  profiles:
+                    default:
+                      mappings:
+                        - source: "config"
+                          destination: "config"
+                          type: dir
                 gateway:
                   port: 8088
                   tls: false
@@ -59,14 +66,14 @@ spec:
             timeout: 60s
             content: |
               for i in $(seq 1 30); do
-                STATUS=$(kubectl get stoker test-sp-missing -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}' 2>/dev/null)
+                STATUS=$(kubectl get gatewaysync test-sp-missing -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}' 2>/dev/null)
                 [ "$STATUS" = "True" ] && exit 0
                 sleep 2
               done
               echo "Timed out waiting for RefResolved=True"
               exit 1
 
-    - name: Create pod referencing nonexistent SyncProfile
+    - name: Create pod referencing nonexistent profile
       try:
         - apply:
             expect:
@@ -80,7 +87,7 @@ spec:
                 annotations:
                   stoker.io/inject: "true"
                   stoker.io/cr-name: test-sp-missing
-                  stoker.io/sync-profile: nonexistent
+                  stoker.io/profile: nonexistent
               spec:
                 containers:
                   - name: gateway

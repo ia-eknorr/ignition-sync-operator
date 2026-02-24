@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Stoker is a Kubernetes operator that continuously syncs Ignition SCADA gateway configuration from Git. It uses a controller + agent sidecar architecture where the controller resolves git refs via `ls-remote` (no clone) and agents independently clone repos to sync files to gateway pods.
 
 **Module:** `github.com/ia-eknorr/stoker-operator`
-**CRDs:** `Stoker` (`stoker.io/v1alpha1`, short name `stk`) and `SyncProfile` (`sp`)
+**CRD:** `GatewaySync` (`stoker.io/v1alpha1`, short name `gs`)
 
 ## Build & Dev Commands
 
@@ -36,7 +36,7 @@ go test ./internal/syncengine/ -run TestBuildPlan -v
 
 **Unit tests use Ginkgo/Gomega with envtest.** The suite bootstraps a real API server with CRDs from `config/crd/bases/`. Run `make setup-envtest` before running tests from an IDE.
 
-**E2E tests use [Chainsaw](https://kyverno.github.io/chainsaw/) (by Kyverno).** Tests live in `test/e2e/` and run against a real kind cluster with the operator deployed via Helm. Each test gets its own namespace. An in-cluster git server provides repos without external dependencies. Tests cover: controller reconciliation, SyncProfile validation, gateway discovery, webhook injection, and webhook receiver.
+**E2E tests use [Chainsaw](https://kyverno.github.io/chainsaw/) (by Kyverno).** Tests live in `test/e2e/` and run against a real kind cluster with the operator deployed via Helm. Each test gets its own namespace. An in-cluster git server provides repos without external dependencies. Tests cover: controller reconciliation, profile validation, gateway discovery, webhook injection, and webhook receiver.
 
 ## Architecture
 
@@ -81,7 +81,7 @@ HTTP server on port 9444 (`POST /webhook/{namespace}/{crName}`). Auto-detects pa
 - **Annotation prefix:** `stoker.io/` (defined in `pkg/types/annotations.go`)
 - **Finalizer:** `stoker.io/finalizer`
 - **Status patches:** Uses `client.MergeFrom()` to avoid resourceVersion conflicts
-- **Predicate filter:** Controller watches Stoker CRs with a custom predicate that passes on generation change OR annotation change (for webhook-triggered reconciles)
+- **Predicate filter:** Controller watches GatewaySync CRs with a custom predicate that passes on generation change OR annotation change (for webhook-triggered reconciles)
 - **Git auth:** Controller resolves secrets for `ls-remote`; agent reads from hardcoded mount paths `/etc/stoker/git-credentials` and `/etc/stoker/api-key`
 
 ## Code Generation Workflow

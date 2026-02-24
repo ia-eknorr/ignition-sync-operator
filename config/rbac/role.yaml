@@ -35,8 +35,7 @@ rules:
 - apiGroups:
   - stoker.io
   resources:
-  - stokers
-  - syncprofiles
+  - gatewaysyncs
   verbs:
   - get
   - list
@@ -46,14 +45,13 @@ rules:
 - apiGroups:
   - stoker.io
   resources:
-  - stokers/finalizers
+  - gatewaysyncs/finalizers
   verbs:
   - update
 - apiGroups:
   - stoker.io
   resources:
-  - stokers/status
-  - syncprofiles/status
+  - gatewaysyncs/status
   verbs:
   - get
   - patch

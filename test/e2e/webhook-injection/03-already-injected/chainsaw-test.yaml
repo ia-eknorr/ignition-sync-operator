@@ -40,12 +40,12 @@ spec:
               echo "git server not reachable via Service DNS"
               exit 1
 
-    - name: Create Stoker CR
+    - name: Create GatewaySync CR
       try:
         - apply:
             resource:
               apiVersion: stoker.io/v1alpha1
-              kind: Stoker
+              kind: GatewaySync
               metadata:
                 name: test-idempotent
               spec:
@@ -57,6 +57,13 @@ spec:
                       secretRef:
                         name: git-token-secret
                         key: token
+                sync:
+                  profiles:
+                    default:
+                      mappings:
+                        - source: "config"
+                          destination: "config"
+                          type: dir
                 gateway:
                   port: 8088
                   tls: false

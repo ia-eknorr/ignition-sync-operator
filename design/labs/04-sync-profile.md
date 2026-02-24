@@ -1,4 +1,6 @@
-# Lab 04 — SyncProfile CRD
+# Lab 04 — SyncProfile CRD (Historical)
+
+> **Superseded**: The standalone `SyncProfile` CRD has been merged into `GatewaySync` as `spec.sync.profiles`. This lab document is preserved as design history. For current profile configuration, see the [GatewaySync CR Reference](../../docs/docs/configuration/gatewaysync-cr.md).
 
 ## Objective
 

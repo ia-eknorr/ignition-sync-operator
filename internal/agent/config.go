@@ -9,37 +9,37 @@ import (
 
 // Config holds the agent runtime configuration loaded from env vars and mounted files.
 type Config struct {
-	PodName         string
-	PodNamespace    string
-	GatewayName     string
-	CRName          string
-	CRNamespace     string
-	RepoPath        string
-	DataPath        string
-	GatewayPort     string
-	GatewayTLS      bool
-	APIKeyFile      string
-	SyncPeriod      int // seconds
-	GitTokenFile    string
-	GitSSHKeyFile   string
-	SyncProfileName string // SyncProfile CR name
+	PodName       string
+	PodNamespace  string
+	GatewayName   string
+	CRName        string
+	CRNamespace   string
+	RepoPath      string
+	DataPath      string
+	GatewayPort   string
+	GatewayTLS    bool
+	APIKeyFile    string
+	SyncPeriod    int // seconds
+	GitTokenFile  string
+	GitSSHKeyFile string
+	ProfileName   string // profile name from embedded spec.sync.profiles
 }
 
 // LoadConfig reads agent configuration from environment variables.
 func LoadConfig() (*Config, error) {
 	cfg := &Config{
-		PodName:         os.Getenv("POD_NAME"),
-		PodNamespace:    os.Getenv("POD_NAMESPACE"),
-		GatewayName:     os.Getenv("GATEWAY_NAME"),
-		CRName:          os.Getenv("CR_NAME"),
-		CRNamespace:     os.Getenv("CR_NAMESPACE"),
-		RepoPath:        os.Getenv("REPO_PATH"),
-		DataPath:        os.Getenv("DATA_PATH"),
-		GatewayPort:     os.Getenv("GATEWAY_PORT"),
-		APIKeyFile:      os.Getenv("API_KEY_FILE"),
-		GitTokenFile:    os.Getenv("GIT_TOKEN_FILE"),
-		GitSSHKeyFile:   os.Getenv("GIT_SSH_KEY_FILE"),
-		SyncProfileName: os.Getenv("SYNC_PROFILE"),
+		PodName:       os.Getenv("POD_NAME"),
+		PodNamespace:  os.Getenv("POD_NAMESPACE"),
+		GatewayName:   os.Getenv("GATEWAY_NAME"),
+		CRName:        os.Getenv("CR_NAME"),
+		CRNamespace:   os.Getenv("CR_NAMESPACE"),
+		RepoPath:      os.Getenv("REPO_PATH"),
+		DataPath:      os.Getenv("DATA_PATH"),
+		GatewayPort:   os.Getenv("GATEWAY_PORT"),
+		APIKeyFile:    os.Getenv("API_KEY_FILE"),
+		GitTokenFile:  os.Getenv("GIT_TOKEN_FILE"),
+		GitSSHKeyFile: os.Getenv("GIT_SSH_KEY_FILE"),
+		ProfileName:   os.Getenv("PROFILE"),
 	}
 
 	// Defaults
@@ -77,8 +77,8 @@ func LoadConfig() (*Config, error) {
 	if cfg.PodNamespace == "" {
 		return nil, fmt.Errorf("POD_NAMESPACE env var is required")
 	}
-	if cfg.SyncProfileName == "" {
-		return nil, fmt.Errorf("SYNC_PROFILE env var is required")
+	if cfg.ProfileName == "" {
+		return nil, fmt.Errorf("PROFILE env var is required")
 	}
 
 	return cfg, nil

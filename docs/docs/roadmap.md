@@ -12,8 +12,8 @@ The minimum viable release: controller + agent sidecar can sync Ignition gateway
 
 ### Completed
 
-- Stoker CRD with git ref resolution via `ls-remote`
-- SyncProfile CRD with declarative file mappings
+- GatewaySync CRD with git ref resolution via `ls-remote`
+- Embedded sync profiles with declarative file mappings
 - Agent sidecar with sync engine (clone, staging, merge, orphan cleanup)
 - MutatingWebhook for automatic sidecar injection
 - Gateway discovery via pod annotations
@@ -51,7 +51,7 @@ Focus on condition types, multi-tenancy, and dependency ordering.
 - `RefSkew` detection (controller detects gateway drift from CR)
 - `DependenciesMet` condition enforcement for `dependsOn` profiles
 - Downward API annotation reader (enables ref-override without pod restart)
-- Per-gateway sync status conditions on the Stoker CR
+- Per-gateway sync status conditions on the GatewaySync CR
 - Namespace-scoped agent RBAC automation
 - Resource quotas and rate limiting for concurrent syncs
 

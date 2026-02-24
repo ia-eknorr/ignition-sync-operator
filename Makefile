@@ -55,8 +55,7 @@ HELM_CHART_DIR ?= charts/stoker-operator
 
 .PHONY: helm-sync
 helm-sync: manifests ## Sync CRDs and verify RBAC between kustomize config and Helm chart.
-	@cp config/crd/bases/stoker.io_stokers.yaml $(HELM_CHART_DIR)/crds/
-	@cp config/crd/bases/stoker.io_syncprofiles.yaml $(HELM_CHART_DIR)/crds/
+	@cp config/crd/bases/stoker.io_gatewaysyncs.yaml $(HELM_CHART_DIR)/crds/
 	@echo "CRDs copied to $(HELM_CHART_DIR)/crds/"
 	@diff <(sed -n '/^rules:/,$$p' config/rbac/role.yaml | sed 's/^[[:space:]]*//' | grep -v '^$$') \
 	      <(sed -n '/^rules:/,$$p' $(HELM_CHART_DIR)/templates/clusterrole.yaml | sed 's/^[[:space:]]*//' | grep -v '^$$') \

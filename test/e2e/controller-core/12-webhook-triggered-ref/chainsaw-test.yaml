@@ -31,12 +31,12 @@ spec:
               echo "git server not reachable via Service DNS"
               exit 1
 
-    - name: Create Stoker CR at v1.0.0
+    - name: Create GatewaySync CR at v1.0.0
       try:
         - apply:
             resource:
               apiVersion: stoker.io/v1alpha1
-              kind: Stoker
+              kind: GatewaySync
               metadata:
                 name: test-wtr
               spec:
@@ -45,6 +45,13 @@ spec:
                   ref: v1.0.0
                 polling:
                   enabled: false
+                sync:
+                  profiles:
+                    default:
+                      mappings:
+                        - source: "config"
+                          destination: "config"
+                          type: dir
                 gateway:
                   port: 8088
                   tls: false
@@ -61,8 +68,8 @@ spec:
             timeout: 60s
             content: |
               for i in $(seq 1 30); do
-                STATUS=$(kubectl get stoker test-wtr -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}' 2>/dev/null)
-                REF=$(kubectl get stoker test-wtr -n $NAMESPACE -o jsonpath='{.status.lastSyncRef}' 2>/dev/null)
+                STATUS=$(kubectl get gatewaysync test-wtr -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}' 2>/dev/null)
+                REF=$(kubectl get gatewaysync test-wtr -n $NAMESPACE -o jsonpath='{.status.lastSyncRef}' 2>/dev/null)
                 [ "$STATUS" = "True" ] && [ "$REF" = "v1.0.0" ] && exit 0
                 sleep 2
               done
@@ -76,7 +83,7 @@ spec:
               - name: NAMESPACE
                 value: ($namespace)
             content: |
-              kubectl annotate stoker test-wtr stoker.io/requested-ref=v2.0.0 -n $NAMESPACE
+              kubectl annotate gatewaysync test-wtr stoker.io/requested-ref=v2.0.0 -n $NAMESPACE
 
     - name: Assert lastSyncRef changes to v2.0.0
       try:
@@ -84,7 +91,7 @@ spec:
             timeout: 30s
             resource:
               apiVersion: stoker.io/v1alpha1
-              kind: Stoker
+              kind: GatewaySync
               metadata:
                 name: test-wtr
               status:

@@ -31,18 +31,25 @@ spec:
               echo "git server not reachable via Service DNS"
               exit 1
 
-    - name: Create Stoker CR
+    - name: Create GatewaySync CR
       try:
         - apply:
             resource:
               apiVersion: stoker.io/v1alpha1
-              kind: Stoker
+              kind: GatewaySync
               metadata:
                 name: test-fc
               spec:
                 git:
                   repo: (join('', ['git://test-git-server.', $namespace, '.svc.cluster.local:9418/test-repo.git']))
                   ref: main
+                sync:
+                  profiles:
+                    default:
+                      mappings:
+                        - source: "config"
+                          destination: "config"
+                          type: dir
                 gateway:
                   port: 8088
                   tls: false
@@ -59,7 +66,7 @@ spec:
             timeout: 60s
             content: |
               for i in $(seq 1 30); do
-                STATUS=$(kubectl get stoker test-fc -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}' 2>/dev/null)
+                STATUS=$(kubectl get gatewaysync test-fc -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}' 2>/dev/null)
                 [ "$STATUS" = "True" ] && exit 0
                 sleep 2
               done
@@ -72,7 +79,7 @@ spec:
             timeout: 30s
             resource:
               apiVersion: stoker.io/v1alpha1
-              kind: Stoker
+              kind: GatewaySync
               metadata:
                 name: test-fc
                 finalizers:
@@ -88,12 +95,12 @@ spec:
               metadata:
                 name: stoker-metadata-test-fc
 
-    - name: Delete the Stoker CR
+    - name: Delete the GatewaySync CR
       try:
         - delete:
             ref:
               apiVersion: stoker.io/v1alpha1
-              kind: Stoker
+              kind: GatewaySync
               name: test-fc
 
     - name: Wait for CR deletion
@@ -103,7 +110,7 @@ spec:
               - name: NAMESPACE
                 value: ($namespace)
             content: |
-              kubectl wait --for=delete stoker/test-fc -n $NAMESPACE --timeout=30s
+              kubectl wait --for=delete gatewaysync/test-fc -n $NAMESPACE --timeout=30s
 
     - name: Assert ConfigMaps are cleaned up
       try:

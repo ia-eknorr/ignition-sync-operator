@@ -31,18 +31,25 @@ spec:
               echo "git server not reachable via Service DNS"
               exit 1
 
-    - name: Create Stoker CR with tag ref
+    - name: Create GatewaySync CR with tag ref
       try:
         - apply:
             resource:
               apiVersion: stoker.io/v1alpha1
-              kind: Stoker
+              kind: GatewaySync
               metadata:
                 name: test-ref-tag
               spec:
                 git:
                   repo: (join('', ['git://test-git-server.', $namespace, '.svc.cluster.local:9418/test-repo.git']))
                   ref: v1.0.0
+                sync:
+                  profiles:
+                    default:
+                      mappings:
+                        - source: "config"
+                          destination: "config"
+                          type: dir
                 gateway:
                   port: 8088
                   tls: false
@@ -59,12 +66,12 @@ spec:
             timeout: 60s
             content: |
               for i in $(seq 1 30); do
-                STATUS=$(kubectl get stoker test-ref-tag -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}' 2>/dev/null)
+                STATUS=$(kubectl get gatewaysync test-ref-tag -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}' 2>/dev/null)
                 [ "$STATUS" = "True" ] && break
                 sleep 2
               done
               [ "$STATUS" = "True" ] || { echo "RefResolved=$STATUS, want True"; exit 1; }
-              REASON=$(kubectl get stoker test-ref-tag -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].reason}')
+              REASON=$(kubectl get gatewaysync test-ref-tag -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].reason}')
               [ "$REASON" = "RefResolved" ] || { echo "reason=$REASON, want RefResolved"; exit 1; }
-              REF=$(kubectl get stoker test-ref-tag -n $NAMESPACE -o jsonpath='{.status.lastSyncRef}')
+              REF=$(kubectl get gatewaysync test-ref-tag -n $NAMESPACE -o jsonpath='{.status.lastSyncRef}')
               [ "$REF" = "v1.0.0" ] || { echo "lastSyncRef=$REF, want v1.0.0"; exit 1; }

@@ -27,7 +27,7 @@ const (
 )
 
 // Receiver is an HTTP server that receives webhook payloads and annotates
-// Stoker CRs with the requested ref. It implements manager.Runnable.
+// GatewaySync CRs with the requested ref. It implements manager.Runnable.
 type Receiver struct {
 	Client     client.Client
 	HMACSecret string
@@ -94,17 +94,17 @@ func (rv *Receiver) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Look up the Stoker CR
-	var stk stokerv1alpha1.Stoker
+	// Look up the GatewaySync CR
+	var gs stokerv1alpha1.GatewaySync
 	key := types.NamespacedName{Name: crName, Namespace: namespace}
-	if err := rv.Client.Get(r.Context(), key, &stk); err != nil {
+	if err := rv.Client.Get(r.Context(), key, &gs); err != nil {
 		log.Error(err, "CR not found", "namespace", namespace, "name", crName)
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 
 	// Check if the ref is already set (idempotent)
-	if stk.Annotations != nil && stk.Annotations[stokertypes.AnnotationRequestedRef] == ref {
+	if gs.Annotations != nil && gs.Annotations[stokertypes.AnnotationRequestedRef] == ref {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"accepted": true,
 			"ref":      ref,
@@ -114,20 +114,20 @@ func (rv *Receiver) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Annotate the CR
-	if stk.Annotations == nil {
-		stk.Annotations = make(map[string]string)
+	if gs.Annotations == nil {
+		gs.Annotations = make(map[string]string)
 	}
-	stk.Annotations[stokertypes.AnnotationRequestedRef] = ref
-	stk.Annotations[stokertypes.AnnotationRequestedAt] = time.Now().UTC().Format(time.RFC3339)
-	stk.Annotations[stokertypes.AnnotationRequestedBy] = source
+	gs.Annotations[stokertypes.AnnotationRequestedRef] = ref
+	gs.Annotations[stokertypes.AnnotationRequestedAt] = time.Now().UTC().Format(time.RFC3339)
+	gs.Annotations[stokertypes.AnnotationRequestedBy] = source
 
-	if err := rv.Client.Update(r.Context(), &stk); err != nil {
+	if err := rv.Client.Update(r.Context(), &gs); err != nil {
 		log.Error(err, "failed to annotate CR", "namespace", namespace, "name", crName)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
-	rv.Recorder.Eventf(&stk, corev1.EventTypeNormal, "WebhookReceived", "Webhook from %s, ref %q", source, ref)
+	rv.Recorder.Eventf(&gs, corev1.EventTypeNormal, "WebhookReceived", "Webhook from %s, ref %q", source, ref)
 	log.Info("webhook accepted", "namespace", namespace, "cr", crName, "ref", ref, "source", source)
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"accepted": true,

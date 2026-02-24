@@ -3,19 +3,19 @@ kind: Test
 metadata:
   name: cr-paused-denied
 spec:
-  description: Verify webhook denies pod when Stoker CR is paused
+  description: Verify webhook denies pod when GatewaySync CR is paused
   steps:
     - name: Create api-key secret
       try:
         - apply:
             file: ../../fixtures/api-key-secret.yaml
 
-    - name: Create paused Stoker CR
+    - name: Create paused GatewaySync CR
       try:
         - apply:
             resource:
               apiVersion: stoker.io/v1alpha1
-              kind: Stoker
+              kind: GatewaySync
               metadata:
                 name: test-paused
               spec:
@@ -23,6 +23,13 @@ spec:
                 git:
                   repo: (join('', ['git://test-git-server.', $namespace, '.svc.cluster.local:9418/test-repo.git']))
                   ref: main
+                sync:
+                  profiles:
+                    default:
+                      mappings:
+                        - source: "config"
+                          destination: "config"
+                          type: dir
                 gateway:
                   port: 8088
                   tls: false

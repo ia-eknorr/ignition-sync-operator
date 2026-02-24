@@ -138,29 +138,142 @@ type AgentSpec struct {
 }
 
 // AgentImageSpec configures the agent container image.
+// When unset, the webhook falls through to the DEFAULT_AGENT_IMAGE env var
+// (set by the Helm chart's agentImage values).
 type AgentImageSpec struct {
 	// repository is the container image repository.
-	// +kubebuilder:default="ghcr.io/ia-eknorr/stoker-agent"
 	// +optional
 	Repository string `json:"repository,omitempty"`
 
 	// tag is the container image tag.
-	// +kubebuilder:default="latest"
 	// +optional
 	Tag string `json:"tag,omitempty"`
 
 	// pullPolicy is the image pull policy.
-	// +kubebuilder:default="IfNotPresent"
 	// +optional
 	PullPolicy string `json:"pullPolicy,omitempty"`
+}
+
+// ============================================================
+// Sync Configuration
+// ============================================================
+
+// SyncSpec configures file sync behavior and profiles.
+type SyncSpec struct {
+	// defaults provides baseline settings inherited by all profiles unless overridden.
+	// +optional
+	Defaults SyncDefaults `json:"defaults,omitempty"`
+
+	// profiles is a named map of sync profiles. Each profile defines mappings
+	// and optional behavioral overrides. Pods select a profile via the
+	// stoker.io/profile annotation. The "default" profile is used as fallback.
+	// +kubebuilder:validation:MinProperties=1
+	Profiles map[string]SyncProfileSpec `json:"profiles"`
+}
+
+// SyncDefaults provides baseline settings inherited by all profiles unless overridden.
+type SyncDefaults struct {
+	// excludePatterns are glob patterns for files to exclude from sync.
+	// The pattern "**/.resources/**" is always enforced by the agent even if omitted.
+	// +kubebuilder:default={"**/.git/","**/.gitkeep","**/.resources/**"}
+	// +optional
+	ExcludePatterns []string `json:"excludePatterns,omitempty"`
+
+	// syncPeriod is the agent-side polling interval in seconds.
+	// +kubebuilder:default=30
+	// +kubebuilder:validation:Minimum=5
+	// +kubebuilder:validation:Maximum=3600
+	// +optional
+	SyncPeriod int32 `json:"syncPeriod,omitempty"`
+
+	// designerSessionPolicy controls sync behavior when Ignition Designer
+	// sessions are active. "proceed" (default) logs a warning and continues,
+	// "wait" retries until sessions close (up to 5 min), "fail" aborts the sync.
+	// +kubebuilder:default="proceed"
+	// +kubebuilder:validation:Enum=proceed;wait;fail
+	// +optional
+	DesignerSessionPolicy string `json:"designerSessionPolicy,omitempty"`
+
+	// dryRun causes the agent to sync to a staging directory without
+	// copying to /ignition-data/.
+	// +optional
+	DryRun bool `json:"dryRun,omitempty"`
+
+	// paused halts sync for all gateways using profiles that don't
+	// explicitly override this setting.
+	// +optional
+	Paused bool `json:"paused,omitempty"`
+}
+
+// SyncProfileSpec defines a sync profile's configuration.
+type SyncProfileSpec struct {
+	// mappings is an ordered list of source->destination file mappings.
+	// +kubebuilder:validation:MinItems=1
+	Mappings []SyncMapping `json:"mappings"`
+
+	// excludePatterns are additional glob patterns for files to exclude.
+	// Merged with defaults.excludePatterns (additive).
+	// +optional
+	ExcludePatterns []string `json:"excludePatterns,omitempty"`
+
+	// vars is a map of template variables resolved by the agent at sync time.
+	// +optional
+	Vars map[string]string `json:"vars,omitempty"`
+
+	// syncPeriod overrides defaults.syncPeriod for this profile.
+	// +kubebuilder:validation:Minimum=5
+	// +kubebuilder:validation:Maximum=3600
+	// +optional
+	SyncPeriod *int32 `json:"syncPeriod,omitempty"`
+
+	// dryRun overrides defaults.dryRun for this profile.
+	// +optional
+	DryRun *bool `json:"dryRun,omitempty"`
+
+	// designerSessionPolicy overrides defaults.designerSessionPolicy.
+	// +kubebuilder:validation:Enum=proceed;wait;fail
+	// +optional
+	DesignerSessionPolicy string `json:"designerSessionPolicy,omitempty"`
+
+	// paused overrides defaults.paused for this profile.
+	// +optional
+	Paused *bool `json:"paused,omitempty"`
+}
+
+// SyncMapping defines a single source->destination file mapping.
+type SyncMapping struct {
+	// source is the repo-relative path to copy from.
+	// Supports Go template variables: {{.GatewayName}}, {{.CRName}},
+	// {{.Labels.key}}, {{.Vars.key}}, {{.Namespace}}, {{.Ref}}, {{.Commit}}.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Source string `json:"source"`
+
+	// destination is the gateway-relative path to copy to.
+	// Supports Go template variables: {{.GatewayName}}, {{.CRName}},
+	// {{.Labels.key}}, {{.Vars.key}}, {{.Namespace}}, {{.Ref}}, {{.Commit}}.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Destination string `json:"destination"`
+
+	// type is the entry type — "dir" (default) or "file".
+	// +kubebuilder:default="dir"
+	// +kubebuilder:validation:Enum=dir;file
+	// +optional
+	Type string `json:"type,omitempty"`
+
+	// required causes the sync to fail if the source path does not exist
+	// in the repo at the resolved commit.
+	// +optional
+	Required bool `json:"required,omitempty"`
 }
 
 // ============================================================
 // Top-Level Spec
 // ============================================================
 
-// StokerSpec defines the desired state of Stoker.
-type StokerSpec struct {
+// GatewaySyncSpec defines the desired state of GatewaySync.
+type GatewaySyncSpec struct {
 	// git configures the source repository.
 	// +kubebuilder:validation:Required
 	Git GitSpec `json:"git"`
@@ -172,11 +285,9 @@ type StokerSpec struct {
 	// gateway configures how the operator connects to Ignition gateways.
 	Gateway GatewaySpec `json:"gateway"`
 
-	// excludePatterns are glob patterns for files to exclude from sync.
-	// The pattern "**/.resources/**" is always enforced by the agent even if omitted.
-	// +kubebuilder:default={"**/.git/","**/.gitkeep","**/.resources/**"}
-	// +optional
-	ExcludePatterns []string `json:"excludePatterns,omitempty"`
+	// sync configures file sync behavior and profiles.
+	// +kubebuilder:validation:Required
+	Sync SyncSpec `json:"sync"`
 
 	// agent configures the sync agent sidecar injected by the mutating webhook.
 	// +optional
@@ -202,9 +313,9 @@ type DiscoveredGateway struct {
 	// podName is the name of the gateway pod.
 	PodName string `json:"podName"`
 
-	// syncProfile is the name of the SyncProfile referenced by this gateway.
+	// profile is the name of the sync profile used by this gateway.
 	// +optional
-	SyncProfile string `json:"syncProfile,omitempty"`
+	Profile string `json:"profile,omitempty"`
 
 	// syncStatus is the current sync state of this gateway.
 	// +kubebuilder:validation:Enum=Pending;Synced;Error;MissingSidecar
@@ -244,8 +355,8 @@ type DiscoveredGateway struct {
 	ProjectsSynced []string `json:"projectsSynced,omitempty"`
 }
 
-// StokerStatus defines the observed state of Stoker.
-type StokerStatus struct {
+// GatewaySyncStatus defines the observed state of GatewaySync.
+type GatewaySyncStatus struct {
 	// observedGeneration is the most recent generation observed by the controller.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
@@ -262,16 +373,24 @@ type StokerStatus struct {
 	// +optional
 	LastSyncCommit string `json:"lastSyncCommit,omitempty"`
 
+	// lastSyncCommitShort is the abbreviated (7-char) git commit SHA for display.
+	// +optional
+	LastSyncCommitShort string `json:"lastSyncCommitShort,omitempty"`
+
 	// refResolutionStatus indicates the state of git ref resolution.
 	// +kubebuilder:validation:Enum=NotResolved;Resolving;Resolved;Error
 	// +optional
 	RefResolutionStatus string `json:"refResolutionStatus,omitempty"`
 
-	// discoveredGateways lists all gateways discovered by the controller in this namespace.
+	// profileCount is the number of profiles defined in spec.sync.profiles.
+	// +optional
+	ProfileCount int32 `json:"profileCount,omitempty"`
+
+	// discoveredGateways lists all gateways discovered by the controller.
 	// +optional
 	DiscoveredGateways []DiscoveredGateway `json:"discoveredGateways,omitempty"`
 
-	// conditions represent the current state of the Stoker resource.
+	// conditions represent the current state of the GatewaySync resource.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -285,38 +404,41 @@ type StokerStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:storageversion
-// +kubebuilder:resource:shortName=stk
+// +kubebuilder:resource:shortName=gs
 // +kubebuilder:printcolumn:name="Ref",type="string",JSONPath=`.spec.git.ref`
+// +kubebuilder:printcolumn:name="Commit",type="string",JSONPath=`.status.lastSyncCommitShort`
+// +kubebuilder:printcolumn:name="Profiles",type="integer",JSONPath=`.status.profileCount`
 // +kubebuilder:printcolumn:name="Synced",type="string",JSONPath=`.status.conditions[?(@.type=="AllGatewaysSynced")].status`
 // +kubebuilder:printcolumn:name="Gateways",type="string",JSONPath=`.status.conditions[?(@.type=="AllGatewaysSynced")].message`
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=`.status.conditions[?(@.type=="Ready")].status`
+// +kubebuilder:printcolumn:name="Last Sync",type="date",JSONPath=`.status.lastSyncTime`,priority=1
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=`.metadata.creationTimestamp`
 
-// Stoker is the Schema for the stokers API.
-type Stoker struct {
+// GatewaySync is the Schema for the gatewaysyncs API.
+type GatewaySync struct {
 	metav1.TypeMeta `json:",inline"`
 
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitzero"`
 
-	// spec defines the desired state of Stoker.
+	// spec defines the desired state of GatewaySync.
 	// +required
-	Spec StokerSpec `json:"spec"`
+	Spec GatewaySyncSpec `json:"spec"`
 
-	// status defines the observed state of Stoker.
+	// status defines the observed state of GatewaySync.
 	// +optional
-	Status StokerStatus `json:"status,omitzero"`
+	Status GatewaySyncStatus `json:"status,omitzero"`
 }
 
 // +kubebuilder:object:root=true
 
-// StokerList contains a list of Stoker.
-type StokerList struct {
+// GatewaySyncList contains a list of GatewaySync.
+type GatewaySyncList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitzero"`
-	Items           []Stoker `json:"items"`
+	Items           []GatewaySync `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&Stoker{}, &StokerList{})
+	SchemeBuilder.Register(&GatewaySync{}, &GatewaySyncList{})
 }

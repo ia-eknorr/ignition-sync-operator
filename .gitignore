@@ -32,5 +32,8 @@ docs/node_modules/
 docs/build/
 docs/.docusaurus/
 
+# Internal design docs
+design/
+
 # Claude
 .claude/

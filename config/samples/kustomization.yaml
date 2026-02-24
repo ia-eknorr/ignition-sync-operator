@@ -1,5 +1,4 @@
 ## Append samples of your project ##
 resources:
-- stoker_v1alpha1_stoker.yaml
-- stoker_v1alpha1_syncprofile.yaml
+- stoker_v1alpha1_gatewaysync.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

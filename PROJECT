@@ -15,7 +15,7 @@ resources:
   controller: true
   domain: stoker.io
   group: ""
-  kind: Stoker
+  kind: GatewaySync
   path: github.com/ia-eknorr/stoker-operator/api/v1alpha1
   version: v1alpha1
 version: "3"

@@ -19,18 +19,18 @@ Verify the CRD is properly installed with expected schema, short names, and prin
 
 ```bash
 # Verify CRD exists and inspect its spec
-kubectl get crd stokers.stoker.io -o yaml | head -30
+kubectl get crd gatewaysyncs.stoker.io -o yaml | head -30
 
 # Verify short names
-kubectl get stk -n lab
-kubectl get stk -n lab
+kubectl get gs -n lab
+kubectl get gs -n lab
 
 # Verify print columns show in kubectl output
-kubectl get stokers -n lab
+kubectl get gs -n lab
 ```
 
 ### Expected Output
-- Short name `stk` both work (empty list is fine)
+- Short name `gs` both work (empty list is fine)
 - Column headers include: `NAME`, `REF`, `SYNCED`, `GATEWAYS`, `READY`, `AGE`
 
 ### Edge Case: Invalid CR Rejection
@@ -39,7 +39,7 @@ kubectl get stokers -n lab
 # Attempt to create a CR missing the required `spec.git` field
 cat <<'EOF' | kubectl apply -n lab -f - 2>&1
 apiVersion: stoker.io/v1alpha1
-kind: Stoker
+kind: GatewaySync
 metadata:
   name: invalid-test
 spec:
@@ -55,12 +55,12 @@ Either the API server rejects it (CRD validation) or the controller catches it a
 
 ### Cleanup
 ```bash
-kubectl delete stoker invalid-test -n lab --ignore-not-found
+kubectl delete gsinvalid-test -n lab --ignore-not-found
 ```
 
 ---
 
-## Lab 2.2: Create First Stoker CR
+## Lab 2.2: Create First GatewaySync CR
 
 ### Purpose
 Create a valid CR pointing to the GitHub repo and watch the full reconciliation cycle.
@@ -71,7 +71,7 @@ Create a valid CR pointing to the GitHub repo and watch the full reconciliation 
 # Create the CR
 cat <<EOF | kubectl apply -n lab -f -
 apiVersion: stoker.io/v1alpha1
-kind: Stoker
+kind: GatewaySync
 metadata:
   name: lab-sync
 spec:
@@ -94,7 +94,7 @@ EOF
 
 Open a second terminal and watch the CR status:
 ```bash
-kubectl get stoker lab-sync -n lab -w
+kubectl get gslab-sync -n lab -w
 ```
 
 In a third terminal, watch operator logs:
@@ -106,26 +106,26 @@ kubectl logs -n stoker-system -l control-plane=controller-manager -f --tail=50
 
 1. **Finalizer added** (within ~5s):
    ```bash
-   kubectl get stoker lab-sync -n lab -o jsonpath='{.metadata.finalizers}'
+   kubectl get gslab-sync -n lab -o jsonpath='{.metadata.finalizers}'
    ```
    Expected: `["stoker.io/finalizer"]`
 
 2. **Ref resolved** (within ~10s):
    ```bash
-   kubectl get stoker lab-sync -n lab -o jsonpath='{.status.refResolutionStatus}'
+   kubectl get gslab-sync -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
    Expected: `Resolved`
 
 3. **RefResolved condition**:
    ```bash
-   kubectl get stoker lab-sync -n lab \
+   kubectl get gslab-sync -n lab \
      -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}'
    ```
    Expected: `True`
 
 4. **Commit SHA recorded**:
    ```bash
-   kubectl get stoker lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}'
+   kubectl get gslab-sync -n lab -o jsonpath='{.status.lastSyncCommit}'
    ```
    Expected: Non-empty 40-char hex string
 
@@ -152,7 +152,7 @@ kubectl logs -n stoker-system -l control-plane=controller-manager -f --tail=50
 ### Log Inspection
 
 In the operator logs, you should see (in order):
-1. `reconciling Stoker` with namespace/name
+1. `reconciling GatewaySync` with namespace/name
 2. `resolving git ref` or `git ls-remote`
 3. `ref resolved` with commit SHA
 4. `created metadata configmap`
@@ -171,7 +171,7 @@ Verify the controller's resolved commit SHA is correct by cross-referencing it a
 
 ```bash
 # Get resolved commit from CR status
-RESOLVED_SHA=$(kubectl get stoker lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
+RESOLVED_SHA=$(kubectl get gslab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
 echo "Controller resolved SHA: $RESOLVED_SHA"
 
 # Verify it's a valid 40-character hex string
@@ -241,27 +241,27 @@ Verify the controller detects `spec.git.ref` changes and resolves the new ref to
 
 ```bash
 # Record current commit
-COMMIT_BEFORE=$(kubectl get stoker lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
+COMMIT_BEFORE=$(kubectl get gslab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
 echo "Current commit: $COMMIT_BEFORE"
 
 # Switch to 0.1.0
-kubectl patch stoker lab-sync -n lab --type=merge \
+kubectl patch gslab-sync -n lab --type=merge \
   -p '{"spec":{"git":{"ref":"0.1.0"}}}'
 
 # Watch for commit change
-kubectl get stoker lab-sync -n lab -w
+kubectl get gslab-sync -n lab -w
 ```
 
 ### What to Verify
 
 1. **lastSyncRef updates** to `0.1.0`:
    ```bash
-   kubectl get stoker lab-sync -n lab -o jsonpath='{.status.lastSyncRef}'
+   kubectl get gslab-sync -n lab -o jsonpath='{.status.lastSyncRef}'
    ```
 
 2. **lastSyncCommit changes** to a different SHA:
    ```bash
-   COMMIT_V1=$(kubectl get stoker lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
+   COMMIT_V1=$(kubectl get gslab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
    echo "0.1.0 commit: $COMMIT_V1"
    [ "$COMMIT_V1" != "$COMMIT_BEFORE" ] && echo "PASS: Commit changed" || echo "FAIL: Commit unchanged"
    ```
@@ -274,14 +274,14 @@ kubectl get stoker lab-sync -n lab -w
 
 4. **RefResolved condition still True:**
    ```bash
-   kubectl get stoker lab-sync -n lab \
+   kubectl get gslab-sync -n lab \
      -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}'
    ```
    Expected: `True`
 
 5. **Now switch to 0.2.0:**
    ```bash
-   kubectl patch stoker lab-sync -n lab --type=merge \
+   kubectl patch gslab-sync -n lab --type=merge \
      -p '{"spec":{"git":{"ref":"0.2.0"}}}'
    ```
 
@@ -289,7 +289,7 @@ kubectl get stoker lab-sync -n lab -w
    ```bash
    # Wait for reconcile (~10s)
    sleep 15
-   COMMIT_V2=$(kubectl get stoker lab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
+   COMMIT_V2=$(kubectl get gslab-sync -n lab -o jsonpath='{.status.lastSyncCommit}')
    echo "0.2.0 commit: $COMMIT_V2"
    [ "$COMMIT_V2" != "$COMMIT_V1" ] && echo "PASS: Commit changed for 0.2.0" || echo "FAIL: Commit unchanged"
    ```
@@ -302,7 +302,7 @@ kubectl get stoker lab-sync -n lab -w
 
 ### Restore
 ```bash
-kubectl patch stoker lab-sync -n lab --type=merge \
+kubectl patch gslab-sync -n lab --type=merge \
   -p '{"spec":{"git":{"ref":"main"}}}'
 ```
 
@@ -319,7 +319,7 @@ Verify the controller handles ref resolution failures gracefully: sets error con
 # Create a CR with a bad repo URL
 cat <<EOF | kubectl apply -n lab -f -
 apiVersion: stoker.io/v1alpha1
-kind: Stoker
+kind: GatewaySync
 metadata:
   name: bad-repo-test
 spec:
@@ -342,14 +342,14 @@ EOF
 
 1. **RefResolved=False** (within ~30s):
    ```bash
-   kubectl get stoker bad-repo-test -n lab \
+   kubectl get gsbad-repo-test -n lab \
      -o jsonpath='{.status.conditions[?(@.type=="RefResolved")]}'  | jq .
    ```
    Expected: `status: "False"`, `reason: "RefResolutionFailed"`
 
 2. **refResolutionStatus is Error:**
    ```bash
-   kubectl get stoker bad-repo-test -n lab -o jsonpath='{.status.refResolutionStatus}'
+   kubectl get gsbad-repo-test -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
    Expected: `Error`
 
@@ -361,24 +361,24 @@ EOF
 
 4. **Original CR unaffected:**
    ```bash
-   kubectl get stoker lab-sync -n lab -o jsonpath='{.status.refResolutionStatus}'
+   kubectl get gslab-sync -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
    Expected: Still `Resolved`
 
 5. **Fix the URL and verify recovery:**
    ```bash
-   kubectl patch stoker bad-repo-test -n lab --type=merge \
+   kubectl patch gsbad-repo-test -n lab --type=merge \
      -p '{"spec":{"git":{"repo":"https://github.com/ia-eknorr/test-ignition-project.git"}}}'
    ```
    Wait ~30s, then:
    ```bash
-   kubectl get stoker bad-repo-test -n lab -o jsonpath='{.status.refResolutionStatus}'
+   kubectl get gsbad-repo-test -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
    Expected: `Resolved` — the controller recovered.
 
 ### Cleanup
 ```bash
-kubectl delete stoker bad-repo-test -n lab
+kubectl delete gsbad-repo-test -n lab
 ```
 
 ---
@@ -394,7 +394,7 @@ Verify behavior when the referenced API key secret doesn't exist, and that the c
 # Create CR referencing a secret that doesn't exist
 cat <<EOF | kubectl apply -n lab -f -
 apiVersion: stoker.io/v1alpha1
-kind: Stoker
+kind: GatewaySync
 metadata:
   name: missing-secret-test
 spec:
@@ -417,7 +417,7 @@ EOF
 
 1. **Check conditions** (within ~15s):
    ```bash
-   kubectl get stoker missing-secret-test -n lab -o json | jq '.status.conditions'
+   kubectl get gsmissing-secret-test -n lab -o json | jq '.status.conditions'
    ```
    Look for Ready=False with a message mentioning the missing secret.
 
@@ -436,13 +436,13 @@ EOF
    ```bash
    kubectl create secret generic nonexistent-secret -n lab --from-literal=apiKey=test-key
    sleep 15
-   kubectl get stoker missing-secret-test -n lab -o jsonpath='{.status.refResolutionStatus}'
+   kubectl get gsmissing-secret-test -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
    Expected: Eventually reaches `Resolved`.
 
 ### Cleanup
 ```bash
-kubectl delete stoker missing-secret-test -n lab
+kubectl delete gsmissing-secret-test -n lab
 kubectl delete secret nonexistent-secret -n lab
 ```
 
@@ -458,7 +458,7 @@ Verify `spec.paused: true` halts all operations — no ref resolution, no metada
 ```bash
 cat <<EOF | kubectl apply -n lab -f -
 apiVersion: stoker.io/v1alpha1
-kind: Stoker
+kind: GatewaySync
 metadata:
   name: paused-test
 spec:
@@ -488,23 +488,23 @@ EOF
 
 2. **refResolutionStatus is not Resolved:**
    ```bash
-   kubectl get stoker paused-test -n lab -o jsonpath='{.status.refResolutionStatus}'
+   kubectl get gspaused-test -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
    Expected: Empty or not `Resolved`.
 
 3. **Ready=False with reason Paused:**
    ```bash
-   kubectl get stoker paused-test -n lab \
+   kubectl get gspaused-test -n lab \
      -o jsonpath='{.status.conditions[?(@.type=="Ready")].reason}'
    ```
    Expected: `Paused`
 
 4. **Unpause and verify it starts working:**
    ```bash
-   kubectl patch stoker paused-test -n lab --type=merge \
+   kubectl patch gspaused-test -n lab --type=merge \
      -p '{"spec":{"paused":false}}'
    sleep 30
-   kubectl get stoker paused-test -n lab -o jsonpath='{.status.refResolutionStatus}'
+   kubectl get gspaused-test -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
    Expected: `Resolved`
 
@@ -516,7 +516,7 @@ EOF
 
 ### Cleanup
 ```bash
-kubectl delete stoker paused-test -n lab
+kubectl delete gspaused-test -n lab
 ```
 
 ---
@@ -532,7 +532,7 @@ Verify the full cleanup chain when a CR is deleted: finalizer runs, metadata Con
 # Create a fresh CR
 cat <<EOF | kubectl apply -n lab -f -
 apiVersion: stoker.io/v1alpha1
-kind: Stoker
+kind: GatewaySync
 metadata:
   name: cleanup-test
 spec:
@@ -552,7 +552,7 @@ EOF
 
 # Wait for full reconciliation
 sleep 30
-kubectl get stoker cleanup-test -n lab -o jsonpath='{.status.refResolutionStatus}'
+kubectl get gscleanup-test -n lab -o jsonpath='{.status.refResolutionStatus}'
 # Should be: Resolved
 ```
 
@@ -560,21 +560,21 @@ kubectl get stoker cleanup-test -n lab -o jsonpath='{.status.refResolutionStatus
 ```bash
 echo "=== Before Deletion ==="
 kubectl get configmap stoker-metadata-cleanup-test -n lab 2>&1
-kubectl get stoker cleanup-test -n lab -o jsonpath='{.metadata.finalizers}'
+kubectl get gscleanup-test -n lab -o jsonpath='{.metadata.finalizers}'
 ```
 
 ### Delete and observe:
 ```bash
-kubectl delete stoker cleanup-test -n lab &
+kubectl delete gscleanup-test -n lab &
 # Watch in real-time
-kubectl get stoker,configmap -n lab -w
+kubectl get gs,configmap -n lab -w
 ```
 
 ### What to Verify
 
 1. **CR deletion completes** (not stuck on finalizer):
    ```bash
-   kubectl get stoker cleanup-test -n lab 2>&1
+   kubectl get gscleanup-test -n lab 2>&1
    ```
    Expected: `Error from server (NotFound)`
 
@@ -602,7 +602,7 @@ Verify two CRs in the same namespace don't interfere with each other. Each shoul
 # Create two CRs pointing to different refs
 cat <<EOF | kubectl apply -n lab -f -
 apiVersion: stoker.io/v1alpha1
-kind: Stoker
+kind: GatewaySync
 metadata:
   name: multi-a
 spec:
@@ -620,7 +620,7 @@ spec:
       key: apiKey
 ---
 apiVersion: stoker.io/v1alpha1
-kind: Stoker
+kind: GatewaySync
 metadata:
   name: multi-b
 spec:
@@ -646,7 +646,7 @@ sleep 45
 
 1. **Both CRs resolved successfully:**
    ```bash
-   kubectl get stokers -n lab
+   kubectl get gs -n lab
    ```
    Expected: Both show `REF` (0.1.0 / 0.2.0) and status fields populated.
 
@@ -658,8 +658,8 @@ sleep 45
 
 3. **Different commits:**
    ```bash
-   COMMIT_A=$(kubectl get stoker multi-a -n lab -o jsonpath='{.status.lastSyncCommit}')
-   COMMIT_B=$(kubectl get stoker multi-b -n lab -o jsonpath='{.status.lastSyncCommit}')
+   COMMIT_A=$(kubectl get gsmulti-a -n lab -o jsonpath='{.status.lastSyncCommit}')
+   COMMIT_B=$(kubectl get gsmulti-b -n lab -o jsonpath='{.status.lastSyncCommit}')
    echo "A: $COMMIT_A"
    echo "B: $COMMIT_B"
    [ "$COMMIT_A" != "$COMMIT_B" ] && echo "PASS: Different commits" || echo "FAIL: Same commit"
@@ -667,9 +667,9 @@ sleep 45
 
 4. **Delete one, verify other unaffected:**
    ```bash
-   kubectl delete stoker multi-a -n lab
+   kubectl delete gsmulti-a -n lab
    sleep 10
-   kubectl get stoker multi-b -n lab -o jsonpath='{.status.refResolutionStatus}'
+   kubectl get gsmulti-b -n lab -o jsonpath='{.status.refResolutionStatus}'
    ```
    Expected: Still `Resolved`
 
@@ -682,7 +682,7 @@ sleep 45
 
 ### Cleanup
 ```bash
-kubectl delete stoker multi-a multi-b -n lab --ignore-not-found
+kubectl delete gsmulti-a multi-b -n lab --ignore-not-found
 ```
 
 ---
@@ -696,11 +696,11 @@ Verify the controller handles rapid spec changes without getting confused or lea
 
 ```bash
 # Ensure lab-sync exists and is resolved
-kubectl get stoker lab-sync -n lab -o jsonpath='{.status.refResolutionStatus}'
+kubectl get gslab-sync -n lab -o jsonpath='{.status.refResolutionStatus}'
 
 # Flip refs rapidly
 for ref in 0.1.0 0.2.0 main 0.1.0 0.2.0 main; do
-  kubectl patch stoker lab-sync -n lab --type=merge \
+  kubectl patch gslab-sync -n lab --type=merge \
     -p "{\"spec\":{\"git\":{\"ref\":\"$ref\"}}}"
   sleep 2
 done
@@ -713,7 +713,7 @@ sleep 30
 
 1. **Final state is consistent:**
    ```bash
-   kubectl get stoker lab-sync -n lab -o json | jq '{
+   kubectl get gslab-sync -n lab -o json | jq '{
      ref: .spec.git.ref,
      lastSyncRef: .status.lastSyncRef,
      refResolutionStatus: .status.refResolutionStatus,

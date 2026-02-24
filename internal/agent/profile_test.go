@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	stokerv1alpha1 "github.com/ia-eknorr/stoker-operator/api/v1alpha1"
+	stokertypes "github.com/ia-eknorr/stoker-operator/pkg/types"
 )
 
 func TestResolveTemplate_AllFields(t *testing.T) {
@@ -97,8 +97,8 @@ func TestBuildSyncPlan_Basic(t *testing.T) {
 	writeFile(t, filepath.Join(repoPath, "shared", "config.json"), "shared")
 	writeFile(t, filepath.Join(repoPath, "site", "us-east", "override.json"), "override")
 
-	profile := &stokerv1alpha1.SyncProfileSpec{
-		Mappings: []stokerv1alpha1.SyncMapping{
+	profile := &stokertypes.ResolvedProfile{
+		Mappings: []stokertypes.ResolvedMapping{
 			{Source: "shared", Destination: "config/resources/core", Type: "dir"},
 			{Source: "site/{{.Vars.region}}", Destination: "config/resources/core", Type: "dir"},
 		},
@@ -111,7 +111,7 @@ func TestBuildSyncPlan_Basic(t *testing.T) {
 		Vars:        map[string]string{"region": "us-east"},
 	}
 
-	plan, err := buildSyncPlan(profile, ctx, repoPath, liveDir, nil)
+	plan, err := buildSyncPlan(profile, ctx, repoPath, liveDir)
 	if err != nil {
 		t.Fatalf("buildSyncPlan: %v", err)
 	}
@@ -137,64 +137,44 @@ func TestBuildSyncPlan_RequiredMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	profile := &stokerv1alpha1.SyncProfileSpec{
-		Mappings: []stokerv1alpha1.SyncMapping{
+	profile := &stokertypes.ResolvedProfile{
+		Mappings: []stokertypes.ResolvedMapping{
 			{Source: "nonexistent", Destination: "config", Type: "dir", Required: true},
 		},
 	}
 
 	ctx := &TemplateContext{GatewayName: "gw", Namespace: "default", Vars: map[string]string{}}
 
-	_, err := buildSyncPlan(profile, ctx, repoPath, liveDir, nil)
+	_, err := buildSyncPlan(profile, ctx, repoPath, liveDir)
 	if err == nil {
 		t.Error("expected error for required missing source")
 	}
 }
 
-func TestBuildSyncPlan_ExcludeMerging(t *testing.T) {
+func TestBuildSyncPlan_ExcludesFromProfile(t *testing.T) {
 	tmp := t.TempDir()
 	repoPath := filepath.Join(tmp, "repo")
 	liveDir := filepath.Join(tmp, "live")
 
 	writeFile(t, filepath.Join(repoPath, "src", "a.txt"), "a")
 
-	profile := &stokerv1alpha1.SyncProfileSpec{
-		Mappings: []stokerv1alpha1.SyncMapping{
+	profile := &stokertypes.ResolvedProfile{
+		Mappings: []stokertypes.ResolvedMapping{
 			{Source: "src", Destination: "dst", Type: "dir"},
 		},
-		ExcludePatterns: []string{"**/*.bak"},
+		ExcludePatterns: []string{"**/*.bak", "**/*.tmp", "**/*.log"},
 	}
 
 	ctx := &TemplateContext{GatewayName: "gw", Namespace: "default", Vars: map[string]string{}}
-	crExcludes := []string{"**/*.tmp", "**/*.log"}
 
-	plan, err := buildSyncPlan(profile, ctx, repoPath, liveDir, crExcludes)
+	plan, err := buildSyncPlan(profile, ctx, repoPath, liveDir)
 	if err != nil {
 		t.Fatalf("buildSyncPlan: %v", err)
 	}
 
-	// Should have CR excludes + profile excludes.
+	// Excludes come directly from the resolved profile (controller already merged defaults).
 	if len(plan.ExcludePatterns) != 3 {
 		t.Errorf("expected 3 exclude patterns, got %d: %v", len(plan.ExcludePatterns), plan.ExcludePatterns)
-	}
-}
-
-func TestParseCRExcludes(t *testing.T) {
-	tests := []struct {
-		input string
-		want  int
-	}{
-		{"", 0},
-		{"**/*.log", 1},
-		{"**/*.log, **/*.tmp", 2},
-		{"  a , b , , c ", 3},
-	}
-
-	for _, tt := range tests {
-		got := parseCRExcludes(tt.input)
-		if len(got) != tt.want {
-			t.Errorf("parseCRExcludes(%q) = %v (len %d), want len %d", tt.input, got, len(got), tt.want)
-		}
 	}
 }
 

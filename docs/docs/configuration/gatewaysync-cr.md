@@ -1,0 +1,322 @@
+---
+sidebar_position: 1
+title: GatewaySync CR
+description: Full reference for the GatewaySync custom resource.
+---
+
+# GatewaySync CR Reference
+
+The `GatewaySync` custom resource defines the git repository to sync from, authentication, polling behavior, gateway connection settings, sync profiles, and agent configuration.
+
+```yaml
+apiVersion: stoker.io/v1alpha1
+kind: GatewaySync
+metadata:
+  name: my-gatewaysync
+  namespace: my-namespace
+spec:
+  git:
+    repo: "https://github.com/org/repo.git"
+    ref: "main"
+    auth:
+      token:
+        secretRef:
+          name: git-token
+          key: token
+  polling:
+    enabled: true
+    interval: "60s"
+  gateway:
+    port: 8043
+    tls: true
+    apiKeySecretRef:
+      name: gw-api-key
+      key: apiKey
+  sync:
+    defaults:
+      excludePatterns:
+        - "**/.git/"
+        - "**/.gitkeep"
+        - "**/.resources/**"
+      syncPeriod: 30
+      designerSessionPolicy: proceed
+    profiles:
+      standard:
+        mappings:
+          - source: "services/{{.GatewayName}}/projects/"
+            destination: "projects/"
+            type: dir
+            required: true
+          - source: "services/{{.GatewayName}}/config/"
+            destination: "config/"
+            type: dir
+        syncPeriod: 60
+        designerSessionPolicy: wait
+  agent:
+    image:
+      repository: ghcr.io/ia-eknorr/stoker-agent
+      tag: latest
+      pullPolicy: IfNotPresent
+  paused: false
+```
+
+## `spec.git`
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `repo` | string | Yes | — | Git repository URL (SSH or HTTPS) |
+| `ref` | string | Yes | — | Git reference to sync — branch, tag, or commit SHA |
+| `auth` | object | No | — | Git authentication configuration |
+
+### `spec.git.auth`
+
+Exactly one authentication method should be specified. Omit entirely for public repositories.
+
+#### Token authentication
+
+```yaml
+auth:
+  token:
+    secretRef:
+      name: git-token
+      key: token
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `token.secretRef.name` | string | Yes | Name of the Secret |
+| `token.secretRef.key` | string | Yes | Key within the Secret |
+
+#### SSH key authentication
+
+```yaml
+auth:
+  sshKey:
+    secretRef:
+      name: ssh-key
+      key: id_ed25519
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `sshKey.secretRef.name` | string | Yes | Name of the Secret containing the SSH private key |
+| `sshKey.secretRef.key` | string | Yes | Key within the Secret |
+
+#### GitHub App authentication
+
+```yaml
+auth:
+  githubApp:
+    appId: 12345
+    installationId: 67890
+    privateKeySecretRef:
+      name: github-app-key
+      key: private-key.pem
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `githubApp.appId` | integer | Yes | GitHub App ID |
+| `githubApp.installationId` | integer | Yes | GitHub App installation ID |
+| `githubApp.privateKeySecretRef.name` | string | Yes | Name of the Secret containing the PEM key |
+| `githubApp.privateKeySecretRef.key` | string | Yes | Key within the Secret |
+
+## `spec.polling`
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `enabled` | bool | No | `true` | Whether periodic polling for git changes is active |
+| `interval` | string | No | `"60s"` | Polling period (e.g., `"60s"`, `"5m"`) |
+
+:::tip
+If you configure a [webhook receiver](/configuration/helm-values#push-receiver-webhook) for push-event-driven sync, you can set `polling.enabled: false` or increase the interval to reduce API calls.
+:::
+
+## `spec.gateway`
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `port` | int32 | No | `8043` | Ignition gateway API port |
+| `tls` | bool | No | `true` | Enable TLS for gateway API connections |
+| `apiKeySecretRef.name` | string | Yes | — | Name of the Secret containing the Ignition API key |
+| `apiKeySecretRef.key` | string | Yes | — | Key within the Secret |
+
+## `spec.sync`
+
+The `sync` section contains baseline defaults and named profiles.
+
+### `spec.sync.defaults`
+
+Baseline settings inherited by all profiles. Individual profiles can override these values.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `excludePatterns` | []string | No | `["**/.git/", "**/.gitkeep", "**/.resources/**"]` | Glob patterns for files to exclude from sync |
+| `syncPeriod` | int32 | No | `30` | Agent-side polling interval in seconds (min: 5, max: 3600) |
+| `designerSessionPolicy` | string | No | `"proceed"` | Behavior when Designer sessions are active: `proceed`, `wait`, or `fail` |
+| `dryRun` | bool | No | `false` | Sync to staging only — write diff to status ConfigMap without modifying `/ignition-data/` |
+| `paused` | bool | No | `false` | Halt sync for all profiles |
+
+The `**/.resources/**` pattern is always enforced by the agent even if omitted from `excludePatterns`.
+
+### `spec.sync.profiles`
+
+A map of named sync profiles. Each key is the profile name, referenced by the `stoker.io/profile` pod annotation. Gateways without a `stoker.io/profile` annotation use the profile named `default` if one exists.
+
+```yaml
+sync:
+  profiles:
+    standard:
+      mappings:
+        - source: "services/{{.GatewayName}}/projects/"
+          destination: "projects/"
+          type: dir
+          required: true
+      syncPeriod: 60
+    minimal:
+      mappings:
+        - source: "config/"
+          destination: "config/"
+          type: dir
+```
+
+Each profile supports the following fields:
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `mappings` | []object | Yes | — | Ordered list of source-to-destination file mappings |
+| `excludePatterns` | []string | No | — | Additional glob patterns merged with `spec.sync.defaults.excludePatterns` |
+| `vars` | map[string]string | No | — | Custom template variables available as `{{.Vars.key}}` |
+| `syncPeriod` | int32 | No | inherited | Overrides `spec.sync.defaults.syncPeriod` |
+| `dryRun` | bool | No | inherited | Overrides `spec.sync.defaults.dryRun` |
+| `designerSessionPolicy` | string | No | inherited | Overrides `spec.sync.defaults.designerSessionPolicy` |
+| `paused` | bool | No | inherited | Overrides `spec.sync.defaults.paused` |
+
+#### Mappings
+
+An ordered list of source-to-destination file mappings. Applied top to bottom; later mappings overlay earlier ones.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `source` | string | Yes | — | Repo-relative path to copy from |
+| `destination` | string | Yes | — | Gateway-relative path to copy to |
+| `type` | string | No | `"dir"` | Entry type — `"dir"` or `"file"` |
+| `required` | bool | No | `false` | Fail sync if the source path doesn't exist |
+
+#### Template variables
+
+Both `source` and `destination` support Go template variables:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `{{.GatewayName}}` | Gateway identity from the `stoker.io/gateway-name` annotation (or `app.kubernetes.io/name` label) | `sites/{{.GatewayName}}/projects` |
+| `{{.CRName}}` | Name of the GatewaySync CR that owns this sync | `config/{{.CRName}}/resources` |
+| `{{.Labels.key}}` | Any label on the gateway pod (read at sync time) | `sites/{{.Labels.site}}/projects` |
+| `{{.Vars.key}}` | Custom variable from profile `vars` | `site{{.Vars.siteNumber}}/scripts` |
+| `{{.Namespace}}` | Pod namespace | `config/{{.Namespace}}/overlay` |
+| `{{.Ref}}` | Resolved git ref | — |
+| `{{.Commit}}` | Full commit SHA | — |
+
+Using `{{.GatewayName}}` or `{{.Labels.key}}` in source paths lets a single profile serve multiple gateways, each syncing from its own directory in the repo.
+
+##### Example: label-based routing
+
+Add a `site` label to each gateway pod and use it in the profile:
+
+```yaml
+sync:
+  profiles:
+    standard:
+      mappings:
+        - source: "services/{{.Labels.site}}/projects/"
+          destination: "projects/"
+          type: dir
+          required: true
+        - source: "services/{{.Labels.site}}/config/"
+          destination: "config/"
+          type: dir
+```
+
+A pod with label `site: ignition-blue` syncs from `services/ignition-blue/`, while `site: ignition-red` syncs from `services/ignition-red/` — same profile, different files.
+
+:::note
+`{{.Labels.key}}` reads from the pod's Kubernetes labels at sync time. The agent needs `get` permission on pods (included in the agent ClusterRole).
+:::
+
+#### Designer session policy
+
+Controls sync behavior when Ignition Designer sessions are active on the gateway. Can be set at the defaults level or overridden per profile.
+
+| Value | Behavior |
+|-------|----------|
+| `proceed` (default) | Logs a warning and continues the sync |
+| `wait` | Retries until sessions close (up to 5 minutes) |
+| `fail` | Aborts the sync |
+
+## `spec.agent`
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `image.repository` | string | No | `ghcr.io/ia-eknorr/stoker-agent` | Agent container image repository |
+| `image.tag` | string | No | `latest` | Agent container image tag |
+| `image.pullPolicy` | string | No | `IfNotPresent` | Image pull policy |
+| `resources` | object | No | — | Agent container resource requirements |
+
+## `spec.paused`
+
+When set to `true`, halts all sync operations. The controller continues to reconcile and resolve refs, but agents will not perform syncs.
+
+## Pod Annotations
+
+Gateways are discovered by pod annotations. These are typically set via `podAnnotations` in the Ignition Helm chart values:
+
+| Annotation | Required | Description |
+|---|---|---|
+| `stoker.io/inject` | Yes | Set to `"true"` to trigger sidecar injection |
+| `stoker.io/cr-name` | Yes | Name of the GatewaySync CR to sync from |
+| `stoker.io/profile` | Yes | Name of the sync profile to use (from `spec.sync.profiles`) |
+| `stoker.io/gateway-name` | No | Override gateway identity (defaults to pod label `app.kubernetes.io/name`) |
+
+## Status
+
+The GatewaySync CR status is managed by the controller and reports:
+
+| Field | Description |
+|-------|-------------|
+| `lastSyncRef` | The git ref that was last resolved |
+| `lastSyncCommit` | Full 40-character git commit SHA |
+| `lastSyncCommitShort` | Abbreviated 7-character commit SHA (used in printer columns) |
+| `lastSyncTime` | Timestamp of the last commit change (only updates when the resolved commit changes) |
+| `refResolutionStatus` | `NotResolved`, `Resolving`, `Resolved`, or `Error` |
+| `profileCount` | Number of profiles defined in `spec.sync.profiles` |
+| `discoveredGateways` | List of gateway pods with per-gateway sync status, commit, projects synced |
+| `conditions` | Standard Kubernetes conditions: `RefResolved`, `AllGatewaysSynced`, and `Ready` |
+
+### Printer columns
+
+`kubectl get gs` shows these columns by default:
+
+```text
+NAME         REF    COMMIT    PROFILES   SYNCED   GATEWAYS             READY   AGE
+my-gateway   main   4d19160   1          True     1/1 gateways synced  True    5m
+```
+
+`kubectl get gs -o wide` adds `LAST SYNC` (relative time since last commit change).
+
+### Sync status lifecycle
+
+Gateways progress through these sync states:
+
+1. **Pending** — initial sync completes (files written) but gateway hasn't been validated yet
+2. **Synced** — the Ignition scan API confirmed both `/scan/projects` and `/scan/config` returned HTTP 200
+3. **Error** — the scan API returned a non-200 status or was unreachable
+
+The `AllGatewaysSynced` condition is `True` only when all discovered gateways report `Synced`.
+
+### Conditions
+
+| Type | Description |
+|------|-------------|
+| `RefResolved` | The controller successfully resolved the git ref to a commit SHA |
+| `AllGatewaysSynced` | All discovered gateway pods report `Synced` status |
+| `Ready` | Both `RefResolved` and `AllGatewaysSynced` are `True` |

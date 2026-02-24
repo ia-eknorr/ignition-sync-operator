@@ -1,7 +1,9 @@
 <!-- Part of: Stoker Architecture (v3) -->
 <!-- See also: 00-overview.md, 01-crd.md, 02-controller.md, 06-stoker-agent.md, 08-deployment-operations.md, 09-security-testing-roadmap.md, 10-enterprise-examples.md -->
 
-# Stoker — SyncProfile CRD
+> **Superseded**: The standalone `SyncProfile` CRD described in this document has been merged into the `GatewaySync` CRD as `spec.sync.profiles`. See [`design/gatewaysync-migration-plan.md`](../gatewaysync-migration-plan.md) for the migration rationale and [`api/v1alpha1/gatewaysync_types.go`](../../api/v1alpha1/gatewaysync_types.go) for the current type definitions. This document is preserved as design history.
+
+# Stoker — SyncProfile CRD (Historical)
 
 ## Motivation
 

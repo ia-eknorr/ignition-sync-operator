@@ -83,7 +83,6 @@ jobs:
         run: |
           chainsaw test \
             --test-dir test/e2e/controller-core \
-            --test-dir test/e2e/syncprofile \
             --test-dir test/e2e/webhook-receiver \
             --test-dir test/e2e/gateway-discovery \
             --test-dir test/e2e/webhook-injection \
@@ -96,9 +95,7 @@ jobs:
           kubectl logs -n stoker-system -l app.kubernetes.io/name=stoker-operator --tail=200 || true
           echo "=== Events ==="
           kubectl get events -A --sort-by='.lastTimestamp' | tail -100 || true
-          echo "=== Stoker CRs ==="
-          kubectl get stokers -A -o yaml || true
-          echo "=== SyncProfiles ==="
-          kubectl get syncprofiles -A -o yaml || true
+          echo "=== GatewaySync CRs ==="
+          kubectl get gatewaysyncs -A -o yaml || true
           echo "=== Pods ==="
           kubectl get pods -A -o wide || true

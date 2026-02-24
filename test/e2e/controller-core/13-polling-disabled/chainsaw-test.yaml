@@ -31,12 +31,12 @@ spec:
               echo "git server not reachable via Service DNS"
               exit 1
 
-    - name: Create Stoker CR with polling disabled
+    - name: Create GatewaySync CR with polling disabled
       try:
         - apply:
             resource:
               apiVersion: stoker.io/v1alpha1
-              kind: Stoker
+              kind: GatewaySync
               metadata:
                 name: test-nopoll
               spec:
@@ -45,6 +45,13 @@ spec:
                   ref: main
                 polling:
                   enabled: false
+                sync:
+                  profiles:
+                    default:
+                      mappings:
+                        - source: "config"
+                          destination: "config"
+                          type: dir
                 gateway:
                   port: 8088
                   tls: false
@@ -61,10 +68,10 @@ spec:
             timeout: 60s
             content: |
               for i in $(seq 1 30); do
-                STATUS=$(kubectl get stoker test-nopoll -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}' 2>/dev/null)
+                STATUS=$(kubectl get gatewaysync test-nopoll -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}' 2>/dev/null)
                 [ "$STATUS" = "True" ] && break
                 sleep 2
               done
               [ "$STATUS" = "True" ] || { echo "RefResolved=$STATUS, want True"; exit 1; }
-              REASON=$(kubectl get stoker test-nopoll -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].reason}')
+              REASON=$(kubectl get gatewaysync test-nopoll -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].reason}')
               [ "$REASON" = "RefResolved" ] || { echo "reason=$REASON, want RefResolved"; exit 1; }

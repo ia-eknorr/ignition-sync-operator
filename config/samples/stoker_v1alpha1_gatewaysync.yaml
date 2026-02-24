@@ -1,0 +1,31 @@
+# Example GatewaySync CR — points to a public example repository with an embedded sync profile.
+# For private repos, add spec.git.auth with a token or SSH key secret reference.
+apiVersion: stoker.io/v1alpha1
+kind: GatewaySync
+metadata:
+  name: quickstart
+spec:
+  git:
+    repo: "https://github.com/ia-eknorr/test-ignition-project.git"
+    ref: "main"
+  gateway:
+    apiKeySecretRef:
+      name: gw-api-key
+      key: apiKey
+  sync:
+    defaults:
+      excludePatterns:
+        - "**/.git/"
+        - "**/.gitkeep"
+        - "**/.resources/**"
+    profiles:
+      standard:
+        mappings:
+          - source: "services/ignition-blue/projects/"
+            destination: "projects/"
+            type: dir
+            required: true
+          - source: "services/ignition-blue/config/"
+            destination: "config/"
+            type: dir
+        syncPeriod: 30

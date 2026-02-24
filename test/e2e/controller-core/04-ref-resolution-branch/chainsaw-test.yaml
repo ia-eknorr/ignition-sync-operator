@@ -31,18 +31,25 @@ spec:
               echo "git server not reachable via Service DNS"
               exit 1
 
-    - name: Create Stoker CR with branch ref
+    - name: Create GatewaySync CR with branch ref
       try:
         - apply:
             resource:
               apiVersion: stoker.io/v1alpha1
-              kind: Stoker
+              kind: GatewaySync
               metadata:
                 name: test-ref-branch
               spec:
                 git:
                   repo: (join('', ['git://test-git-server.', $namespace, '.svc.cluster.local:9418/test-repo.git']))
                   ref: main
+                sync:
+                  profiles:
+                    default:
+                      mappings:
+                        - source: "config"
+                          destination: "config"
+                          type: dir
                 gateway:
                   port: 8088
                   tls: false
@@ -58,7 +65,7 @@ spec:
                 value: ($namespace)
             timeout: 30s
             content: |
-              STATUS=$(kubectl get stoker test-ref-branch -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}')
+              STATUS=$(kubectl get gatewaysync test-ref-branch -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}')
               [ "$STATUS" = "True" ] || { echo "RefResolved=$STATUS, want True"; exit 1; }
-              COMMIT=$(kubectl get stoker test-ref-branch -n $NAMESPACE -o jsonpath='{.status.lastSyncCommit}')
+              COMMIT=$(kubectl get gatewaysync test-ref-branch -n $NAMESPACE -o jsonpath='{.status.lastSyncCommit}')
               [ -n "$COMMIT" ] || { echo "lastSyncCommit is empty"; exit 1; }

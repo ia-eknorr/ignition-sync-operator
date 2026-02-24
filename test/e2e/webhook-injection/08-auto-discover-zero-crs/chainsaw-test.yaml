@@ -3,7 +3,7 @@ kind: Test
 metadata:
   name: auto-discover-zero-crs
 spec:
-  description: Verify webhook denies pod when no Stoker CRs exist and cr-name is omitted
+  description: Verify webhook denies pod when no GatewaySync CRs exist and cr-name is omitted
   steps:
     - name: Create pod without cr-name annotation and no CRs in namespace
       try:

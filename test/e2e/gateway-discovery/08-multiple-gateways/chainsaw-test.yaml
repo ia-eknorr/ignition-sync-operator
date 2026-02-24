@@ -22,18 +22,25 @@ spec:
                 value: ($namespace)
             content: |
               kubectl wait --for=condition=Ready pod/test-git-server -n $NAMESPACE --timeout=60s
-    - name: create stoker cr
+    - name: create GatewaySync CR
       try:
         - apply:
             resource:
               apiVersion: stoker.io/v1alpha1
-              kind: Stoker
+              kind: GatewaySync
               metadata:
                 name: test-mg
               spec:
                 git:
                   repo: (join('', ['git://test-git-server.', $namespace, '.svc.cluster.local:9418/test-repo.git']))
                   ref: main
+                sync:
+                  profiles:
+                    default:
+                      mappings:
+                        - source: "config"
+                          destination: "config"
+                          type: dir
                 gateway:
                   apiKeySecretRef:
                     name: ignition-api-key
@@ -47,7 +54,7 @@ spec:
             timeout: 60s
             content: |
               for i in $(seq 1 30); do
-                STATUS=$(kubectl get stoker test-mg -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}' 2>/dev/null)
+                STATUS=$(kubectl get gatewaysync test-mg -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}' 2>/dev/null)
                 [ "$STATUS" = "True" ] && exit 0
                 sleep 2
               done
@@ -108,7 +115,7 @@ spec:
             timeout: 60s
             content: |
               for i in $(seq 1 30); do
-                GW_JSON=$(kubectl get stoker test-mg -n $NAMESPACE -o jsonpath='{.status.discoveredGateways[*].podName}' 2>/dev/null)
+                GW_JSON=$(kubectl get gatewaysync test-mg -n $NAMESPACE -o jsonpath='{.status.discoveredGateways[*].podName}' 2>/dev/null)
                 COUNT=$(echo "$GW_JSON" | wc -w | tr -d ' ')
                 [ "$COUNT" -ge 3 ] && break
                 sleep 2
@@ -127,9 +134,9 @@ spec:
             timeout: 60s
             content: |
               for i in $(seq 1 30); do
-                STATUS=$(kubectl get stoker test-mg -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="AllGatewaysSynced")].status}' 2>/dev/null)
-                REASON=$(kubectl get stoker test-mg -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="AllGatewaysSynced")].reason}' 2>/dev/null)
-                MSG=$(kubectl get stoker test-mg -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="AllGatewaysSynced")].message}' 2>/dev/null)
+                STATUS=$(kubectl get gatewaysync test-mg -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="AllGatewaysSynced")].status}' 2>/dev/null)
+                REASON=$(kubectl get gatewaysync test-mg -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="AllGatewaysSynced")].reason}' 2>/dev/null)
+                MSG=$(kubectl get gatewaysync test-mg -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="AllGatewaysSynced")].message}' 2>/dev/null)
                 [ "$STATUS" = "False" ] && [ "$REASON" = "SyncInProgress" ] && [ "$MSG" = "0/3 gateways synced" ] && exit 0
                 sleep 2
               done

@@ -2,7 +2,6 @@ package agent
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"maps"
 	"os"
@@ -10,11 +9,8 @@ import (
 	"strings"
 	"text/template"
 
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	stokerv1alpha1 "github.com/ia-eknorr/stoker-operator/api/v1alpha1"
 	"github.com/ia-eknorr/stoker-operator/internal/syncengine"
+	stokertypes "github.com/ia-eknorr/stoker-operator/pkg/types"
 )
 
 // TemplateContext holds the variables available in mapping templates.
@@ -26,17 +22,6 @@ type TemplateContext struct {
 	CRName      string
 	Labels      map[string]string
 	Vars        map[string]string
-}
-
-// fetchSyncProfile reads a SyncProfile CR from the K8s API.
-func fetchSyncProfile(ctx context.Context, c client.Client, namespace, name string) (*stokerv1alpha1.SyncProfileSpec, error) {
-	sp := &stokerv1alpha1.SyncProfile{}
-	key := types.NamespacedName{Name: name, Namespace: namespace}
-
-	if err := c.Get(ctx, key, sp); err != nil {
-		return nil, fmt.Errorf("fetching SyncProfile %s/%s: %w", namespace, name, err)
-	}
-	return &sp.Spec, nil
 }
 
 // buildTemplateContext creates a TemplateContext from agent config, metadata, and pod labels.
@@ -88,14 +73,13 @@ func validateResolvedPath(path, label string) error {
 	return nil
 }
 
-// buildSyncPlan constructs a SyncPlan from a SyncProfile spec, template context,
-// and runtime paths.
+// buildSyncPlan constructs a SyncPlan from a resolved profile, template context,
+// and runtime paths. The profile already has defaults merged by the controller.
 func buildSyncPlan(
-	profile *stokerv1alpha1.SyncProfileSpec,
+	profile *stokertypes.ResolvedProfile,
 	tmplCtx *TemplateContext,
 	repoPath string,
 	liveDir string,
-	crExcludes []string,
 ) (*syncengine.SyncPlan, error) {
 	stagingDir := filepath.Join(liveDir, ".sync-staging")
 
@@ -144,27 +128,8 @@ func buildSyncPlan(
 		})
 	}
 
-	// Merge excludes from three sources: engine defaults, profile, CR.
-	allExcludes := make([]string, 0, len(crExcludes)+len(profile.ExcludePatterns))
-	allExcludes = append(allExcludes, crExcludes...)
-	allExcludes = append(allExcludes, profile.ExcludePatterns...)
-	plan.ExcludePatterns = allExcludes
+	// Excludes already merged by controller (defaults + profile).
+	plan.ExcludePatterns = profile.ExcludePatterns
 
 	return plan, nil
-}
-
-// parseCRExcludes splits a comma-separated exclude patterns string.
-func parseCRExcludes(raw string) []string {
-	if raw == "" {
-		return nil
-	}
-	parts := strings.Split(raw, ",")
-	result := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			result = append(result, p)
-		}
-	}
-	return result
 }

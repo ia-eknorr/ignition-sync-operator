@@ -10,12 +10,12 @@ spec:
         - apply:
             file: ../../fixtures/api-key-secret.yaml
 
-    - name: Create Stoker CR with SSH auth referencing nonexistent secret
+    - name: Create GatewaySync CR with SSH auth referencing nonexistent secret
       try:
         - apply:
             resource:
               apiVersion: stoker.io/v1alpha1
-              kind: Stoker
+              kind: GatewaySync
               metadata:
                 name: test-no-ssh
               spec:
@@ -27,6 +27,13 @@ spec:
                       secretRef:
                         name: missing-ssh-key
                         key: ssh-privatekey
+                sync:
+                  profiles:
+                    default:
+                      mappings:
+                        - source: "config"
+                          destination: "config"
+                          type: dir
                 gateway:
                   port: 8088
                   tls: false
@@ -43,7 +50,7 @@ spec:
             timeout: 60s
             content: |
               for i in $(seq 1 30); do
-                STATUS=$(kubectl get stoker test-no-ssh -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)
+                STATUS=$(kubectl get gatewaysync test-no-ssh -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)
                 [ "$STATUS" = "False" ] && exit 0
                 sleep 2
               done

@@ -75,39 +75,34 @@ func (p *PodInjector) Handle(ctx context.Context, req admission.Request) admissi
 		return admission.Denied(err.Error())
 	}
 
-	// Fetch Stoker CR
-	var stk stokerv1alpha1.Stoker
+	// Fetch GatewaySync CR
+	var gs stokerv1alpha1.GatewaySync
 	key := client.ObjectKey{Name: crName, Namespace: req.Namespace}
-	if err := p.Client.Get(ctx, key, &stk); err != nil {
+	if err := p.Client.Get(ctx, key, &gs); err != nil {
 		if apierrors.IsNotFound(err) {
 			return admission.Denied(fmt.Sprintf(
-				"Stoker CR '%s' not found in namespace '%s'", crName, req.Namespace))
+				"GatewaySync '%s' not found in namespace '%s'", crName, req.Namespace))
 		}
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
 
 	// Check if CR is paused
-	if stk.Spec.Paused {
+	if gs.Spec.Paused {
 		return admission.Denied(fmt.Sprintf(
-			"Stoker CR '%s' is paused", crName))
+			"GatewaySync '%s' is paused", crName))
 	}
 
-	// Validate SyncProfile if specified
-	profileName := pod.Annotations[stokertypes.AnnotationSyncProfile]
+	// Validate profile if specified — check against embedded profiles map
+	profileName := pod.Annotations[stokertypes.AnnotationProfile]
 	if profileName != "" {
-		var profile stokerv1alpha1.SyncProfile
-		profileKey := client.ObjectKey{Name: profileName, Namespace: req.Namespace}
-		if err := p.Client.Get(ctx, profileKey, &profile); err != nil {
-			if apierrors.IsNotFound(err) {
-				return admission.Denied(fmt.Sprintf(
-					"SyncProfile '%s' not found in namespace '%s'", profileName, req.Namespace))
-			}
-			return admission.Errored(http.StatusInternalServerError, err)
+		if _, exists := gs.Spec.Sync.Profiles[profileName]; !exists {
+			return admission.Denied(fmt.Sprintf(
+				"profile '%s' not found in GatewaySync '%s'", profileName, gs.Name))
 		}
 	}
 
 	// Inject sidecar
-	injectSidecar(pod, &stk)
+	injectSidecar(pod, &gs)
 
 	// Return JSON patch
 	marshaledPod, err := json.Marshal(pod)
@@ -129,21 +124,21 @@ func isAlreadyInjected(pod *corev1.Pod) bool {
 	return false
 }
 
-// resolveCRName resolves the Stoker CR name from annotation or auto-derives it.
+// resolveCRName resolves the GatewaySync CR name from annotation or auto-derives it.
 func (p *PodInjector) resolveCRName(ctx context.Context, namespace string, pod *corev1.Pod) (string, error) {
 	if crName := pod.Annotations[stokertypes.AnnotationCRName]; crName != "" {
 		return crName, nil
 	}
 
 	// Auto-discover: list CRs in namespace
-	var list stokerv1alpha1.StokerList
+	var list stokerv1alpha1.GatewaySyncList
 	if err := p.Client.List(ctx, &list, client.InNamespace(namespace)); err != nil {
-		return "", fmt.Errorf("failed to list Stoker CRs: %w", err)
+		return "", fmt.Errorf("failed to list GatewaySync CRs: %w", err)
 	}
 
 	switch len(list.Items) {
 	case 0:
-		return "", fmt.Errorf("no Stoker CR found in namespace '%s'", namespace)
+		return "", fmt.Errorf("no GatewaySync CR found in namespace '%s'", namespace)
 	case 1:
 		return list.Items[0].Name, nil
 	default:
@@ -152,43 +147,43 @@ func (p *PodInjector) resolveCRName(ctx context.Context, namespace string, pod *
 			names[i] = item.Name
 		}
 		return "", fmt.Errorf(
-			"multiple Stoker CRs in namespace '%s': [%s] — set annotation '%s' explicitly",
+			"multiple GatewaySync CRs in namespace '%s': [%s] — set annotation '%s' explicitly",
 			namespace, strings.Join(names, ", "), stokertypes.AnnotationCRName)
 	}
 }
 
 // injectSidecar patches the pod spec with the stoker-agent native sidecar.
-func injectSidecar(pod *corev1.Pod, stk *stokerv1alpha1.Stoker) {
-	image := resolveAgentImage(pod, stk)
-	pullPolicy := resolveAgentPullPolicy(stk)
+func injectSidecar(pod *corev1.Pod, gs *stokerv1alpha1.GatewaySync) {
+	image := resolveAgentImage(pod, gs)
+	pullPolicy := resolveAgentPullPolicy(gs)
 
 	// Determine gateway name for env var
 	gatewayName := pod.Annotations[stokertypes.AnnotationGatewayName]
 
-	// Determine sync profile
-	syncProfile := pod.Annotations[stokertypes.AnnotationSyncProfile]
+	// Determine profile name
+	profile := pod.Annotations[stokertypes.AnnotationProfile]
 
-	// Determine CR name — use annotation if set, otherwise use stk.Name
+	// Determine CR name — use annotation if set, otherwise use gs.Name
 	crName := pod.Annotations[stokertypes.AnnotationCRName]
 	if crName == "" {
-		crName = stk.Name
+		crName = gs.Name
 	}
 
 	// Gateway port and TLS from CR
-	gatewayPort := fmt.Sprintf("%d", stk.Spec.Gateway.Port)
-	if stk.Spec.Gateway.Port == 0 {
+	gatewayPort := fmt.Sprintf("%d", gs.Spec.Gateway.Port)
+	if gs.Spec.Gateway.Port == 0 {
 		gatewayPort = "8043"
 	}
 	gatewayTLS := annotationTrue
-	if stk.Spec.Gateway.TLS != nil && !*stk.Spec.Gateway.TLS {
+	if gs.Spec.Gateway.TLS != nil && !*gs.Spec.Gateway.TLS {
 		gatewayTLS = "false"
 	}
 
 	// Build env vars
-	env := buildEnvVars(crName, gatewayName, syncProfile, gatewayPort, gatewayTLS, stk)
+	env := buildEnvVars(crName, gatewayName, profile, gatewayPort, gatewayTLS, gs)
 
 	// Build resources
-	resources := buildResources(stk)
+	resources := buildResources(gs)
 
 	// Security context (restricted PSS).
 	// We intentionally omit RunAsUser so the agent inherits the pod-level
@@ -245,7 +240,7 @@ func injectSidecar(pod *corev1.Pod, stk *stokerv1alpha1.Stoker) {
 			PeriodSeconds:    5,
 			FailureThreshold: 3,
 		},
-		VolumeMounts: agentVolumeMounts(stk),
+		VolumeMounts: agentVolumeMounts(gs),
 	}
 
 	// Mount the Ignition data volume if it exists on the pod.
@@ -270,7 +265,7 @@ func injectSidecar(pod *corev1.Pod, stk *stokerv1alpha1.Stoker) {
 	pod.Spec.InitContainers = append([]corev1.Container{agentContainer}, pod.Spec.InitContainers...)
 
 	// Add volumes
-	pod.Spec.Volumes = append(pod.Spec.Volumes, agentVolumes(stk)...)
+	pod.Spec.Volumes = append(pod.Spec.Volumes, agentVolumes(gs)...)
 
 	// Set injected annotation
 	if pod.Annotations == nil {
@@ -283,14 +278,14 @@ func injectSidecar(pod *corev1.Pod, stk *stokerv1alpha1.Stoker) {
 // 1. Pod annotation (debugging override)
 // 2. CR spec.agent.image
 // 3. Environment variable / hardcoded default
-func resolveAgentImage(pod *corev1.Pod, stk *stokerv1alpha1.Stoker) string {
+func resolveAgentImage(pod *corev1.Pod, gs *stokerv1alpha1.GatewaySync) string {
 	// Tier 1: annotation override
 	if img := pod.Annotations[stokertypes.AnnotationAgentImage]; img != "" {
 		return img
 	}
 
 	// Tier 2: CR spec
-	spec := stk.Spec.Agent.Image
+	spec := gs.Spec.Agent.Image
 	if spec.Repository != "" {
 		tag := spec.Tag
 		if tag == "" {
@@ -307,15 +302,15 @@ func resolveAgentImage(pod *corev1.Pod, stk *stokerv1alpha1.Stoker) string {
 }
 
 // resolveAgentPullPolicy returns the image pull policy from CR spec or default.
-func resolveAgentPullPolicy(stk *stokerv1alpha1.Stoker) string {
-	if p := stk.Spec.Agent.Image.PullPolicy; p != "" {
+func resolveAgentPullPolicy(gs *stokerv1alpha1.GatewaySync) string {
+	if p := gs.Spec.Agent.Image.PullPolicy; p != "" {
 		return p
 	}
 	return "IfNotPresent"
 }
 
 // buildEnvVars constructs the environment variables for the agent container.
-func buildEnvVars(crName, gatewayName, syncProfile, gatewayPort, gatewayTLS string, stk *stokerv1alpha1.Stoker) []corev1.EnvVar {
+func buildEnvVars(crName, gatewayName, profile, gatewayPort, gatewayTLS string, gs *stokerv1alpha1.GatewaySync) []corev1.EnvVar {
 	env := []corev1.EnvVar{
 		{
 			Name: "POD_NAME",
@@ -337,25 +332,25 @@ func buildEnvVars(crName, gatewayName, syncProfile, gatewayPort, gatewayTLS stri
 			},
 		},
 		{Name: "GATEWAY_NAME", Value: gatewayName},
-		{Name: "SYNC_PROFILE", Value: syncProfile},
+		{Name: "PROFILE", Value: profile},
 		{Name: "REPO_PATH", Value: mountRepo},
 		{Name: "DATA_PATH", Value: mountIgnitionData},
 		{Name: "GATEWAY_PORT", Value: gatewayPort},
 		{Name: "GATEWAY_TLS", Value: gatewayTLS},
-		{Name: "API_KEY_FILE", Value: mountAPIKey + "/" + stk.Spec.Gateway.APIKeySecretRef.Key},
+		{Name: "API_KEY_FILE", Value: mountAPIKey + "/" + gs.Spec.Gateway.APIKeySecretRef.Key},
 	}
 
 	// Git credential env vars depend on auth type
-	if stk.Spec.Git.Auth != nil {
-		if stk.Spec.Git.Auth.SSHKey != nil {
+	if gs.Spec.Git.Auth != nil {
+		if gs.Spec.Git.Auth.SSHKey != nil {
 			env = append(env, corev1.EnvVar{
 				Name:  "GIT_SSH_KEY_FILE",
-				Value: mountGitCredentials + "/" + stk.Spec.Git.Auth.SSHKey.SecretRef.Key,
+				Value: mountGitCredentials + "/" + gs.Spec.Git.Auth.SSHKey.SecretRef.Key,
 			})
-		} else if stk.Spec.Git.Auth.Token != nil {
+		} else if gs.Spec.Git.Auth.Token != nil {
 			env = append(env, corev1.EnvVar{
 				Name:  "GIT_TOKEN_FILE",
-				Value: mountGitCredentials + "/" + stk.Spec.Git.Auth.Token.SecretRef.Key,
+				Value: mountGitCredentials + "/" + gs.Spec.Git.Auth.Token.SecretRef.Key,
 			})
 		}
 	}
@@ -367,9 +362,9 @@ func buildEnvVars(crName, gatewayName, syncProfile, gatewayPort, gatewayTLS stri
 }
 
 // buildResources returns the agent container resources from CR spec or defaults.
-func buildResources(stk *stokerv1alpha1.Stoker) corev1.ResourceRequirements {
-	if stk.Spec.Agent.Resources != nil {
-		return *stk.Spec.Agent.Resources
+func buildResources(gs *stokerv1alpha1.GatewaySync) corev1.ResourceRequirements {
+	if gs.Spec.Agent.Resources != nil {
+		return *gs.Spec.Agent.Resources
 	}
 	return corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
@@ -384,30 +379,30 @@ func buildResources(stk *stokerv1alpha1.Stoker) corev1.ResourceRequirements {
 }
 
 // gitCredentialSecretName returns the secret name for git credentials based on auth config.
-func gitCredentialSecretName(stk *stokerv1alpha1.Stoker) string {
-	if stk.Spec.Git.Auth == nil {
+func gitCredentialSecretName(gs *stokerv1alpha1.GatewaySync) string {
+	if gs.Spec.Git.Auth == nil {
 		return "git-credentials" // fallback name
 	}
-	if stk.Spec.Git.Auth.SSHKey != nil {
-		return stk.Spec.Git.Auth.SSHKey.SecretRef.Name
+	if gs.Spec.Git.Auth.SSHKey != nil {
+		return gs.Spec.Git.Auth.SSHKey.SecretRef.Name
 	}
-	if stk.Spec.Git.Auth.Token != nil {
-		return stk.Spec.Git.Auth.Token.SecretRef.Name
+	if gs.Spec.Git.Auth.Token != nil {
+		return gs.Spec.Git.Auth.Token.SecretRef.Name
 	}
-	if stk.Spec.Git.Auth.GitHubApp != nil {
-		return stk.Spec.Git.Auth.GitHubApp.PrivateKeySecretRef.Name
+	if gs.Spec.Git.Auth.GitHubApp != nil {
+		return gs.Spec.Git.Auth.GitHubApp.PrivateKeySecretRef.Name
 	}
 	return "git-credentials"
 }
 
 // agentVolumeMounts returns the volume mounts for the agent container.
 // The git-credentials mount is only included when auth is configured.
-func agentVolumeMounts(stk *stokerv1alpha1.Stoker) []corev1.VolumeMount {
+func agentVolumeMounts(gs *stokerv1alpha1.GatewaySync) []corev1.VolumeMount {
 	mounts := []corev1.VolumeMount{
 		{Name: volumeSyncRepo, MountPath: mountRepo},
 		{Name: volumeAPIKey, MountPath: mountAPIKey, ReadOnly: true},
 	}
-	if stk.Spec.Git.Auth != nil {
+	if gs.Spec.Git.Auth != nil {
 		mounts = append(mounts, corev1.VolumeMount{
 			Name: volumeGitCredentials, MountPath: mountGitCredentials, ReadOnly: true,
 		})
@@ -417,7 +412,7 @@ func agentVolumeMounts(stk *stokerv1alpha1.Stoker) []corev1.VolumeMount {
 
 // agentVolumes returns the volumes for the agent sidecar.
 // The git-credentials volume is only included when auth is configured.
-func agentVolumes(stk *stokerv1alpha1.Stoker) []corev1.Volume {
+func agentVolumes(gs *stokerv1alpha1.GatewaySync) []corev1.Volume {
 	secretMode := int32(0400)
 	vols := []corev1.Volume{
 		{
@@ -430,18 +425,18 @@ func agentVolumes(stk *stokerv1alpha1.Stoker) []corev1.Volume {
 			Name: volumeAPIKey,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName:  stk.Spec.Gateway.APIKeySecretRef.Name,
+					SecretName:  gs.Spec.Gateway.APIKeySecretRef.Name,
 					DefaultMode: &secretMode,
 				},
 			},
 		},
 	}
-	if stk.Spec.Git.Auth != nil {
+	if gs.Spec.Git.Auth != nil {
 		vols = append(vols, corev1.Volume{
 			Name: volumeGitCredentials,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName:  gitCredentialSecretName(stk),
+					SecretName:  gitCredentialSecretName(gs),
 					DefaultMode: &secretMode,
 				},
 			},

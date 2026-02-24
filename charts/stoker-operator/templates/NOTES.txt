@@ -10,10 +10,10 @@
     kubectl create secret generic gw-api-key -n <namespace> \
       --from-literal=apiKey=<token-name>:<token-secret>
 
-2. Apply a Stoker CR to define the git repository:
+2. Apply a GatewaySync CR to define the git repository and sync profiles:
 
     apiVersion: stoker.io/v1alpha1
-    kind: Stoker
+    kind: GatewaySync
     metadata:
       name: my-sync
     spec:
@@ -29,37 +29,32 @@
         apiKeySecretRef:
           name: gw-api-key
           key: apiKey
+      sync:
+        profiles:
+          default:
+            mappings:
+              - source: "projects/"
+                destination: "projects/"
+                type: dir
+                required: true
+            syncPeriod: 30
 
-3. Apply a SyncProfile to define file mappings:
-
-    apiVersion: stoker.io/v1alpha1
-    kind: SyncProfile
-    metadata:
-      name: my-profile
-    spec:
-      mappings:
-        - source: "projects/"
-          destination: "projects/"
-          type: dir
-          required: true
-      syncPeriod: 30
-
-4. Label the namespace for sidecar injection:
+3. Label the namespace for sidecar injection:
 
     kubectl label namespace <namespace> stoker.io/injection=enabled
 
-5. Grant the agent RBAC in each namespace where gateways run:
+4. Grant the agent RBAC in each namespace where gateways run:
 
     kubectl create rolebinding stoker-agent -n <namespace> \
       --clusterrole={{ include "stoker-operator.fullname" . }}-agent \
       --serviceaccount=<namespace>:<gateway-service-account>
 
-6. Add the injection annotations to your Ignition gateway pod template:
+5. Add the injection annotations to your Ignition gateway pod template:
 
     podAnnotations:
       stoker.io/inject: "true"
       stoker.io/cr-name: "my-sync"
-      stoker.io/sync-profile: "my-profile"
+      stoker.io/profile: "default"
       # stoker.io/gateway-name: "my-gw"  # optional — defaults to app.kubernetes.io/name label or pod name
 
 {{- if and .Values.webhook.enabled .Values.certManager.enabled }}

@@ -1,6 +1,6 @@
 package conditions
 
-// Condition types for Stoker status.conditions[].type
+// Condition types for GatewaySync status.conditions[].type
 const (
 	// TypeReady indicates overall readiness — all gateways synced and healthy.
 	TypeReady = "Ready"
@@ -8,19 +8,17 @@ const (
 	// TypeRefResolved indicates whether the git ref has been resolved to a commit SHA.
 	TypeRefResolved = "RefResolved"
 
+	// TypeProfilesValid indicates whether all embedded profiles pass validation.
+	TypeProfilesValid = "ProfilesValid"
+
 	// TypeAllGatewaysSynced indicates whether all discovered gateways have completed sync.
 	TypeAllGatewaysSynced = "AllGatewaysSynced"
 
 	// TypeSidecarInjected indicates whether all gateway pods have the stoker-agent sidecar.
 	TypeSidecarInjected = "SidecarInjected"
-
-	// SyncProfile condition types
-
-	// TypeAccepted indicates whether the SyncProfile spec is valid.
-	TypeAccepted = "Accepted"
 )
 
-// Condition reasons for Stoker status.conditions[].reason
+// Condition reasons for GatewaySync status.conditions[].reason
 const (
 	ReasonReconciling         = "Reconciling"
 	ReasonRefResolved         = "RefResolved"
@@ -29,12 +27,12 @@ const (
 	ReasonSyncInProgress      = "SyncInProgress"
 	ReasonPaused              = "Paused"
 	ReasonNoGateways          = "NoGatewaysDiscovered"
+	ReasonProfilesValid       = "ProfilesValid"
+	ReasonProfilesInvalid     = "ProfilesInvalid"
 	ReasonValidationPassed    = "ValidationPassed"
 	ReasonValidationFailed    = "ValidationFailed"
 	ReasonSidecarMissing      = "SidecarMissing"
 	ReasonSidecarPresent      = "SidecarPresent"
-	ReasonCycleDetected       = "CycleDetected"
-	ReasonDependencyNotFound  = "DependencyNotFound"
 )
 
 // Event reasons for K8s Events (not used as condition reasons).

@@ -41,8 +41,8 @@ func (f *fakeGitClient) CloneOrFetch(_ context.Context, _, _, _ string, _ transp
 }
 
 // helper to create the reconciler with a fake git client and event recorder
-func newReconciler(gitClient git.Client) *StokerReconciler {
-	return &StokerReconciler{
+func newReconciler(gitClient git.Client) *GatewaySyncReconciler {
+	return &GatewaySyncReconciler{
 		Client:    k8sClient,
 		Scheme:    k8sClient.Scheme(),
 		GitClient: gitClient,
@@ -67,14 +67,14 @@ func createAPIKeySecret(ctx context.Context, name string) {
 	}
 }
 
-// helper to create an Stoker CR
+// helper to create a GatewaySync CR with a default profile
 func createCR(ctx context.Context, name, secretName string) {
-	cr := &stokerv1alpha1.Stoker{
+	cr := &stokerv1alpha1.GatewaySync{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: "default",
 		},
-		Spec: stokerv1alpha1.StokerSpec{
+		Spec: stokerv1alpha1.GatewaySyncSpec{
 			Git: stokerv1alpha1.GitSpec{
 				Repo: "git@github.com:example/test.git",
 				Ref:  "main",
@@ -83,6 +83,15 @@ func createCR(ctx context.Context, name, secretName string) {
 				APIKeySecretRef: stokerv1alpha1.SecretKeyRef{
 					Name: secretName,
 					Key:  "apiKey",
+				},
+			},
+			Sync: stokerv1alpha1.SyncSpec{
+				Profiles: map[string]stokerv1alpha1.SyncProfileSpec{
+					"default": {
+						Mappings: []stokerv1alpha1.SyncMapping{
+							{Source: "config", Destination: "config"},
+						},
+					},
 				},
 			},
 		},
@@ -112,7 +121,7 @@ func createAnnotatedPod(ctx context.Context, name string, annotations map[string
 }
 
 // helper to run through the full reconcile cycle (finalizer + ref resolution) and return
-func reconcileToSteadyState(ctx context.Context, nn types.NamespacedName, r *StokerReconciler) {
+func reconcileToSteadyState(ctx context.Context, nn types.NamespacedName, r *GatewaySyncReconciler) {
 	// Reconcile 1: add finalizer
 	_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 	Expect(err).NotTo(HaveOccurred())
@@ -122,7 +131,7 @@ func reconcileToSteadyState(ctx context.Context, nn types.NamespacedName, r *Sto
 	Expect(err).NotTo(HaveOccurred())
 }
 
-var _ = Describe("Stoker Controller", func() {
+var _ = Describe("GatewaySync Controller", func() {
 
 	Context("Finalizer handling", func() {
 		const resourceName = "test-finalizer"
@@ -136,7 +145,7 @@ var _ = Describe("Stoker Controller", func() {
 		})
 
 		AfterEach(func() {
-			cr := &stokerv1alpha1.Stoker{}
+			cr := &stokerv1alpha1.GatewaySync{}
 			if err := k8sClient.Get(ctx, nn, cr); err == nil {
 				controllerutil.RemoveFinalizer(cr, stokertypes.Finalizer)
 				_ = k8sClient.Update(ctx, cr)
@@ -149,7 +158,7 @@ var _ = Describe("Stoker Controller", func() {
 			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
 			Expect(err).NotTo(HaveOccurred())
 
-			cr := &stokerv1alpha1.Stoker{}
+			cr := &stokerv1alpha1.GatewaySync{}
 			Expect(k8sClient.Get(ctx, nn, cr)).To(Succeed())
 			Expect(controllerutil.ContainsFinalizer(cr, stokertypes.Finalizer)).To(BeTrue())
 		})
@@ -174,7 +183,7 @@ var _ = Describe("Stoker Controller", func() {
 			}
 
 			// Delete the CR (DeletionTimestamp set, but finalizer blocks)
-			cr := &stokerv1alpha1.Stoker{}
+			cr := &stokerv1alpha1.GatewaySync{}
 			Expect(k8sClient.Get(ctx, nn, cr)).To(Succeed())
 			Expect(k8sClient.Delete(ctx, cr)).To(Succeed())
 
@@ -186,9 +195,9 @@ var _ = Describe("Stoker Controller", func() {
 			err = k8sClient.Get(ctx, types.NamespacedName{Name: cm.Name, Namespace: "default"}, &corev1.ConfigMap{})
 			Expect(errors.IsNotFound(err)).To(BeTrue())
 
-			// CR should be gone (finalizer removed → GC)
+			// CR should be gone (finalizer removed -> GC)
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, nn, &stokerv1alpha1.Stoker{})
+				err := k8sClient.Get(ctx, nn, &stokerv1alpha1.GatewaySync{})
 				return errors.IsNotFound(err)
 			}, 5*time.Second, 100*time.Millisecond).Should(BeTrue())
 		})
@@ -206,7 +215,7 @@ var _ = Describe("Stoker Controller", func() {
 		})
 
 		AfterEach(func() {
-			cr := &stokerv1alpha1.Stoker{}
+			cr := &stokerv1alpha1.GatewaySync{}
 			if err := k8sClient.Get(ctx, nn, cr); err == nil {
 				controllerutil.RemoveFinalizer(cr, stokertypes.Finalizer)
 				_ = k8sClient.Update(ctx, cr)
@@ -233,12 +242,13 @@ var _ = Describe("Stoker Controller", func() {
 			Expect(result.RequeueAfter).To(Equal(60 * time.Second)) // default polling interval
 
 			// Verify status
-			cr := &stokerv1alpha1.Stoker{}
+			cr := &stokerv1alpha1.GatewaySync{}
 			Expect(k8sClient.Get(ctx, nn, cr)).To(Succeed())
 			Expect(cr.Status.LastSyncCommit).To(Equal("abc123def"))
 			Expect(cr.Status.LastSyncRef).To(Equal("main"))
 			Expect(cr.Status.RefResolutionStatus).To(Equal("Resolved"))
 			Expect(cr.Status.LastSyncTime).NotTo(BeNil())
+			Expect(cr.Status.ProfileCount).To(Equal(int32(1)))
 
 			// Verify RefResolved condition
 			var refResolvedCond *metav1.Condition
@@ -261,6 +271,7 @@ var _ = Describe("Stoker Controller", func() {
 			Expect(k8sClient.Get(ctx, cmNN, cm)).To(Succeed())
 			Expect(cm.Data["commit"]).To(Equal("abc123def"))
 			Expect(cm.Data["ref"]).To(Equal("main"))
+			Expect(cm.Data["profiles"]).NotTo(BeEmpty())
 
 			// Git client should have been called exactly once
 			Expect(gitClient.calls).To(Equal(1))
@@ -280,7 +291,7 @@ var _ = Describe("Stoker Controller", func() {
 			Expect(result.RequeueAfter).To(Equal(30 * time.Second))
 
 			// Verify error condition
-			cr := &stokerv1alpha1.Stoker{}
+			cr := &stokerv1alpha1.GatewaySync{}
 			Expect(k8sClient.Get(ctx, nn, cr)).To(Succeed())
 			Expect(cr.Status.RefResolutionStatus).To(Equal("Error"))
 
@@ -303,7 +314,7 @@ var _ = Describe("Stoker Controller", func() {
 		nn := types.NamespacedName{Name: resourceName, Namespace: "default"}
 
 		AfterEach(func() {
-			cr := &stokerv1alpha1.Stoker{}
+			cr := &stokerv1alpha1.GatewaySync{}
 			if err := k8sClient.Get(ctx, nn, cr); err == nil {
 				controllerutil.RemoveFinalizer(cr, stokertypes.Finalizer)
 				_ = k8sClient.Update(ctx, cr)
@@ -312,13 +323,12 @@ var _ = Describe("Stoker Controller", func() {
 		})
 
 		It("should fail reconcile when gateway API key secret is missing", func() {
-			// Create CR referencing a non-existent secret
-			cr := &stokerv1alpha1.Stoker{
+			cr := &stokerv1alpha1.GatewaySync{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      resourceName,
 					Namespace: "default",
 				},
-				Spec: stokerv1alpha1.StokerSpec{
+				Spec: stokerv1alpha1.GatewaySyncSpec{
 					Git: stokerv1alpha1.GitSpec{
 						Repo: "git@github.com:example/test.git",
 						Ref:  "main",
@@ -327,6 +337,15 @@ var _ = Describe("Stoker Controller", func() {
 						APIKeySecretRef: stokerv1alpha1.SecretKeyRef{
 							Name: "nonexistent-secret",
 							Key:  "apiKey",
+						},
+					},
+					Sync: stokerv1alpha1.SyncSpec{
+						Profiles: map[string]stokerv1alpha1.SyncProfileSpec{
+							"default": {
+								Mappings: []stokerv1alpha1.SyncMapping{
+									{Source: "config", Destination: "config"},
+								},
+							},
 						},
 					},
 				},
@@ -357,7 +376,7 @@ var _ = Describe("Stoker Controller", func() {
 		})
 
 		AfterEach(func() {
-			cr := &stokerv1alpha1.Stoker{}
+			cr := &stokerv1alpha1.GatewaySync{}
 			if err := k8sClient.Get(ctx, nn, cr); err == nil {
 				controllerutil.RemoveFinalizer(cr, stokertypes.Finalizer)
 				_ = k8sClient.Update(ctx, cr)
@@ -366,12 +385,12 @@ var _ = Describe("Stoker Controller", func() {
 		})
 
 		It("should skip reconciliation when paused", func() {
-			cr := &stokerv1alpha1.Stoker{
+			cr := &stokerv1alpha1.GatewaySync{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      resourceName,
 					Namespace: "default",
 				},
-				Spec: stokerv1alpha1.StokerSpec{
+				Spec: stokerv1alpha1.GatewaySyncSpec{
 					Git: stokerv1alpha1.GitSpec{
 						Repo: "git@github.com:example/test.git",
 						Ref:  "main",
@@ -380,6 +399,15 @@ var _ = Describe("Stoker Controller", func() {
 						APIKeySecretRef: stokerv1alpha1.SecretKeyRef{
 							Name: secretName,
 							Key:  "apiKey",
+						},
+					},
+					Sync: stokerv1alpha1.SyncSpec{
+						Profiles: map[string]stokerv1alpha1.SyncProfileSpec{
+							"default": {
+								Mappings: []stokerv1alpha1.SyncMapping{
+									{Source: "config", Destination: "config"},
+								},
+							},
 						},
 					},
 					Paused: true,
@@ -414,7 +442,7 @@ var _ = Describe("Stoker Controller", func() {
 		})
 
 		AfterEach(func() {
-			cr := &stokerv1alpha1.Stoker{}
+			cr := &stokerv1alpha1.GatewaySync{}
 			if err := k8sClient.Get(ctx, nn, cr); err == nil {
 				controllerutil.RemoveFinalizer(cr, stokertypes.Finalizer)
 				_ = k8sClient.Update(ctx, cr)
@@ -451,7 +479,7 @@ var _ = Describe("Stoker Controller", func() {
 			reconcileToSteadyState(ctx, nn, r)
 
 			// Verify discovered gateways
-			cr := &stokerv1alpha1.Stoker{}
+			cr := &stokerv1alpha1.GatewaySync{}
 			Expect(k8sClient.Get(ctx, nn, cr)).To(Succeed())
 			Expect(cr.Status.DiscoveredGateways).To(HaveLen(2))
 
@@ -472,7 +500,7 @@ var _ = Describe("Stoker Controller", func() {
 			r := newReconciler(&fakeGitClient{result: git.Result{Commit: "abc123", Ref: "main"}})
 			reconcileToSteadyState(ctx, nn, r)
 
-			cr := &stokerv1alpha1.Stoker{}
+			cr := &stokerv1alpha1.GatewaySync{}
 			Expect(k8sClient.Get(ctx, nn, cr)).To(Succeed())
 			Expect(cr.Status.DiscoveredGateways).To(HaveLen(1))
 			Expect(cr.Status.DiscoveredGateways[0].PodName).To(Equal("gw-pod-1"))
@@ -487,7 +515,7 @@ var _ = Describe("Stoker Controller", func() {
 			r := newReconciler(&fakeGitClient{result: git.Result{Commit: "abc123", Ref: "main"}})
 			reconcileToSteadyState(ctx, nn, r)
 
-			cr := &stokerv1alpha1.Stoker{}
+			cr := &stokerv1alpha1.GatewaySync{}
 			Expect(k8sClient.Get(ctx, nn, cr)).To(Succeed())
 			Expect(cr.Status.DiscoveredGateways).To(HaveLen(1))
 			Expect(cr.Status.DiscoveredGateways[0].Name).To(Equal("gw-pod-1"))
@@ -506,7 +534,7 @@ var _ = Describe("Stoker Controller", func() {
 		})
 
 		AfterEach(func() {
-			cr := &stokerv1alpha1.Stoker{}
+			cr := &stokerv1alpha1.GatewaySync{}
 			if err := k8sClient.Get(ctx, nn, cr); err == nil {
 				controllerutil.RemoveFinalizer(cr, stokertypes.Finalizer)
 				_ = k8sClient.Update(ctx, cr)
@@ -558,7 +586,7 @@ var _ = Describe("Stoker Controller", func() {
 			r := newReconciler(&fakeGitClient{result: git.Result{Commit: "abc123", Ref: "main"}})
 			reconcileToSteadyState(ctx, nn, r)
 
-			cr := &stokerv1alpha1.Stoker{}
+			cr := &stokerv1alpha1.GatewaySync{}
 			Expect(k8sClient.Get(ctx, nn, cr)).To(Succeed())
 			Expect(cr.Status.DiscoveredGateways).To(HaveLen(1))
 
@@ -584,7 +612,7 @@ var _ = Describe("Stoker Controller", func() {
 		})
 
 		AfterEach(func() {
-			cr := &stokerv1alpha1.Stoker{}
+			cr := &stokerv1alpha1.GatewaySync{}
 			if err := k8sClient.Get(ctx, nn, cr); err == nil {
 				controllerutil.RemoveFinalizer(cr, stokertypes.Finalizer)
 				_ = k8sClient.Update(ctx, cr)
@@ -627,7 +655,7 @@ var _ = Describe("Stoker Controller", func() {
 			r := newReconciler(&fakeGitClient{result: git.Result{Commit: "abc123", Ref: "main"}})
 			reconcileToSteadyState(ctx, nn, r)
 
-			cr := &stokerv1alpha1.Stoker{}
+			cr := &stokerv1alpha1.GatewaySync{}
 			Expect(k8sClient.Get(ctx, nn, cr)).To(Succeed())
 
 			// Check Ready condition
@@ -675,14 +703,14 @@ var _ = Describe("Stoker Controller", func() {
 					Namespace: "default",
 				},
 				Data: map[string]string{"gw1": string(statusJSON)},
-				// gw2 not in map → stays Pending
+				// gw2 not in map -> stays Pending
 			}
 			Expect(k8sClient.Create(ctx, statusCM)).To(Succeed())
 
 			r := newReconciler(&fakeGitClient{result: git.Result{Commit: "abc123", Ref: "main"}})
 			reconcileToSteadyState(ctx, nn, r)
 
-			cr := &stokerv1alpha1.Stoker{}
+			cr := &stokerv1alpha1.GatewaySync{}
 			Expect(k8sClient.Get(ctx, nn, cr)).To(Succeed())
 
 			// Ready should be False
@@ -714,7 +742,7 @@ var _ = Describe("Stoker Controller", func() {
 			r := newReconciler(&fakeGitClient{result: git.Result{Commit: "abc123", Ref: "main"}})
 			reconcileToSteadyState(ctx, nn, r)
 
-			cr := &stokerv1alpha1.Stoker{}
+			cr := &stokerv1alpha1.GatewaySync{}
 			Expect(k8sClient.Get(ctx, nn, cr)).To(Succeed())
 
 			var allSyncedCond *metav1.Condition
@@ -731,21 +759,21 @@ var _ = Describe("Stoker Controller", func() {
 	})
 
 	Context("Pod to CR mapping", func() {
-		It("should map annotated pod to Stoker reconcile request", func() {
+		It("should map annotated pod to GatewaySync reconcile request", func() {
 			r := newReconciler(&fakeGitClient{})
 			pod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
 					Namespace: "default",
 					Annotations: map[string]string{
-						stokertypes.AnnotationCRName: "my-stoker",
+						stokertypes.AnnotationCRName: "my-gs",
 					},
 				},
 			}
 
-			requests := r.findStokerForPod(context.Background(), pod)
+			requests := r.findGatewaySyncForPod(context.Background(), pod)
 			Expect(requests).To(HaveLen(1))
-			Expect(requests[0].NamespacedName.Name).To(Equal("my-stoker"))
+			Expect(requests[0].NamespacedName.Name).To(Equal("my-gs"))
 			Expect(requests[0].NamespacedName.Namespace).To(Equal("default"))
 		})
 
@@ -758,8 +786,133 @@ var _ = Describe("Stoker Controller", func() {
 				},
 			}
 
-			requests := r.findStokerForPod(context.Background(), pod)
+			requests := r.findGatewaySyncForPod(context.Background(), pod)
 			Expect(requests).To(BeNil())
+		})
+	})
+
+	Context("Profile validation", func() {
+		const resourceName = "test-profile-validation"
+		const secretName = "test-secret-profile-val"
+		ctx := context.Background()
+		nn := types.NamespacedName{Name: resourceName, Namespace: "default"}
+
+		BeforeEach(func() {
+			createAPIKeySecret(ctx, secretName)
+		})
+
+		AfterEach(func() {
+			cr := &stokerv1alpha1.GatewaySync{}
+			if err := k8sClient.Get(ctx, nn, cr); err == nil {
+				controllerutil.RemoveFinalizer(cr, stokertypes.Finalizer)
+				_ = k8sClient.Update(ctx, cr)
+				_ = k8sClient.Delete(ctx, cr)
+			}
+			for _, prefix := range []string{"stoker-metadata-"} {
+				cm := &corev1.ConfigMap{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: prefix + resourceName, Namespace: "default"}, cm); err == nil {
+					_ = k8sClient.Delete(ctx, cm)
+				}
+			}
+		})
+
+		It("should set ProfilesValid=True for valid profiles", func() {
+			cr := &stokerv1alpha1.GatewaySync{
+				ObjectMeta: metav1.ObjectMeta{Name: resourceName, Namespace: "default"},
+				Spec: stokerv1alpha1.GatewaySyncSpec{
+					Git:     stokerv1alpha1.GitSpec{Repo: "git@github.com:example/test.git", Ref: "main"},
+					Gateway: stokerv1alpha1.GatewaySpec{APIKeySecretRef: stokerv1alpha1.SecretKeyRef{Name: secretName, Key: "apiKey"}},
+					Sync: stokerv1alpha1.SyncSpec{
+						Profiles: map[string]stokerv1alpha1.SyncProfileSpec{
+							"blue": {Mappings: []stokerv1alpha1.SyncMapping{{Source: "services/blue/projects", Destination: "projects"}}},
+							"red":  {Mappings: []stokerv1alpha1.SyncMapping{{Source: "services/red/projects", Destination: "projects"}}},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+
+			r := newReconciler(&fakeGitClient{result: git.Result{Commit: "abc123", Ref: "main"}})
+			reconcileToSteadyState(ctx, nn, r)
+
+			updated := &stokerv1alpha1.GatewaySync{}
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+
+			var cond *metav1.Condition
+			for i := range updated.Status.Conditions {
+				if updated.Status.Conditions[i].Type == conditions.TypeProfilesValid {
+					cond = &updated.Status.Conditions[i]
+					break
+				}
+			}
+			Expect(cond).NotTo(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		})
+
+		It("should set ProfilesValid=False for path traversal", func() {
+			cr := &stokerv1alpha1.GatewaySync{
+				ObjectMeta: metav1.ObjectMeta{Name: resourceName, Namespace: "default"},
+				Spec: stokerv1alpha1.GatewaySyncSpec{
+					Git:     stokerv1alpha1.GitSpec{Repo: "git@github.com:example/test.git", Ref: "main"},
+					Gateway: stokerv1alpha1.GatewaySpec{APIKeySecretRef: stokerv1alpha1.SecretKeyRef{Name: secretName, Key: "apiKey"}},
+					Sync: stokerv1alpha1.SyncSpec{
+						Profiles: map[string]stokerv1alpha1.SyncProfileSpec{
+							"evil": {Mappings: []stokerv1alpha1.SyncMapping{{Source: "../../../etc/passwd", Destination: "config"}}},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+
+			r := newReconciler(&fakeGitClient{result: git.Result{Commit: "abc123", Ref: "main"}})
+			reconcileToSteadyState(ctx, nn, r)
+
+			updated := &stokerv1alpha1.GatewaySync{}
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+
+			var cond *metav1.Condition
+			for i := range updated.Status.Conditions {
+				if updated.Status.Conditions[i].Type == conditions.TypeProfilesValid {
+					cond = &updated.Status.Conditions[i]
+					break
+				}
+			}
+			Expect(cond).NotTo(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Message).To(ContainSubstring("traversal"))
+		})
+
+		It("should set ProfilesValid=False for absolute path", func() {
+			cr := &stokerv1alpha1.GatewaySync{
+				ObjectMeta: metav1.ObjectMeta{Name: resourceName, Namespace: "default"},
+				Spec: stokerv1alpha1.GatewaySyncSpec{
+					Git:     stokerv1alpha1.GitSpec{Repo: "git@github.com:example/test.git", Ref: "main"},
+					Gateway: stokerv1alpha1.GatewaySpec{APIKeySecretRef: stokerv1alpha1.SecretKeyRef{Name: secretName, Key: "apiKey"}},
+					Sync: stokerv1alpha1.SyncSpec{
+						Profiles: map[string]stokerv1alpha1.SyncProfileSpec{
+							"evil": {Mappings: []stokerv1alpha1.SyncMapping{{Source: "/etc/passwd", Destination: "config"}}},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+
+			r := newReconciler(&fakeGitClient{result: git.Result{Commit: "abc123", Ref: "main"}})
+			reconcileToSteadyState(ctx, nn, r)
+
+			updated := &stokerv1alpha1.GatewaySync{}
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+
+			var cond *metav1.Condition
+			for i := range updated.Status.Conditions {
+				if updated.Status.Conditions[i].Type == conditions.TypeProfilesValid {
+					cond = &updated.Status.Conditions[i]
+					break
+				}
+			}
+			Expect(cond).NotTo(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Message).To(ContainSubstring("absolute"))
 		})
 	})
 })
