@@ -58,7 +58,7 @@ kubectl create secret generic gw-api-key -n quickstart \
 ```
 
 :::warning
-This API key is for the example repository only. Never reuse example credentials — generate unique API tokens for each gateway in your own deployments.
+This API key is for the example repository only. Never reuse example credentials — [generate unique API tokens](https://www.docs.inductiveautomation.com/docs/8.3/platform/security/api-keys#using-api-keys) for each gateway in your own deployments.
 :::
 
 No git credentials are needed since we're using a public repository.
