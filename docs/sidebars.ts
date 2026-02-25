@@ -6,7 +6,7 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Overview",
       collapsed: false,
-      items: ["overview/introduction", "overview/architecture"],
+      items: ["overview/introduction", "overview/architecture", "overview/concepts"],
     },
     {
       type: "category",
