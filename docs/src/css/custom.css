@@ -50,6 +50,7 @@
 
 .features .col {
   display: flex;
+  margin-bottom: 1rem;
 }
 
 .feature {
@@ -82,8 +83,7 @@
   padding-right: 8px;
 }
 
-.aa-DetachedSearchButton::after {
-  content: "⌘K";
+.search-shortcut-badge {
   font-size: 0.7rem;
   font-family: system-ui, sans-serif;
   padding: 2px 6px;
@@ -92,4 +92,10 @@
   color: var(--ifm-color-emphasis-600);
   margin-left: auto;
   flex-shrink: 0;
+}
+
+@media (max-width: 996px) {
+  .search-shortcut-badge {
+    display: none;
+  }
 }
