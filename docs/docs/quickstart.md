@@ -1,17 +1,18 @@
 ---
 sidebar_position: 1
 title: Quickstart
-description: Get a single Ignition gateway syncing projects from Git in 5 steps.
+description: Get a single Ignition gateway syncing projects from Git in 4 steps.
 ---
 
 # Quickstart
 
-Get a single Ignition gateway syncing projects from Git in 5 steps.
+Get a single Ignition gateway syncing projects from Git in 4 steps.
 
 ## Prerequisites
 
 - Kubernetes cluster (v1.28+)
 - `kubectl` and `helm` CLI tools
+- [cert-manager](https://cert-manager.io) installed (Stoker uses it for webhook TLS)
 
 :::tip Need a cluster?
 Install [kind](https://kind.sigs.k8s.io/docs/user/quick-start/#installation), then:
@@ -22,16 +23,14 @@ kubectl cluster-info
 ```
 :::
 
-## 1. Install cert-manager
-
-Stoker uses cert-manager for webhook TLS certificates:
+If cert-manager isn't installed yet:
 
 ```bash
 kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.2/cert-manager.yaml
 kubectl wait --for=condition=Available deployment --all -n cert-manager --timeout=120s
 ```
 
-## 2. Install the Stoker operator
+## 1. Install the Stoker operator
 
 ```bash
 helm install stoker oci://ghcr.io/ia-eknorr/charts/stoker-operator \
@@ -46,7 +45,9 @@ kubectl get pods -n stoker-system
 
 You should see a `controller-manager` pod in `Running` state.
 
-## 3. Create secrets
+## 2. Create secrets
+
+This quickstart uses [`ia-eknorr/test-ignition-project`](https://github.com/ia-eknorr/test-ignition-project), a public example repository created for this guide. It contains an Ignition stack with two gateway configurations — `ignition-blue` and `ignition-red` — each with their own projects and config directories. We'll sync `ignition-blue` to a single gateway.
 
 Create a namespace and a secret so the agent can authenticate with the gateway's scan API. The example repository includes a pre-configured API token resource:
 
@@ -56,13 +57,13 @@ kubectl create secret generic gw-api-key -n quickstart \
   --from-literal=apiKey="ignition-api-key:CYCSdRgW6MHYkeIXhH-BMqo1oaqfTdFi8tXvHJeCKmY"
 ```
 
-:::note
-This API key belongs to the public example repository and carries no security risk. The example repository is provided solely for this quickstart — do not use it as a base template for production projects. In your own deployments, generate unique API tokens for each gateway.
+:::warning
+This API key is for the example repository only. Never reuse example credentials — generate unique API tokens for each gateway in your own deployments.
 :::
 
 No git credentials are needed since we're using a public repository.
 
-## 4. Create a GatewaySync CR
+## 3. Create a GatewaySync CR
 
 The GatewaySync CR defines the git repository and sync profiles. We set `gateway.port` and `gateway.tls` to match the default Ignition Helm chart (HTTP on 8088):
 
@@ -106,7 +107,7 @@ kubectl get gatewaysyncs -n quickstart
 
 The `REF` column should show `main` and `COMMIT` should show a short hash. `READY` will be `False` until a gateway is deployed and synced.
 
-## 5. Deploy an Ignition gateway
+## 4. Deploy an Ignition gateway
 
 Install using the [official Ignition Helm chart](https://charts.ia.io) with Stoker annotations.
 
