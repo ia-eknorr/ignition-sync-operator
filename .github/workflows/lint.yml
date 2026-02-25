@@ -7,7 +7,7 @@ on:
 
 jobs:
   lint:
-    name: Lint
+    name: lint
     runs-on: ubuntu-latest
     steps:
       - name: Clone the code
@@ -24,7 +24,7 @@ jobs:
           version: v2.7.2
 
   verify-codegen:
-    name: Verify Code Generation
+    name: verify-codegen
     runs-on: ubuntu-latest
     steps:
       - name: Clone the code
@@ -47,7 +47,7 @@ jobs:
           git diff --exit-code config/ api/
 
   helm-docs:
-    name: Helm Docs
+    name: helm-docs
     runs-on: ubuntu-latest
     steps:
       - name: Clone the code

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Sets up the e2e test environment:
 #   1. Creates a kind cluster
-#   2. Builds and loads both operator + agent images
-#   3. Installs cert-manager (webhook TLS)
-#   4. Deploys the operator via Helm with local images
+#   2. Pre-pulls test fixture images
+#   3. Builds and loads both operator + agent images
+#   4. Installs cert-manager (webhook TLS)
+#   5. Deploys the operator via Helm with local images
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,7 +27,13 @@ fi
 
 kubectl cluster-info --context "kind-${KIND_CLUSTER}" >/dev/null 2>&1
 
-# 2. Build both images
+# 2. Pre-pull test fixture images to avoid pull contention during parallel tests
+echo "-> Pre-pulling test fixture images..."
+docker pull alpine:3.20
+docker pull curlimages/curl:latest
+kind load docker-image alpine:3.20 curlimages/curl:latest --name "${KIND_CLUSTER}"
+
+# 3. Build both images
 echo "-> Building controller image '${CONTROLLER_IMG}'..."
 cd "${PROJECT_ROOT}"
 docker build -t "${CONTROLLER_IMG}" .
@@ -34,18 +41,18 @@ docker build -t "${CONTROLLER_IMG}" .
 echo "-> Building agent image '${AGENT_IMG}'..."
 docker build -t "${AGENT_IMG}" -f Dockerfile.agent .
 
-# 3. Load images into kind
+# 4. Load images into kind
 echo "-> Loading images into kind..."
 kind load docker-image "${CONTROLLER_IMG}" --name "${KIND_CLUSTER}"
 kind load docker-image "${AGENT_IMG}" --name "${KIND_CLUSTER}"
 
-# 4. Install cert-manager (required for webhook TLS)
+# 5. Install cert-manager (required for webhook TLS)
 echo "-> Installing cert-manager..."
 kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
 echo "  Waiting for cert-manager deployments..."
 kubectl wait --for=condition=Available deployment --all -n cert-manager --timeout=120s
 
-# 5. Deploy operator via Helm with local images
+# 6. Deploy operator via Helm with local images
 echo "-> Deploying operator via Helm..."
 helm upgrade --install stoker-operator "${PROJECT_ROOT}/charts/stoker-operator" \
   --namespace stoker-system --create-namespace \
@@ -57,7 +64,7 @@ helm upgrade --install stoker-operator "${PROJECT_ROOT}/charts/stoker-operator" 
   --set leaderElection.enabled=false \
   --wait --timeout 180s
 
-# 6. Wait for controller readiness
+# 7. Wait for controller readiness
 echo "-> Waiting for controller readiness..."
 kubectl wait --for=condition=Available deployment -l app.kubernetes.io/name=stoker-operator \
   -n stoker-system --timeout=120s
