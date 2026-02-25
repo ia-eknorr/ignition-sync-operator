@@ -62,9 +62,13 @@ spec:
             env:
               - name: NAMESPACE
                 value: ($namespace)
-            timeout: 30s
+            timeout: 60s
             content: |
-              STATUS=$(kubectl get gatewaysync test-ref-branch -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}')
+              for i in $(seq 1 30); do
+                STATUS=$(kubectl get gatewaysync test-ref-branch -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="RefResolved")].status}' 2>/dev/null)
+                [ "$STATUS" = "True" ] && break
+                sleep 2
+              done
               [ "$STATUS" = "True" ] || { echo "RefResolved=$STATUS, want True"; exit 1; }
               COMMIT=$(kubectl get gatewaysync test-ref-branch -n $NAMESPACE -o jsonpath='{.status.lastSyncCommit}')
               [ -n "$COMMIT" ] || { echo "lastSyncCommit is empty"; exit 1; }
