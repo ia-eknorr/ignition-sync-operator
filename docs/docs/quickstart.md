@@ -1,12 +1,12 @@
 ---
 sidebar_position: 1
 title: Quickstart
-description: Get a single Ignition gateway syncing projects from Git in 6 steps.
+description: Get a single Ignition gateway syncing projects from Git in 5 steps.
 ---
 
 # Quickstart
 
-Get a single Ignition gateway syncing projects from Git in 6 steps.
+Get a single Ignition gateway syncing projects from Git in 5 steps.
 
 ## Prerequisites
 
@@ -106,21 +106,7 @@ kubectl get gatewaysyncs -n quickstart
 
 The `REF` column should show `main` and `COMMIT` should show a short hash. `READY` will be `False` until a gateway is deployed and synced.
 
-## 5. Grant agent RBAC
-
-The agent sidecar needs permission to read GatewaySync CRs and write status ConfigMaps. The Helm chart installs a ClusterRole for this — bind it to the gateway's service account:
-
-```bash
-kubectl create rolebinding stoker-agent -n quickstart \
-  --clusterrole=stoker-stoker-operator-agent \
-  --serviceaccount=quickstart:ignition
-```
-
-:::note
-The service account name (`ignition`) matches the default created by the Ignition Helm chart. If your gateway uses a different service account, substitute it here.
-:::
-
-## 6. Deploy an Ignition gateway
+## 5. Deploy an Ignition gateway
 
 Install using the [official Ignition Helm chart](https://charts.ia.io) with Stoker annotations.
 

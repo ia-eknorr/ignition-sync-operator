@@ -82,12 +82,19 @@ func (r *GatewaySyncReconciler) discoverGateways(ctx context.Context, gs *stoker
 				"Pod %s has inject annotation but no stoker-agent sidecar — webhook may have been unavailable during pod creation. Delete and recreate the pod.", pod.Name)
 		}
 
+		// Capture ServiceAccount for auto-RBAC binding.
+		saName := pod.Spec.ServiceAccountName
+		if saName == "" {
+			saName = "default"
+		}
+
 		gateway := stokerv1alpha1.DiscoveredGateway{
-			Name:       gatewayName,
-			Namespace:  pod.Namespace,
-			PodName:    pod.Name,
-			Profile:    profile,
-			SyncStatus: syncStatus,
+			Name:               gatewayName,
+			Namespace:          pod.Namespace,
+			PodName:            pod.Name,
+			ServiceAccountName: saName,
+			Profile:            profile,
+			SyncStatus:         syncStatus,
 		}
 
 		discovered = append(discovered, gateway)

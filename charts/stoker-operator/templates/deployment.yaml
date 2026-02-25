@@ -39,6 +39,8 @@ spec:
           env:
             - name: DEFAULT_AGENT_IMAGE
               value: "{{ .Values.agentImage.repository }}:{{ .Values.agentImage.tag | default .Chart.AppVersion }}"
+            - name: AUTO_BIND_AGENT_RBAC
+              value: {{ .Values.rbac.autoBindAgent.enabled | quote }}
             {{- if .Values.webhookReceiver.hmac.secretRef.name }}
             - name: WEBHOOK_HMAC_SECRET
               valueFrom:

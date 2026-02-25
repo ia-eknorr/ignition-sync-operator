@@ -84,6 +84,15 @@ webhook:
     # Enable for regulated environments that require explicit namespace opt-in.
     requireLabel: false
 
+# -- RBAC configuration for the agent sidecar.
+rbac:
+  autoBindAgent:
+    # -- Automatically create RoleBindings for the agent sidecar in namespaces
+    # where GatewaySync CRs exist. The controller discovers ServiceAccounts from
+    # gateway pods and binds only those SAs to the stoker-agent ClusterRole.
+    # Disable for environments that manage RBAC externally (e.g., GitOps-managed RBAC).
+    enabled: true
+
 # -- cert-manager integration for webhook TLS certificates.
 # Requires cert-manager to be installed in the cluster.
 certManager:

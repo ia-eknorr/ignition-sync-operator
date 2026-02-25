@@ -19,7 +19,7 @@ helm install stoker oci://ghcr.io/ia-eknorr/charts/stoker-operator
 ```
 
 See the post-install notes (`helm get notes <release>`) for next steps: creating
-secrets, applying CRs, labeling namespaces, and granting agent RBAC.
+secrets and applying CRs. Agent RBAC is managed automatically by default.
 
 ## Architecture
 
@@ -34,7 +34,7 @@ Two webhook-like features exist and are configured separately:
 
 | Feature | Values key | Description |
 |---------|------------|-------------|
-| Sidecar injection | `webhook.*` | MutatingWebhook that injects the stoker-agent into labeled pods |
+| Sidecar injection | `webhook.*` | MutatingWebhook that injects the stoker-agent into annotated pods |
 | Push receiver | `webhookReceiver.*` | HTTP endpoint that accepts GitHub/GitLab push events for immediate sync |
 
 ## Requirements
@@ -67,13 +67,16 @@ Kubernetes: `>= 1.28.0`
 | networkPolicy | object | `{"enabled":false}` | NetworkPolicy restricts ingress to the metrics port. Only allows traffic from namespaces labeled `metrics: enabled`. |
 | networkPolicy.enabled | bool | `false` | Create a NetworkPolicy for the controller. |
 | nodeSelector | object | `{}` | Node selector labels for scheduling the controller pod. Example:   nodeSelector:     kubernetes.io/os: linux |
+| rbac | object | `{"autoBindAgent":{"enabled":true}}` | RBAC configuration for the agent sidecar. |
+| rbac.autoBindAgent.enabled | bool | `true` | Automatically create RoleBindings for the agent sidecar in namespaces where GatewaySync CRs exist. The controller discovers ServiceAccounts from gateway pods and binds only those SAs to the stoker-agent ClusterRole. Disable for environments that manage RBAC externally (e.g., GitOps-managed RBAC). |
 | replicaCount | int | `1` | Number of controller replicas. Only one replica holds the leader lock at a time; additional replicas provide fast failover. |
 | resources | object | `{"limits":{"cpu":"500m","memory":"128Mi"},"requests":{"cpu":"10m","memory":"64Mi"}}` | CPU and memory resource requests/limits for the controller container. The controller runs git ls-remote (no clone) and watches CRs, so resource requirements are modest. |
 | serviceMonitor | object | `{"enabled":false}` | Prometheus ServiceMonitor for automatic scrape target discovery. Requires the prometheus-operator CRDs to be installed in the cluster. |
 | serviceMonitor.enabled | bool | `false` | Create a ServiceMonitor resource. |
 | tolerations | list | `[]` | Tolerations for scheduling the controller pod on tainted nodes. |
-| webhook | object | `{"enabled":true,"port":9443}` | Mutating webhook for sidecar injection. When enabled, pods with annotation `stoker.io/inject: "true"` in labeled namespaces get the stoker-agent sidecar injected automatically. |
+| webhook | object | `{"enabled":true,"namespaceSelector":{"requireLabel":false},"port":9443}` | Mutating webhook for sidecar injection. When enabled, pods with annotation `stoker.io/inject: "true"` get the stoker-agent sidecar injected automatically. By default, injection works in all namespaces except kube-system and kube-node-lease. |
 | webhook.enabled | bool | `true` | Enable the MutatingWebhookConfiguration and webhook Service. |
+| webhook.namespaceSelector.requireLabel | bool | `false` | Require the stoker.io/injection=enabled label on namespaces for sidecar injection. When false (default), the webhook intercepts pod creates in all namespaces except kube-system and kube-node-lease. Enable for regulated environments that require explicit namespace opt-in. |
 | webhook.port | int | `9443` | Webhook server port on the controller container. |
 | webhookReceiver | object | `{"hmac":{"secret":"","secretRef":{"key":"webhook-secret","name":""}},"port":9444}` | Git webhook receiver for push-event-driven sync. |
 | webhookReceiver.hmac | object | `{"secret":"","secretRef":{"key":"webhook-secret","name":""}}` | HMAC secret for validating webhook signatures (X-Hub-Signature-256). Provide either a literal value or a reference to an existing Secret. |

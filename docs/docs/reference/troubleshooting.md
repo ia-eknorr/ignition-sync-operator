@@ -43,9 +43,14 @@ description: Common issues, debug commands, and FAQ.
    ```bash
    kubectl logs <pod> -n <ns> -c stoker-agent --tail=50
    ```
-2. **RBAC** — ensure the agent's service account has the required RoleBinding:
+2. **RBAC** — verify the agent RoleBinding exists (created automatically when `rbac.autoBindAgent.enabled=true`):
    ```bash
-   kubectl get rolebinding -n <ns> | grep stoker
+   kubectl get rolebinding -n <ns> | grep stoker-agent
+   ```
+   If auto-RBAC is disabled, create the binding manually:
+   ```bash
+   kubectl create rolebinding stoker-agent -n <ns> \
+     --clusterrole=stoker-agent --serviceaccount=<ns>:<service-account>
    ```
 3. **Secret mounts** — if using private repos, verify the git credentials secret exists:
    ```bash

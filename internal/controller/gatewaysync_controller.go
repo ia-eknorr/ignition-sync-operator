@@ -11,6 +11,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -39,9 +40,10 @@ const (
 // GatewaySyncReconciler reconciles a GatewaySync object.
 type GatewaySyncReconciler struct {
 	client.Client
-	Scheme    *runtime.Scheme
-	GitClient git.Client
-	Recorder  record.EventRecorder
+	Scheme            *runtime.Scheme
+	GitClient         git.Client
+	Recorder          record.EventRecorder
+	AutoBindAgentRBAC bool
 }
 
 // +kubebuilder:rbac:groups=stoker.io,resources=gatewaysyncs,verbs=get;list;watch;update;patch
@@ -51,6 +53,8 @@ type GatewaySyncReconciler struct {
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;create;update;delete;watch
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=bind,resourceNames=stoker-agent
 
 func (r *GatewaySyncReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -167,6 +171,15 @@ func (r *GatewaySyncReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if len(gateways) != prevGatewayCount {
 			r.Recorder.Eventf(&gs, corev1.EventTypeNormal, "GatewaysDiscovered",
 				"Discovered %d gateway(s) (was %d)", len(gateways), prevGatewayCount)
+		}
+	}
+
+	// --- Step 5.5: Auto-RBAC ---
+
+	if r.AutoBindAgentRBAC {
+		if err := r.ensureAgentRoleBinding(ctx, &gs); err != nil {
+			log.Error(err, "failed to ensure agent RoleBinding")
+			r.Recorder.Eventf(&gs, corev1.EventTypeWarning, "RBACError", "Failed to create agent RoleBinding: %v", err)
 		}
 	}
 
@@ -561,6 +574,7 @@ func (r *GatewaySyncReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&stokerv1alpha1.GatewaySync{}, builder.WithPredicates(annotationOrGenerationChanged{})).
 		Owns(&corev1.ConfigMap{}).
+		Owns(&rbacv1.RoleBinding{}).
 		Watches(&corev1.Pod{}, handler.EnqueueRequestsFromMapFunc(r.findGatewaySyncForPod)).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 5}).
 		Named("gatewaysync").

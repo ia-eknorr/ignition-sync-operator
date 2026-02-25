@@ -549,6 +549,10 @@ spec:
                       items:
                         type: string
                       type: array
+                    serviceAccountName:
+                      description: serviceAccountName is the ServiceAccount used by
+                        the gateway pod.
+                      type: string
                     syncStatus:
                       description: syncStatus is the current sync state of this gateway.
                       enum:

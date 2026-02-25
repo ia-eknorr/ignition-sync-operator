@@ -53,13 +53,22 @@ Then label each namespace where injection should be allowed:
 kubectl label namespace <your-namespace> stoker.io/injection=enabled
 ```
 
-## Grant agent RBAC
+## Agent RBAC
 
-The Helm chart installs a `ClusterRole` for the agent. Bind it to the service account used by your gateway pods:
+The agent sidecar needs permission to read GatewaySync CRs and write status ConfigMaps. By default, the controller automatically creates a `RoleBinding` in each namespace where a GatewaySync CR exists, binding the discovered gateway ServiceAccounts to the `stoker-agent` ClusterRole. No manual RBAC setup is needed.
+
+To manage agent RBAC externally (e.g., in GitOps-managed environments), disable auto-binding:
+
+```bash
+helm upgrade stoker oci://ghcr.io/ia-eknorr/charts/stoker-operator \
+  -n stoker-system --set rbac.autoBindAgent.enabled=false
+```
+
+Then create RoleBindings manually in each namespace:
 
 ```bash
 kubectl create rolebinding stoker-agent -n <your-namespace> \
-  --clusterrole=stoker-stoker-operator-agent \
+  --clusterrole=stoker-agent \
   --serviceaccount=<your-namespace>:<service-account>
 ```
 

@@ -49,10 +49,10 @@ Stoker brings GitOps to Ignition. You commit configuration to a Git repository a
 ```
 
 1. The **controller** watches `GatewaySync` CRs, resolves Git refs via `ls-remote` (no clone), and discovers gateway pods by annotation
-2. A **mutating webhook** injects the agent as a native sidecar when pods are created in labeled namespaces
+2. A **mutating webhook** injects the agent as a native sidecar when annotated pods are created
 3. The **agent** reads the metadata ConfigMap, clones the repo, syncs files to the gateway's data directory, and calls the Ignition scan API to reload
 
 ## Next steps
 
 - [Architecture](./architecture.md) — deep dive into the controller, webhook, and agent
-- [Quickstart](../quickstart.md) — get a gateway syncing from Git in 7 steps
+- [Quickstart](../quickstart.md) — get a gateway syncing from Git in 5 steps

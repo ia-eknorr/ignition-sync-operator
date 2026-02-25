@@ -275,7 +275,7 @@ Gateways are discovered by pod annotations. These are typically set via `podAnno
 |---|---|---|
 | `stoker.io/inject` | Yes | Set to `"true"` to trigger sidecar injection |
 | `stoker.io/cr-name` | Yes | Name of the GatewaySync CR to sync from |
-| `stoker.io/profile` | Yes | Name of the sync profile to use (from `spec.sync.profiles`) |
+| `stoker.io/profile` | No | Name of the sync profile to use (from `spec.sync.profiles`). Falls back to `default` if unset. |
 | `stoker.io/gateway-name` | No | Override gateway identity (defaults to pod label `app.kubernetes.io/name`) |
 
 ## Status
@@ -319,5 +319,7 @@ The `AllGatewaysSynced` condition is `True` only when all discovered gateways re
 | Type | Description |
 |------|-------------|
 | `RefResolved` | The controller successfully resolved the git ref to a commit SHA |
+| `ProfilesValid` | All embedded profiles pass validation (no path traversal, no absolute paths) |
 | `AllGatewaysSynced` | All discovered gateway pods report `Synced` status |
-| `Ready` | Both `RefResolved` and `AllGatewaysSynced` are `True` |
+| `SidecarInjected` | All discovered gateway pods have the stoker-agent sidecar container |
+| `Ready` | `RefResolved`, `ProfilesValid`, and `AllGatewaysSynced` are all `True` |

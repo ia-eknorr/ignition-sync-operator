@@ -16,7 +16,7 @@ These annotations are set on gateway pods, typically via `podAnnotations` in the
 |------------|-------|----------|-------------|
 | `stoker.io/inject` | `"true"` | Yes | Triggers sidecar injection by the mutating webhook |
 | `stoker.io/cr-name` | string | No | Name of the GatewaySync CR to sync from. Auto-derived if exactly one CR exists in the namespace. |
-| `stoker.io/profile` | string | Yes | Sync profile name from `spec.sync.profiles`. If unset, the `default` profile is used. |
+| `stoker.io/profile` | string | No | Sync profile name from `spec.sync.profiles`. Falls back to the `default` profile if unset. |
 | `stoker.io/gateway-name` | string | No | Override gateway identity. Defaults to the pod's `app.kubernetes.io/name` label. |
 | `stoker.io/agent-image` | `"repo:tag"` | No | Override the agent sidecar image for this pod. For debugging use. |
 
