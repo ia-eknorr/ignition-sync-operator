@@ -16,9 +16,9 @@ if (typeof window !== "undefined") {
 
     e.preventDefault();
 
-    const input = document.querySelector(".dsla-search-wrapper .aa-Input");
-    if (input) {
-      input.focus();
+    const btn = document.querySelector(".dsla-search-wrapper button");
+    if (btn) {
+      btn.click();
     }
   });
 }
