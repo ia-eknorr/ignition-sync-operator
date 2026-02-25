@@ -75,6 +75,11 @@ type GitHubAppAuth struct {
 
 	// privateKeySecretRef points to the Secret containing the App's private key PEM.
 	PrivateKeySecretRef SecretKeyRef `json:"privateKeySecretRef"`
+
+	// apiBaseURL is the GitHub API base URL. Defaults to https://api.github.com.
+	// Set this for GitHub Enterprise Server (e.g. https://github.example.com/api/v3).
+	// +optional
+	APIBaseURL string `json:"apiBaseURL,omitempty"`
 }
 
 // TokenAuth references a token stored in a Secret.

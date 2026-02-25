@@ -332,6 +332,57 @@ func TestInject_TokenAuth(t *testing.T) {
 	assertVolumeSecret(t, patched, volumeGitCredentials, "git-token-secret")
 }
 
+func TestInject_GitHubAppAuth_NoCredentialVolume(t *testing.T) {
+	gs := testGatewaySync()
+	gs.Spec.Git.Auth = &stokerv1alpha1.GitAuthSpec{
+		GitHubApp: &stokerv1alpha1.GitHubAppAuth{
+			AppID:          12345,
+			InstallationID: 67890,
+			PrivateKeySecretRef: stokerv1alpha1.SecretKeyRef{
+				Name: "github-app-pem",
+				Key:  "private-key.pem",
+			},
+		},
+	}
+	injector := newInjector(gs)
+
+	pod := basePod(map[string]string{
+		stokertypes.AnnotationInject:  "true",
+		stokertypes.AnnotationCRName:  "my-sync",
+		stokertypes.AnnotationProfile: "my-profile",
+	})
+	resp := injector.Handle(context.Background(), makeAdmissionRequest(pod))
+
+	if !resp.Allowed {
+		t.Fatalf("expected allowed, got: %s", resp.Result.Message)
+	}
+
+	patched := injectDirect(t, pod, gs)
+	agent := findInitContainer(patched)
+	if agent == nil {
+		t.Fatal("stoker-agent not found")
+	}
+
+	// GitHubApp auth: no git-credentials volume or mount (PEM stays in controller)
+	for _, v := range patched.Spec.Volumes {
+		if v.Name == volumeGitCredentials {
+			t.Error("git-credentials volume should not be present for GitHubApp auth")
+		}
+	}
+	for _, vm := range agent.VolumeMounts {
+		if vm.Name == volumeGitCredentials {
+			t.Error("git-credentials volume mount should not be present for GitHubApp auth")
+		}
+	}
+
+	// No GIT_TOKEN_FILE or GIT_SSH_KEY_FILE env vars
+	for _, env := range agent.Env {
+		if env.Name == "GIT_TOKEN_FILE" || env.Name == "GIT_SSH_KEY_FILE" {
+			t.Errorf("unexpected env var %s for GitHubApp auth", env.Name)
+		}
+	}
+}
+
 func TestInject_AgentImageOverrideViaAnnotation(t *testing.T) {
 	gs := testGatewaySync()
 	injector := newInjector(gs)

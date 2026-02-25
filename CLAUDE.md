@@ -82,7 +82,7 @@ HTTP server on port 9444 (`POST /webhook/{namespace}/{crName}`). Auto-detects pa
 - **Finalizer:** `stoker.io/finalizer`
 - **Status patches:** Uses `client.MergeFrom()` to avoid resourceVersion conflicts
 - **Predicate filter:** Controller watches GatewaySync CRs with a custom predicate that passes on generation change OR annotation change (for webhook-triggered reconciles)
-- **Git auth:** Controller resolves secrets for `ls-remote`; agent reads from hardcoded mount paths `/etc/stoker/git-credentials` and `/etc/stoker/api-key`
+- **Git auth:** Controller resolves secrets for `ls-remote`; agent reads from hardcoded mount paths `/etc/stoker/git-credentials` and `/etc/stoker/api-key`. For GitHub App auth, the controller exchanges the PEM for an installation token, caches it, and writes it to the metadata ConfigMap — agent reads the token from the ConfigMap (PEM never mounted into agent pods).
 
 ## Code Generation Workflow
 

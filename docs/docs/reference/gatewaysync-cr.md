@@ -113,14 +113,18 @@ auth:
     privateKeySecretRef:
       name: github-app-key
       key: private-key.pem
+    apiBaseURL: "https://github.example.com/api/v3"  # optional, for GitHub Enterprise
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `githubApp.appId` | integer | Yes | GitHub App ID |
-| `githubApp.installationId` | integer | Yes | GitHub App installation ID |
-| `githubApp.privateKeySecretRef.name` | string | Yes | Name of the Secret containing the PEM key |
-| `githubApp.privateKeySecretRef.key` | string | Yes | Key within the Secret |
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `githubApp.appId` | integer | Yes | — | GitHub App ID |
+| `githubApp.installationId` | integer | Yes | — | GitHub App installation ID |
+| `githubApp.privateKeySecretRef.name` | string | Yes | — | Name of the Secret containing the PEM key |
+| `githubApp.privateKeySecretRef.key` | string | Yes | — | Key within the Secret |
+| `githubApp.apiBaseURL` | string | No | `https://api.github.com` | GitHub API base URL (set for GitHub Enterprise Server) |
+
+The controller exchanges the PEM private key for a short-lived installation access token (1-hour expiry), caches it with a 5-minute pre-expiry refresh, and delivers it to the agent via the metadata ConfigMap. The PEM key never leaves the controller namespace — agent pods do not mount the PEM secret.
 
 ## `spec.polling`
 

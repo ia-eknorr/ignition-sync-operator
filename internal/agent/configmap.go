@@ -34,6 +34,8 @@ type Metadata struct {
 	Paused          string
 	ExcludePatterns string
 	Profiles        string
+	AuthType        string
+	GitToken        string
 }
 
 // ReadMetadataConfigMap reads the metadata ConfigMap and returns its data.
@@ -60,6 +62,8 @@ func ReadMetadataConfigMap(ctx context.Context, c client.Client, namespace, crNa
 		Paused:          cm.Data["paused"],
 		ExcludePatterns: cm.Data["excludePatterns"],
 		Profiles:        cm.Data["profiles"],
+		AuthType:        cm.Data["authType"],
+		GitToken:        cm.Data["gitToken"],
 	}, nil
 }
 

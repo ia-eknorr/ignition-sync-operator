@@ -106,8 +106,8 @@ func (a *Agent) Run(ctx context.Context) error {
 	// Cache GatewaySync CR reference for event emission.
 	a.fetchCRRef(ctx)
 
-	// Resolve git auth from mounted files.
-	auth := a.resolveFileAuth()
+	// Resolve git auth from mounted files or metadata ConfigMap (GitHub App).
+	auth := a.resolveAuth(meta)
 
 	// Use git URL from metadata ConfigMap, fall back to empty (shouldn't happen).
 	gitURL := meta.GitURL
@@ -240,6 +240,14 @@ func (a *Agent) handleSyncTrigger(ctx context.Context, gitURL string, auth trans
 	if meta.Paused == "true" {
 		log.Info("CR is paused, skipping sync")
 		return
+	}
+
+	// Refresh auth from metadata if GitHub App token was updated by controller.
+	if meta.GitToken != "" {
+		auth = &gogithttp.BasicAuth{
+			Username: "x-access-token",
+			Password: meta.GitToken,
+		}
 	}
 
 	// Check if commit changed.
@@ -622,6 +630,25 @@ func (a *Agent) fetchCRRef(ctx context.Context) {
 // isForbidden checks if an error (possibly wrapped) is a Kubernetes 403 Forbidden.
 func isForbidden(err error) bool {
 	return apierrors.IsForbidden(err) || apierrors.ReasonForError(err) == metav1.StatusReasonForbidden
+}
+
+// resolveAuth builds a go-git transport.AuthMethod from mounted credential files
+// or from the metadata ConfigMap (GitHub App tokens delivered by controller).
+func (a *Agent) resolveAuth(meta *Metadata) transport.AuthMethod {
+	// File-based auth takes priority (SSH key, token).
+	if auth := a.resolveFileAuth(); auth != nil {
+		return auth
+	}
+
+	// GitHub App: token delivered via metadata ConfigMap.
+	if meta != nil && meta.GitToken != "" {
+		return &gogithttp.BasicAuth{
+			Username: "x-access-token",
+			Password: meta.GitToken,
+		}
+	}
+
+	return nil
 }
 
 // resolveFileAuth builds a go-git transport.AuthMethod from mounted credential files.

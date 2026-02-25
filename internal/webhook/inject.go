@@ -403,14 +403,26 @@ func gitCredentialSecretName(gs *stokerv1alpha1.GatewaySync) string {
 	return "git-credentials"
 }
 
+// needsGitCredentialVolume returns true if the auth type requires a mounted Secret.
+// GitHub App tokens are delivered via ConfigMap, so no Secret mount is needed.
+func needsGitCredentialVolume(gs *stokerv1alpha1.GatewaySync) bool {
+	if gs.Spec.Git.Auth == nil {
+		return false
+	}
+	if gs.Spec.Git.Auth.GitHubApp != nil {
+		return false
+	}
+	return true
+}
+
 // agentVolumeMounts returns the volume mounts for the agent container.
-// The git-credentials mount is only included when auth is configured.
+// The git-credentials mount is only included for SSH/token auth (not GitHubApp).
 func agentVolumeMounts(gs *stokerv1alpha1.GatewaySync) []corev1.VolumeMount {
 	mounts := []corev1.VolumeMount{
 		{Name: volumeSyncRepo, MountPath: mountRepo},
 		{Name: volumeAPIKey, MountPath: mountAPIKey, ReadOnly: true},
 	}
-	if gs.Spec.Git.Auth != nil {
+	if needsGitCredentialVolume(gs) {
 		mounts = append(mounts, corev1.VolumeMount{
 			Name: volumeGitCredentials, MountPath: mountGitCredentials, ReadOnly: true,
 		})
@@ -439,7 +451,7 @@ func agentVolumes(gs *stokerv1alpha1.GatewaySync) []corev1.Volume {
 			},
 		},
 	}
-	if gs.Spec.Git.Auth != nil {
+	if needsGitCredentialVolume(gs) {
 		vols = append(vols, corev1.Volume{
 			Name: volumeGitCredentials,
 			VolumeSource: corev1.VolumeSource{
