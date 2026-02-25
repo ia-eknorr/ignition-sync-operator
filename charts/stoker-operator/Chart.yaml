@@ -6,7 +6,7 @@ version: 0.1.0
 appVersion: "0.1.0"
 kubeVersion: ">= 1.28.0"
 home: https://github.com/ia-eknorr/stoker-operator
-icon: https://raw.githubusercontent.com/ia-eknorr/stoker-operator/main/assets/logo.png
+icon: https://raw.githubusercontent.com/ia-eknorr/stoker-operator/main/docs/static/img/logo.png
 keywords:
   - ignition
   - stoker
