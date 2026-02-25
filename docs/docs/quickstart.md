@@ -23,12 +23,7 @@ kubectl cluster-info
 ```
 :::
 
-If cert-manager isn't installed yet:
-
-```bash
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.2/cert-manager.yaml
-kubectl wait --for=condition=Available deployment --all -n cert-manager --timeout=120s
-```
+If cert-manager isn't installed yet, follow the [default static install](https://cert-manager.io/docs/installation/#default-static-install) or any method from the [cert-manager docs](https://cert-manager.io/docs/installation/).
 
 ## 1. Install the Stoker operator
 

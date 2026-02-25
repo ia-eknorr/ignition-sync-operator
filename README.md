@@ -30,7 +30,7 @@ Stoker tends your Ignition gateways, continuously feeding them configuration fro
 
 ```bash
 # Install cert-manager (required for webhook TLS)
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.2/cert-manager.yaml
+# https://cert-manager.io/docs/installation/
 
 # Install the operator
 helm install stoker oci://ghcr.io/ia-eknorr/charts/stoker-operator \
