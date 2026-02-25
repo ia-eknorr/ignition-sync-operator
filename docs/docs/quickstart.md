@@ -183,7 +183,7 @@ kubectl get events -n quickstart --sort-by=.lastTimestamp | tail -15
 kubectl get gs -n quickstart
 ```
 
-After about 60 seconds you should see:
+After 1-2 minutes you should see:
 
 ```text
 NAME         REF    COMMIT    PROFILES   SYNCED   GATEWAYS             READY   AGE
@@ -239,7 +239,7 @@ Try changing the git ref to a specific tag:
 
 ```bash
 kubectl patch gatewaysync quickstart -n quickstart --type=merge \
-  -p '{"spec":{"git":{"ref":"v0.1.0"}}}'
+  -p '{"spec":{"git":{"ref":"0.2.0"}}}'
 ```
 
 Watch the agent pick up the change:
