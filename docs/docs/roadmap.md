@@ -8,23 +8,20 @@ description: Planned features and milestones for Stoker.
 
 ## v0.1.0 — MVP ✓
 
-The minimum viable release: controller + agent sidecar can sync Ignition gateway configuration from a Git repository.
+Controller + agent sidecar for Git-driven Ignition gateway configuration sync. GatewaySync CRD, mutating webhook for sidecar injection, webhook receiver, designer session awareness, Helm chart with cert-manager TLS.
 
-- GatewaySync CRD with git ref resolution via `ls-remote`
-- Embedded sync profiles with declarative file mappings
-- Agent sidecar with sync engine (clone, staging, merge, orphan cleanup)
-- MutatingWebhook for automatic sidecar injection
-- Gateway discovery via pod annotations
-- Status aggregation from agent ConfigMaps
-- Webhook receiver for push-event-driven sync (HMAC validation)
-- Post-sync verification via Ignition scan API
-- Designer session awareness (proceed, wait, fail policies)
-- CI/CD: release workflow (Docker images + Helm chart OCI push)
-- Helm chart with cert-manager TLS, agent image configuration, agent RBAC
-- Agent health endpoint (liveness/readiness for sidecar)
-- E2E test suite (Chainsaw + kind)
+## v0.2.0 — Stability ✓
 
-## v0.2.0 — Reliability
+CRD consolidation, bug fixes, and developer experience.
+
+- Merged `SyncProfile` into `GatewaySync` CRD as embedded profiles
+- Automatic agent RBAC binding via controller
+- Namespace injection label optional (default off)
+- 5 bug fixes across controller, agent, and webhook
+- Documentation site with quickstart, guides, and CRD reference
+- Chainsaw e2e test suite replacing shell functional tests
+
+## v0.3.0 — Reliability
 
 Focus on observability, conflict handling, and recovery.
 
@@ -35,7 +32,7 @@ Focus on observability, conflict handling, and recovery.
 - K8s informer-based ConfigMap watch (replace polling with scoped informer)
 - In-flight sync completion deadline on shutdown
 
-## v0.3.0 — Observability & Conditions
+## v0.4.0 — Observability & Conditions
 
 Focus on condition types, multi-tenancy, and dependency ordering.
 
@@ -44,10 +41,9 @@ Focus on condition types, multi-tenancy, and dependency ordering.
 - `DependenciesMet` condition enforcement for `dependsOn` profiles
 - Downward API annotation reader (enables ref-override without pod restart)
 - Per-gateway sync status conditions on the GatewaySync CR
-- Namespace-scoped agent RBAC automation
 - Resource quotas and rate limiting for concurrent syncs
 
-## v0.4.0+ — Enterprise & Future
+## v0.5.0+ — Enterprise & Future
 
 - Rollback support: snapshot before sync, revert on failure
 - Bidirectional sync: watch gateway for designer changes, push back to git

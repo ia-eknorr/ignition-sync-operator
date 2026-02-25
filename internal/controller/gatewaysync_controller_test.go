@@ -587,7 +587,7 @@ var _ = Describe("GatewaySync Controller", func() {
 				SyncedRef:        "main",
 				LastSyncTime:     "2026-01-15T10:30:00Z",
 				LastSyncDuration: "2.5s",
-				AgentVersion:     "0.1.0",
+				AgentVersion:     "0.2.0",
 				FilesChanged:     3,
 				ProjectsSynced:   []string{"MyProject"},
 			}
@@ -615,7 +615,7 @@ var _ = Describe("GatewaySync Controller", func() {
 			gw := cr.Status.DiscoveredGateways[0]
 			Expect(gw.SyncStatus).To(Equal(stokertypes.SyncStatusSynced))
 			Expect(gw.SyncedCommit).To(Equal("def456"))
-			Expect(gw.AgentVersion).To(Equal("0.1.0"))
+			Expect(gw.AgentVersion).To(Equal("0.2.0"))
 			Expect(gw.FilesChanged).To(Equal(int32(3)))
 			Expect(gw.ProjectsSynced).To(Equal([]string{"MyProject"}))
 			Expect(gw.LastSyncTime).NotTo(BeNil())

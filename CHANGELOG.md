@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.2.0] - 2026-02-24
+
+### Breaking Changes
+
+- **Merged `SyncProfile` into `GatewaySync` CRD** — sync profiles are now embedded at `spec.sync.profiles` instead of a separate CRD; `spec.sync.defaults` provides inheritable baseline settings (#51)
+- Removed `deploymentMode` field from sync profile spec (#48)
+- Namespace injection label (`stoker.io/injection=enabled`) now optional, disabled by default — injection requires only the `stoker.io/inject: "true"` pod annotation (#64)
+
+### Added
+
+- **Automatic agent RBAC** — controller creates Role/RoleBinding for the agent ServiceAccount in each target namespace (#68)
+- **Chainsaw e2e test suite** replacing shell functional tests with declarative Kyverno Chainsaw tests against a real kind cluster (#47, #50)
+- **Documentation site** — Docusaurus-based docs with quickstart, guides (multi-gateway, webhook sync, git auth), and CRD reference (#41, #63, #67)
+
+### Fixed
+
+- Controller defers secret validation until after ref resolution, avoiding false errors on public repos (#58)
+- Dry-run mode now reports `Synced` status on success instead of staying `Pending` (#59)
+- Webhook writes discovered `cr-name` annotation back to pod spec (#60)
+- Agent respects profile-level `syncPeriod` from metadata ConfigMap (#61)
+- Suppress `NotFound` error log on CR deletion race (#62)
+
+### Changed
+
+- Quickstart: cert-manager moved to prerequisites, added example repo context (#71)
+- Cleaned up CI workflow names and e2e trigger strategy (#66)
+- Removed stale design docs, scripts, and assets (#70)
+
 ## [v0.1.2] - 2026-02-22
 
 ### Fixed
@@ -35,6 +63,7 @@ Initial release — controller + agent sidecar for Git-driven Ignition gateway c
 - **Functional test suite** with phased kind cluster tests (phases 02-09)
 - Unit tests with envtest for controller and syncengine
 
+[v0.2.0]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.2.0
 [v0.1.2]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.1.2
 [v0.1.1]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.1.1
 [v0.1.0]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.1.0
