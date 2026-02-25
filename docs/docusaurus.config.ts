@@ -29,6 +29,8 @@ const config: Config = {
     ],
   ],
 
+  clientModules: ["./src/searchShortcut.js"],
+
   i18n: {
     defaultLocale: "en",
     locales: ["en"],
