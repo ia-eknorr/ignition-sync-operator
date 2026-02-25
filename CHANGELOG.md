@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.3.0] - 2026-02-25
+
+### Breaking Changes
+
+- **Renamed `gateway.apiKeySecretRef`** to `gateway.api.secretName` / `gateway.api.secretKey` — `secretKey` defaults to `"apiKey"` when omitted, reducing boilerplate (#79)
+- Gateway port default changed from `8043` to `8088` and TLS default changed from `true` to `false`, matching Ignition Helm chart defaults (#76)
+- Webhook receiver disabled by default — enable via `webhookReceiver.enabled: true` in Helm values (#76)
+
+### Added
+
+- **GitHub App authentication** — controller exchanges PEM for short-lived installation tokens with per-CR cache and 5-minute pre-expiry refresh; PEM never leaves controller namespace; supports GitHub Enterprise Server via `apiBaseURL` field (#76)
+
 ## [v0.2.0] - 2026-02-24
 
 ### Breaking Changes
@@ -63,6 +75,7 @@ Initial release — controller + agent sidecar for Git-driven Ignition gateway c
 - **Functional test suite** with phased kind cluster tests (phases 02-09)
 - Unit tests with envtest for controller and syncengine
 
+[v0.3.0]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.3.0
 [v0.2.0]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.2.0
 [v0.1.2]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.1.2
 [v0.1.1]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.1.1

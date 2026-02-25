@@ -20,9 +20,17 @@ CRD consolidation, bug fixes, and developer experience.
 - 5 bug fixes across controller, agent, and webhook
 - Documentation site with quickstart, guides, and CRD reference
 - Chainsaw e2e test suite replacing shell functional tests
-- GitHub App authentication with controller-mediated token exchange, per-CR cache, and GitHub Enterprise Server support
 
-## v0.3.0 — Reliability
+## v0.3.0 — Auth & API Ergonomics ✓
+
+GitHub App authentication and CRD cleanup.
+
+- GitHub App authentication with controller-mediated token exchange, per-CR cache with 5-minute pre-expiry refresh, and GitHub Enterprise Server support via `apiBaseURL`
+- **Breaking:** renamed `gateway.apiKeySecretRef` to `gateway.api.secretName` / `gateway.api.secretKey` with `secretKey` defaulting to `"apiKey"` when omitted
+- Fixed gateway port/TLS defaults to `8088`/`false` (matching Ignition Helm chart defaults)
+- Webhook receiver disabled by default (enable via Helm value)
+
+## v0.4.0 — Reliability
 
 Focus on observability, conflict handling, and recovery.
 
@@ -33,7 +41,7 @@ Focus on observability, conflict handling, and recovery.
 - K8s informer-based ConfigMap watch (replace polling with scoped informer)
 - In-flight sync completion deadline on shutdown
 
-## v0.4.0 — Observability & Conditions
+## v0.5.0 — Observability & Conditions
 
 Focus on condition types, multi-tenancy, and dependency ordering.
 
@@ -44,7 +52,7 @@ Focus on condition types, multi-tenancy, and dependency ordering.
 - Per-gateway sync status conditions on the GatewaySync CR
 - Resource quotas and rate limiting for concurrent syncs
 
-## v0.5.0+ — Enterprise & Future
+## v0.6.0+ — Enterprise & Future
 
 - Rollback support: snapshot before sync, revert on failure
 - Bidirectional sync: watch gateway for designer changes, push back to git
