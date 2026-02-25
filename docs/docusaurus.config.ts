@@ -21,7 +21,13 @@ const config: Config = {
       onBrokenMarkdownLinks: "warn",
     },
   },
-  themes: ["@docusaurus/theme-mermaid"],
+  themes: [
+    "@docusaurus/theme-mermaid",
+    [
+      "@cmfcmf/docusaurus-search-local",
+      { indexBlog: false },
+    ],
+  ],
 
   i18n: {
     defaultLocale: "en",

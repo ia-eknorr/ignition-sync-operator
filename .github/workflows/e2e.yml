@@ -1,25 +1,19 @@
-name: E2E Tests
+name: E2E
 
 on:
   push:
     branches: [main]
-  pull_request:
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - 'LICENSE'
   issue_comment:
     types: [created]
   workflow_dispatch:
 
 jobs:
   e2e:
-    name: Chainsaw E2E
+    name: e2e-tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
     if: >-
       github.event_name == 'push' ||
-      github.event_name == 'pull_request' ||
       github.event_name == 'workflow_dispatch' ||
       (
         github.event_name == 'issue_comment' &&

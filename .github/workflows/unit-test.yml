@@ -1,4 +1,4 @@
-name: Tests
+name: Unit Test
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   test:
-    name: Unit Tests
+    name: unit-tests
     runs-on: ubuntu-latest
     steps:
       - name: Clone the code

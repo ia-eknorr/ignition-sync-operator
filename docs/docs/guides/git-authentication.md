@@ -4,9 +4,15 @@ title: Git Authentication
 description: Configure token, SSH, or GitHub App authentication for private repositories.
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 # Git Authentication
 
 Stoker supports three authentication methods for private Git repositories. Public repositories need no auth configuration — just set `spec.git.repo` and `spec.git.ref`.
+
+<Tabs>
+<TabItem value="token" label="Token" default>
 
 ## Token authentication
 
@@ -45,6 +51,9 @@ spec:
 GitHub fine-grained tokens let you scope access to a single repository with read-only permissions. This is the recommended approach for production.
 :::
 
+</TabItem>
+<TabItem value="ssh" label="SSH Key">
+
 ## SSH key authentication
 
 Use an SSH key for repositories accessed via `git@` URLs.
@@ -79,6 +88,9 @@ spec:
 ```
 
 **When to use:** Organizations that prefer SSH-based access or need deploy keys scoped to individual repositories.
+
+</TabItem>
+<TabItem value="github-app" label="GitHub App">
 
 ## GitHub App authentication
 
@@ -115,6 +127,9 @@ spec:
 ```
 
 **When to use:** Organizations managing many repos, where individual tokens are impractical or against policy. App tokens auto-rotate and provide audit trails.
+
+</TabItem>
+</Tabs>
 
 ## Auth method comparison
 
