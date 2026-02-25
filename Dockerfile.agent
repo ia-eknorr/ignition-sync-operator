@@ -10,7 +10,10 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o agent cmd/agent/main.go
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
+    go build -a -ldflags "-X github.com/ia-eknorr/stoker-operator/internal/agent.agentVersion=${VERSION}" \
+    -o agent cmd/agent/main.go
 
 # Distroless nonroot — no shell, no package manager, runs as uid 65534
 FROM gcr.io/distroless/static-debian12:nonroot

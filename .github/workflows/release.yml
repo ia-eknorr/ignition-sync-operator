@@ -55,6 +55,7 @@ jobs:
           context: .
           file: ${{ matrix.file }}
           platforms: ${{ matrix.platform }}
+          build-args: VERSION=${{ steps.version.outputs.version }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image_name }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image_name }}:buildcache-${{ matrix.arch }}
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image_name }}:buildcache-${{ matrix.arch }},mode=max

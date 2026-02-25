@@ -27,7 +27,8 @@ import (
 	stokertypes "github.com/ia-eknorr/stoker-operator/pkg/types"
 )
 
-const agentVersion = "0.2.0"
+// agentVersion is set at build time via ldflags. Falls back to "dev" for local builds.
+var agentVersion = "dev"
 
 // gatewaySyncGVK is the GVK for the GatewaySync CR, used with unstructured client.
 var gatewaySyncGVK = schema.GroupVersionKind{
