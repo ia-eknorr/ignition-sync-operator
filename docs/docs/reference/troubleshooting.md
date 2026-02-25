@@ -71,11 +71,12 @@ description: Common issues, debug commands, and FAQ.
 - **Auth failure** — the token/SSH key/GitHub App credentials are wrong or expired
 - **Network access** — the controller pod can't reach the git host (check network policies)
 - **Ref doesn't exist** — the specified branch or tag doesn't exist in the remote
+- **GitHub App exchange failed** — if the condition reason is `GitHubAppExchangeFailed`, check that the App ID, Installation ID, and PEM key are correct. Verify the app has **Contents: Read** permission and is installed on the target repository. Clock skew >60s between the controller and GitHub can also cause JWT validation failures.
 
 Check controller logs for the specific error:
 
 ```bash
-kubectl logs -n stoker-system deploy/stoker-stoker-operator-controller-manager | grep "ls-remote"
+kubectl logs -n stoker-system deploy/stoker-stoker-operator-controller-manager | grep "ls-remote\|GitHub App"
 ```
 
 ### AllGatewaysSynced=False

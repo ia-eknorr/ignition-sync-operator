@@ -101,8 +101,14 @@ certManager:
   enabled: true
 
 # -- Git webhook receiver for push-event-driven sync.
+# Disabled by default — enable when you want push-event-driven syncs.
+# When disabled, the controller does not start the HTTP receiver server.
+# When enabled without HMAC, any network client that can reach the Service
+# can trigger a reconcile. Configure hmac for production use.
 webhookReceiver:
-  # -- Port for the inbound git webhook receiver. Set to 0 to disable.
+  # -- Enable the webhook receiver HTTP server and its Service.
+  enabled: false
+  # -- Port for the inbound git webhook receiver.
   port: 9444
   # -- HMAC secret for validating webhook signatures (X-Hub-Signature-256).
   # Provide either a literal value or a reference to an existing Secret.

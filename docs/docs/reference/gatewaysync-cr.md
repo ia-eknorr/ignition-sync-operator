@@ -28,8 +28,8 @@ spec:
     enabled: true
     interval: "60s"
   gateway:
-    port: 8043
-    tls: true
+    port: 8088
+    tls: false
     apiKeySecretRef:
       name: gw-api-key
       key: apiKey
@@ -113,14 +113,18 @@ auth:
     privateKeySecretRef:
       name: github-app-key
       key: private-key.pem
+    apiBaseURL: "https://github.example.com/api/v3"  # optional, for GitHub Enterprise
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `githubApp.appId` | integer | Yes | GitHub App ID |
-| `githubApp.installationId` | integer | Yes | GitHub App installation ID |
-| `githubApp.privateKeySecretRef.name` | string | Yes | Name of the Secret containing the PEM key |
-| `githubApp.privateKeySecretRef.key` | string | Yes | Key within the Secret |
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `githubApp.appId` | integer | Yes | — | GitHub App ID |
+| `githubApp.installationId` | integer | Yes | — | GitHub App installation ID |
+| `githubApp.privateKeySecretRef.name` | string | Yes | — | Name of the Secret containing the PEM key |
+| `githubApp.privateKeySecretRef.key` | string | Yes | — | Key within the Secret |
+| `githubApp.apiBaseURL` | string | No | `https://api.github.com` | GitHub API base URL (set for GitHub Enterprise Server) |
+
+The controller exchanges the PEM private key for a short-lived installation access token (1-hour expiry), caches it with a 5-minute pre-expiry refresh, and delivers it to the agent via the metadata ConfigMap. The PEM key never leaves the controller namespace — agent pods do not mount the PEM secret.
 
 ## `spec.polling`
 
@@ -137,8 +141,8 @@ If you configure a [webhook receiver](/reference/helm-values#push-receiver-webho
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `port` | int32 | No | `8043` | Ignition gateway API port |
-| `tls` | bool | No | `true` | Enable TLS for gateway API connections |
+| `port` | int32 | No | `8088` | Ignition gateway API port |
+| `tls` | bool | No | `false` | Enable TLS for gateway API connections |
 | `apiKeySecretRef.name` | string | Yes | — | Name of the Secret containing the Ignition API key |
 | `apiKeySecretRef.key` | string | Yes | — | Key within the Secret |
 
@@ -200,7 +204,7 @@ An ordered list of source-to-destination file mappings. Applied top to bottom; l
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `source` | string | Yes | — | Repo-relative path to copy from |
-| `destination` | string | Yes | — | Gateway-relative path to copy to |
+| `destination` | string | Yes | — | Path relative to the Ignition data directory (`/ignition-data/`) |
 | `type` | string | No | `"dir"` | Entry type — `"dir"` or `"file"` |
 | `required` | bool | No | `false` | Fail sync if the source path doesn't exist |
 

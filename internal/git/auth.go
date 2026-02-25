@@ -28,11 +28,33 @@ func ResolveAuth(ctx context.Context, c client.Client, namespace string, authSpe
 	case authSpec.Token != nil:
 		return resolveTokenAuth(ctx, c, namespace, authSpec.Token)
 	case authSpec.GitHubApp != nil:
-		// GitHub App auth requires token exchange — deferred to a later phase.
-		return nil, fmt.Errorf("GitHub App auth not yet implemented")
+		return resolveGitHubAppAuth(ctx, c, namespace, authSpec.GitHubApp)
 	default:
 		return nil, nil
 	}
+}
+
+func resolveGitHubAppAuth(ctx context.Context, c client.Client, namespace string, appAuth *stokerv1alpha1.GitHubAppAuth) (transport.AuthMethod, error) {
+	secret := &corev1.Secret{}
+	key := types.NamespacedName{Name: appAuth.PrivateKeySecretRef.Name, Namespace: namespace}
+	if err := c.Get(ctx, key, secret); err != nil {
+		return nil, fmt.Errorf("getting GitHub App PEM secret %s/%s: %w", namespace, appAuth.PrivateKeySecretRef.Name, err)
+	}
+
+	pemBytes, ok := secret.Data[appAuth.PrivateKeySecretRef.Key]
+	if !ok {
+		return nil, fmt.Errorf("key %q not found in secret %s/%s", appAuth.PrivateKeySecretRef.Key, namespace, appAuth.PrivateKeySecretRef.Name)
+	}
+
+	result, err := ExchangeGitHubAppToken(ctx, pemBytes, appAuth.AppID, appAuth.InstallationID, appAuth.APIBaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("exchanging GitHub App token: %w", err)
+	}
+
+	return &gogithttp.BasicAuth{
+		Username: "x-access-token",
+		Password: result.Token,
+	}, nil
 }
 
 func resolveSSHAuth(ctx context.Context, c client.Client, namespace string, sshAuth *stokerv1alpha1.SSHKeyAuth) (transport.AuthMethod, error) {

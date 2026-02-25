@@ -8,6 +8,24 @@ description: Trigger instant syncs on git push events via webhook.
 
 By default, Stoker polls for git changes at a configurable interval (default 60s). For faster feedback, configure a webhook so pushes trigger syncs immediately.
 
+## Enable the webhook receiver
+
+The webhook receiver is disabled by default. Enable it in your Helm values:
+
+```yaml
+webhookReceiver:
+  enabled: true
+  hmac:
+    secret: "my-webhook-secret"  # recommended for production
+```
+
+Or via `--set`:
+
+```bash
+helm upgrade stoker oci://ghcr.io/ia-eknorr/charts/stoker-operator \
+  -n stoker-system --set webhookReceiver.enabled=true
+```
+
 ## How it works
 
 The controller runs an HTTP server (port 9444) that accepts webhook payloads. When a payload arrives, the receiver:
@@ -26,7 +44,7 @@ POST /webhook/{namespace}/{crName}
 - `{namespace}` — the namespace of the GatewaySync CR
 - `{crName}` — the name of the GatewaySync CR
 
-The Helm chart creates a Service for the webhook receiver automatically.
+When `webhookReceiver.enabled` is true, the Helm chart creates a Service for the webhook receiver automatically.
 
 ## Exposing the receiver
 

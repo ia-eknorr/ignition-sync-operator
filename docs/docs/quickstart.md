@@ -60,7 +60,7 @@ No git credentials are needed since we're using a public repository.
 
 ## 3. Create a GatewaySync CR
 
-The GatewaySync CR defines the git repository and sync profiles. We set `gateway.port` and `gateway.tls` to match the default Ignition Helm chart (HTTP on 8088):
+The GatewaySync CR defines the git repository and sync profiles. The default gateway port (8088) and TLS (false) match the default Ignition Helm chart, so we only need to provide the API key secret:
 
 ```bash
 cat <<'EOF' | kubectl apply -f -
@@ -74,8 +74,6 @@ spec:
     repo: "https://github.com/ia-eknorr/test-ignition-project.git"
     ref: "main"
   gateway:
-    port: 8088
-    tls: false
     apiKeySecretRef:
       name: gw-api-key
       key: apiKey

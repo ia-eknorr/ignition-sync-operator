@@ -62,6 +62,7 @@ helm upgrade --install stoker-operator "${PROJECT_ROOT}/charts/stoker-operator" 
   --set agentImage.repository=stoker-agent \
   --set agentImage.tag=e2e \
   --set leaderElection.enabled=false \
+  --set webhookReceiver.enabled=true \
   --wait --timeout 180s
 
 # 7. Wait for controller readiness

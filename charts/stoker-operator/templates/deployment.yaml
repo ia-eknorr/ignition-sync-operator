@@ -35,19 +35,19 @@ spec:
           {{- if and .Values.webhook.enabled .Values.certManager.enabled }}
             - --webhook-cert-path=/etc/webhook-certs
           {{- end }}
-            - --webhook-receiver-port={{ .Values.webhookReceiver.port | default 9444 }}
+            - --webhook-receiver-port={{ if .Values.webhookReceiver.enabled }}{{ .Values.webhookReceiver.port | default 9444 }}{{ else }}0{{ end }}
           env:
             - name: DEFAULT_AGENT_IMAGE
               value: "{{ .Values.agentImage.repository }}:{{ .Values.agentImage.tag | default .Chart.AppVersion }}"
             - name: AUTO_BIND_AGENT_RBAC
               value: {{ .Values.rbac.autoBindAgent.enabled | quote }}
-            {{- if .Values.webhookReceiver.hmac.secretRef.name }}
+            {{- if and .Values.webhookReceiver.enabled .Values.webhookReceiver.hmac.secretRef.name }}
             - name: WEBHOOK_HMAC_SECRET
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.webhookReceiver.hmac.secretRef.name }}
                   key: {{ .Values.webhookReceiver.hmac.secretRef.key }}
-            {{- else if .Values.webhookReceiver.hmac.secret }}
+            {{- else if and .Values.webhookReceiver.enabled .Values.webhookReceiver.hmac.secret }}
             - name: WEBHOOK_HMAC_SECRET
               value: {{ .Values.webhookReceiver.hmac.secret | quote }}
             {{- end }}
@@ -56,7 +56,13 @@ spec:
             - containerPort: {{ .Values.webhook.port | default 9443 }}
               name: webhook-server
               protocol: TCP
-          {{- else }}
+          {{- end }}
+          {{- if .Values.webhookReceiver.enabled }}
+            - containerPort: {{ .Values.webhookReceiver.port | default 9444 }}
+              name: webhook-rx
+              protocol: TCP
+          {{- end }}
+          {{- if not (or .Values.webhook.enabled .Values.webhookReceiver.enabled) }}
             []
           {{- end }}
           securityContext:

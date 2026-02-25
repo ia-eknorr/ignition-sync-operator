@@ -35,5 +35,8 @@ docs/.docusaurus/
 # Internal design docs
 design/
 
+# Secrets
+secrets/
+
 # Claude
 .claude/

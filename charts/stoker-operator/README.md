@@ -78,11 +78,12 @@ Kubernetes: `>= 1.28.0`
 | webhook.enabled | bool | `true` | Enable the MutatingWebhookConfiguration and webhook Service. |
 | webhook.namespaceSelector.requireLabel | bool | `false` | Require the stoker.io/injection=enabled label on namespaces for sidecar injection. When false (default), the webhook intercepts pod creates in all namespaces except kube-system and kube-node-lease. Enable for regulated environments that require explicit namespace opt-in. |
 | webhook.port | int | `9443` | Webhook server port on the controller container. |
-| webhookReceiver | object | `{"hmac":{"secret":"","secretRef":{"key":"webhook-secret","name":""}},"port":9444}` | Git webhook receiver for push-event-driven sync. |
+| webhookReceiver | object | `{"enabled":false,"hmac":{"secret":"","secretRef":{"key":"webhook-secret","name":""}},"port":9444}` | Git webhook receiver for push-event-driven sync. Disabled by default — enable when you want push-event-driven syncs. When disabled, the controller does not start the HTTP receiver server. When enabled without HMAC, any network client that can reach the Service can trigger a reconcile. Configure hmac for production use. |
+| webhookReceiver.enabled | bool | `false` | Enable the webhook receiver HTTP server and its Service. |
 | webhookReceiver.hmac | object | `{"secret":"","secretRef":{"key":"webhook-secret","name":""}}` | HMAC secret for validating webhook signatures (X-Hub-Signature-256). Provide either a literal value or a reference to an existing Secret. |
 | webhookReceiver.hmac.secret | string | `""` | HMAC secret value. Ignored if secretRef is set. |
 | webhookReceiver.hmac.secretRef | object | `{"key":"webhook-secret","name":""}` | Reference to an existing Secret containing the HMAC key. |
 | webhookReceiver.hmac.secretRef.key | string | `"webhook-secret"` | Key within the Secret. |
 | webhookReceiver.hmac.secretRef.name | string | `""` | Name of the Secret. |
-| webhookReceiver.port | int | `9444` | Port for the inbound git webhook receiver. Set to 0 to disable. |
+| webhookReceiver.port | int | `9444` | Port for the inbound git webhook receiver. |
 

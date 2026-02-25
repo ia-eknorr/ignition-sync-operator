@@ -166,12 +166,12 @@ spec:
                     - name
                     type: object
                   port:
-                    default: 8043
+                    default: 8088
                     description: port is the Ignition gateway API port.
                     format: int32
                     type: integer
                   tls:
-                    default: true
+                    default: false
                     description: tls enables TLS for gateway API connections.
                     type: boolean
                 required:
@@ -189,6 +189,11 @@ spec:
                           githubApp authenticates via a GitHub App installation.
                           Enables bi-directional PR creation.
                         properties:
+                          apiBaseURL:
+                            description: |-
+                              apiBaseURL is the GitHub API base URL. Defaults to https://api.github.com.
+                              Set this for GitHub Enterprise Server (e.g. https://github.example.com/api/v3).
+                            type: string
                           appId:
                             description: appId is the GitHub App ID.
                             format: int64

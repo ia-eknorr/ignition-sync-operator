@@ -3,7 +3,7 @@ kind: Test
 metadata:
   name: gateway-port-tls-defaults
 spec:
-  description: Verify GATEWAY_PORT and GATEWAY_TLS env vars are set from CR spec
+  description: Verify GATEWAY_PORT and GATEWAY_TLS env vars match CRD defaults (8088/false) when not explicitly set
   steps:
     - name: Deploy git server and api-key secret
       try:
@@ -30,7 +30,7 @@ spec:
               echo "git server endpoints not populated"
               exit 1
 
-    - name: Create GatewaySync CR with port 8088 and tls false
+    - name: Create GatewaySync CR without explicit port/tls (should use CRD defaults)
       try:
         - apply:
             resource:
@@ -50,8 +50,6 @@ spec:
                           destination: "config"
                           type: dir
                 gateway:
-                  port: 8088
-                  tls: false
                   apiKeySecretRef:
                     name: ignition-api-key
                     key: apiKey

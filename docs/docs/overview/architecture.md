@@ -99,7 +99,7 @@ This design means no shared PVC is needed, and agents can run in any pod without
 
 ## Webhook receiver
 
-The controller runs an HTTP server on port 9444 that accepts push-event webhooks:
+The controller can optionally run an HTTP server on port 9444 that accepts push-event webhooks. The receiver is **disabled by default** — enable it with `webhookReceiver.enabled: true` in the Helm values.
 
 ```
 POST /webhook/{namespace}/{crName}

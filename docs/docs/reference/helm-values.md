@@ -72,9 +72,14 @@ The webhook injects the agent sidecar into pods with annotation `stoker.io/injec
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `webhookReceiver.port` | int | `9444` | Port for the inbound git webhook receiver. Set to `0` to disable. |
+| `webhookReceiver.enabled` | bool | `false` | Enable the webhook receiver HTTP server and its Service. When disabled, the controller does not start the receiver. |
+| `webhookReceiver.port` | int | `9444` | Port for the inbound git webhook receiver (when enabled). |
 | `webhookReceiver.hmac.secret` | string | `""` | HMAC secret value for signature validation. Ignored if `secretRef` is set. |
 | `webhookReceiver.hmac.secretRef.name` | string | `""` | Name of an existing Secret containing the HMAC key. |
 | `webhookReceiver.hmac.secretRef.key` | string | `webhook-secret` | Key within the Secret. |
 
 The push receiver accepts `POST /webhook/{namespace}/{crName}` and auto-detects payload format from GitHub releases, ArgoCD notifications, Kargo promotions, or generic `{"ref": "..."}` bodies. HMAC validation uses the `X-Hub-Signature-256` header.
+
+:::warning
+When enabled without HMAC, any client that can reach the Service can trigger a reconcile. Always configure HMAC for production use.
+:::

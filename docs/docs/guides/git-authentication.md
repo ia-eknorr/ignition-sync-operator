@@ -76,6 +76,11 @@ kubectl create secret generic ssh-key -n <namespace> \
 Reference it in the GatewaySync CR:
 
 ```yaml
+apiVersion: stoker.io/v1alpha1
+kind: GatewaySync
+metadata:
+  name: my-sync
+  namespace: my-namespace
 spec:
   git:
     repo: "git@github.com:org/private-repo.git"
@@ -85,6 +90,7 @@ spec:
         secretRef:
           name: ssh-key
           key: id_ed25519
+  # ... gateway, sync config
 ```
 
 **When to use:** Organizations that prefer SSH-based access or need deploy keys scoped to individual repositories.
@@ -113,6 +119,11 @@ kubectl create secret generic github-app-key -n <namespace> \
 Reference it in the GatewaySync CR:
 
 ```yaml
+apiVersion: stoker.io/v1alpha1
+kind: GatewaySync
+metadata:
+  name: my-sync
+  namespace: my-namespace
 spec:
   git:
     repo: "https://github.com/org/private-repo.git"
@@ -124,20 +135,28 @@ spec:
         privateKeySecretRef:
           name: github-app-key
           key: private-key.pem
+        # apiBaseURL: "https://github.example.com/api/v3"  # GitHub Enterprise only
+  # ... gateway, sync config
 ```
 
+**How it works:** The controller exchanges the PEM private key for a short-lived installation access token (1-hour expiry) via the GitHub API, caches it with a 5-minute pre-expiry refresh, and delivers it to the agent via the metadata ConfigMap. The PEM key never leaves the controller namespace — agent pods do not mount the PEM secret.
+
 **When to use:** Organizations managing many repos, where individual tokens are impractical or against policy. App tokens auto-rotate and provide audit trails.
+
+:::tip GitHub Enterprise Server
+Set `apiBaseURL` to your GitHub Enterprise API endpoint (e.g., `https://github.example.com/api/v3`). Defaults to `https://api.github.com` when omitted.
+:::
 
 </TabItem>
 </Tabs>
 
 ## Auth method comparison
 
-| Method | Protocol | Scope | Rotation |
-|--------|----------|-------|----------|
-| Token | HTTPS | Per-token | Manual |
-| SSH key | SSH | Per-repo (deploy key) | Manual |
-| GitHub App | HTTPS | Per-installation | Automatic |
+| Method | Protocol | Scope | Rotation | Agent credential |
+|--------|----------|-------|----------|-----------------|
+| Token | HTTPS | Per-token | Manual | Mounted Secret |
+| SSH key | SSH | Per-repo (deploy key) | Manual | Mounted Secret |
+| GitHub App | HTTPS | Per-installation | Automatic (1hr) | ConfigMap token (no Secret mount) |
 
 ## Next steps
 

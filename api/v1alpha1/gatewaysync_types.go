@@ -75,6 +75,11 @@ type GitHubAppAuth struct {
 
 	// privateKeySecretRef points to the Secret containing the App's private key PEM.
 	PrivateKeySecretRef SecretKeyRef `json:"privateKeySecretRef"`
+
+	// apiBaseURL is the GitHub API base URL. Defaults to https://api.github.com.
+	// Set this for GitHub Enterprise Server (e.g. https://github.example.com/api/v3).
+	// +optional
+	APIBaseURL string `json:"apiBaseURL,omitempty"`
 }
 
 // TokenAuth references a token stored in a Secret.
@@ -109,12 +114,12 @@ type PollingSpec struct {
 // can override via pod annotations.
 type GatewaySpec struct {
 	// port is the Ignition gateway API port.
-	// +kubebuilder:default=8043
+	// +kubebuilder:default=8088
 	// +optional
 	Port int32 `json:"port,omitempty"`
 
 	// tls enables TLS for gateway API connections.
-	// +kubebuilder:default=true
+	// +kubebuilder:default=false
 	// +optional
 	TLS *bool `json:"tls,omitempty"`
 

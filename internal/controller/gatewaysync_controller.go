@@ -27,6 +27,9 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
+	"github.com/go-git/go-git/v5/plumbing/transport"
+	gogithttp "github.com/go-git/go-git/v5/plumbing/transport/http"
+
 	stokerv1alpha1 "github.com/ia-eknorr/stoker-operator/api/v1alpha1"
 	"github.com/ia-eknorr/stoker-operator/internal/git"
 	"github.com/ia-eknorr/stoker-operator/pkg/conditions"
@@ -35,7 +38,16 @@ import (
 
 const (
 	lsRemoteTimeout = 30 * time.Second
+
+	// tokenRefreshBuffer is how long before expiry the controller refreshes a GitHub App token.
+	tokenRefreshBuffer = 5 * time.Minute
 )
+
+// cachedToken holds a GitHub App installation token and its expiry time.
+type cachedToken struct {
+	token  string
+	expiry time.Time
+}
 
 // GatewaySyncReconciler reconciles a GatewaySync object.
 type GatewaySyncReconciler struct {
@@ -44,6 +56,9 @@ type GatewaySyncReconciler struct {
 	GitClient         git.Client
 	Recorder          record.EventRecorder
 	AutoBindAgentRBAC bool
+
+	// tokenCache holds GitHub App installation tokens keyed by "appID:installationID".
+	tokenCache map[string]cachedToken
 }
 
 // +kubebuilder:rbac:groups=stoker.io,resources=gatewaysyncs,verbs=get;list;watch;update;patch
@@ -123,10 +138,14 @@ func (r *GatewaySyncReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	result, err := r.resolveRef(ctx, &gs)
 	if err != nil {
+		reason := conditions.ReasonRefResolutionFailed
+		if gs.Spec.Git.Auth != nil && gs.Spec.Git.Auth.GitHubApp != nil && strings.Contains(err.Error(), "GitHub App") {
+			reason = conditions.ReasonGitHubAppExchangeFailed
+		}
 		wasAlreadyFailed := conditionHasStatus(gs.Status.Conditions, conditions.TypeRefResolved, metav1.ConditionFalse)
-		r.setCondition(ctx, &gs, conditions.TypeRefResolved, metav1.ConditionFalse, conditions.ReasonRefResolutionFailed, err.Error())
+		r.setCondition(ctx, &gs, conditions.TypeRefResolved, metav1.ConditionFalse, reason, err.Error())
 		if !wasAlreadyFailed {
-			r.Recorder.Eventf(&gs, corev1.EventTypeWarning, conditions.ReasonRefResolutionFailed, "Ref resolution failed: %s", err.Error())
+			r.Recorder.Eventf(&gs, corev1.EventTypeWarning, reason, "Ref resolution failed: %s", err.Error())
 		}
 		gs.Status.RefResolutionStatus = "Error"
 		_ = r.patchStatus(ctx, &gs, base)
@@ -199,6 +218,19 @@ func (r *GatewaySyncReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// --- Step 8: Requeue ---
 
 	requeueAfter := r.pollingInterval(&gs)
+
+	// If GitHub App auth, requeue before token expires to ensure proactive refresh.
+	if gs.Spec.Git.Auth != nil && gs.Spec.Git.Auth.GitHubApp != nil {
+		appAuth := gs.Spec.Git.Auth.GitHubApp
+		cacheKey := fmt.Sprintf("%d:%d", appAuth.AppID, appAuth.InstallationID)
+		if cached, ok := r.tokenCache[cacheKey]; ok {
+			tokenRefresh := time.Until(cached.expiry) - tokenRefreshBuffer
+			if tokenRefresh > 0 && (requeueAfter == 0 || tokenRefresh < requeueAfter) {
+				requeueAfter = tokenRefresh
+			}
+		}
+	}
+
 	log.Info("reconciliation complete", "commit", result.Commit, "gateways", len(gs.Status.DiscoveredGateways), "requeueAfter", requeueAfter)
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
@@ -314,16 +346,66 @@ func (r *GatewaySyncReconciler) resolveRef(ctx context.Context, gs *stokerv1alph
 		}
 	}
 
-	// Resolve auth and call ls-remote
-	auth, err := git.ResolveAuth(ctx, r.Client, gs.Namespace, gs.Spec.Git.Auth)
-	if err != nil {
-		return git.Result{}, fmt.Errorf("resolving git auth: %w", err)
+	// Resolve auth — GitHub App uses cached tokens; other methods go through ResolveAuth.
+	var auth transport.AuthMethod
+	if gs.Spec.Git.Auth != nil && gs.Spec.Git.Auth.GitHubApp != nil {
+		token, err := r.resolveGitHubAppToken(ctx, gs)
+		if err != nil {
+			return git.Result{}, fmt.Errorf("resolving GitHub App auth: %w", err)
+		}
+		auth = &gogithttp.BasicAuth{
+			Username: "x-access-token",
+			Password: token,
+		}
+	} else {
+		var err error
+		auth, err = git.ResolveAuth(ctx, r.Client, gs.Namespace, gs.Spec.Git.Auth)
+		if err != nil {
+			return git.Result{}, fmt.Errorf("resolving git auth: %w", err)
+		}
 	}
 
 	lsCtx, cancel := context.WithTimeout(ctx, lsRemoteTimeout)
 	defer cancel()
 
 	return r.GitClient.LsRemote(lsCtx, gs.Spec.Git.Repo, ref, auth)
+}
+
+// resolveGitHubAppToken returns a cached GitHub App installation token, exchanging
+// a new one if the cache is empty or the token is within 5 minutes of expiry.
+func (r *GatewaySyncReconciler) resolveGitHubAppToken(ctx context.Context, gs *stokerv1alpha1.GatewaySync) (string, error) {
+	appAuth := gs.Spec.Git.Auth.GitHubApp
+	cacheKey := fmt.Sprintf("%d:%d", appAuth.AppID, appAuth.InstallationID)
+
+	// Return cached token if still valid.
+	if cached, ok := r.tokenCache[cacheKey]; ok && time.Now().Before(cached.expiry.Add(-tokenRefreshBuffer)) {
+		return cached.token, nil
+	}
+
+	// Read PEM secret.
+	secret := &corev1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{Name: appAuth.PrivateKeySecretRef.Name, Namespace: gs.Namespace}, secret); err != nil {
+		return "", fmt.Errorf("reading PEM secret %s/%s: %w", gs.Namespace, appAuth.PrivateKeySecretRef.Name, err)
+	}
+	pemBytes, ok := secret.Data[appAuth.PrivateKeySecretRef.Key]
+	if !ok {
+		return "", fmt.Errorf("key %q not found in secret %s/%s", appAuth.PrivateKeySecretRef.Key, gs.Namespace, appAuth.PrivateKeySecretRef.Name)
+	}
+
+	// Exchange PEM for installation token.
+	result, err := git.ExchangeGitHubAppToken(ctx, pemBytes, appAuth.AppID, appAuth.InstallationID, appAuth.APIBaseURL)
+	if err != nil {
+		return "", err
+	}
+
+	// Cache the token.
+	if r.tokenCache == nil {
+		r.tokenCache = make(map[string]cachedToken)
+	}
+	r.tokenCache[cacheKey] = cachedToken{token: result.Token, expiry: result.ExpiresAt}
+
+	logf.FromContext(ctx).Info("exchanged GitHub App token", "appID", appAuth.AppID, "installationID", appAuth.InstallationID, "expiry", result.ExpiresAt)
+	return result.Token, nil
 }
 
 // cleanupOwnedResources removes ConfigMaps owned by this CR during deletion.
@@ -420,8 +502,18 @@ func (r *GatewaySyncReconciler) ensureMetadataConfigMap(ctx context.Context, gs 
 		"paused": fmt.Sprintf("%t", gs.Spec.Paused),
 	}
 
-	// Include auth type so agent knows which credential file to use.
+	// Include auth type so agent knows which credential source to use.
 	data["authType"] = resolveAuthType(gs.Spec.Git.Auth)
+
+	// For GitHub App auth, include the cached installation token so the agent
+	// can authenticate git operations without mounting the PEM secret.
+	if gs.Spec.Git.Auth != nil && gs.Spec.Git.Auth.GitHubApp != nil {
+		appAuth := gs.Spec.Git.Auth.GitHubApp
+		cacheKey := fmt.Sprintf("%d:%d", appAuth.AppID, appAuth.InstallationID)
+		if cached, ok := r.tokenCache[cacheKey]; ok {
+			data["gitToken"] = cached.token
+		}
+	}
 
 	// Serialize resolved profiles as JSON.
 	profiles := r.resolveProfiles(gs)

@@ -1,0 +1,18 @@
+{{- if .Values.webhookReceiver.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "stoker-operator.fullname" . }}-webhook-receiver
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stoker-operator.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.webhookReceiver.port | default 9444 }}
+      targetPort: webhook-rx
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "stoker-operator.selectorLabels" . | nindent 4 }}
+{{- end }}

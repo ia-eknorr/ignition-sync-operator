@@ -20,6 +20,7 @@ CRD consolidation, bug fixes, and developer experience.
 - 5 bug fixes across controller, agent, and webhook
 - Documentation site with quickstart, guides, and CRD reference
 - Chainsaw e2e test suite replacing shell functional tests
+- GitHub App authentication with controller-mediated token exchange, per-CR cache, and GitHub Enterprise Server support
 
 ## v0.3.0 — Reliability
 
