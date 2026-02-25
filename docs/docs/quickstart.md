@@ -24,12 +24,7 @@ kubectl cluster-info
 
 ## 1. Install cert-manager
 
-Stoker uses cert-manager for webhook TLS certificates:
-
-```bash
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.2/cert-manager.yaml
-kubectl wait --for=condition=Available deployment --all -n cert-manager --timeout=120s
-```
+Stoker uses cert-manager for webhook TLS certificates. Install it using the [default static install](https://cert-manager.io/docs/installation/#default-static-install) or any method from the [cert-manager docs](https://cert-manager.io/docs/installation/).
 
 ## 2. Install the Stoker operator
 
