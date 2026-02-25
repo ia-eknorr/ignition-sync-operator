@@ -49,11 +49,16 @@
    To restrict injection to specific namespaces, set webhook.namespaceSelector.requireLabel=true.
 {{- end }}
 
+{{- if .Values.rbac.autoBindAgent.enabled }}
+4. Agent RBAC is managed automatically. The controller creates RoleBindings in each
+   namespace where GatewaySync CRs exist. To manage RBAC manually, set rbac.autoBindAgent.enabled=false.
+{{- else }}
 4. Grant the agent RBAC in each namespace where gateways run:
 
     kubectl create rolebinding stoker-agent -n <namespace> \
-      --clusterrole={{ include "stoker-operator.fullname" . }}-agent \
+      --clusterrole=stoker-agent \
       --serviceaccount=<namespace>:<gateway-service-account>
+{{- end }}
 
 5. Add the injection annotations to your Ignition gateway pod template:
 

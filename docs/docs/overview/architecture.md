@@ -39,6 +39,8 @@ The controller reconciles `GatewaySync` custom resources. On each reconciliation
 3. **Writes metadata ConfigMaps** — writes the resolved ref, commit, auth type, mappings, and profile configuration to `stoker-metadata-{crName}`.
 4. **Aggregates status** — reads `stoker-status-{crName}` ConfigMaps written by agents and surfaces per-gateway sync status on the CR.
 
+When `rbac.autoBindAgent.enabled` is true (default), the controller also creates a `RoleBinding` in the CR's namespace binding discovered gateway ServiceAccounts to the `stoker-agent` ClusterRole. The binding uses an `ownerReference` pointing to the GatewaySync CR, so it is automatically garbage-collected when the CR is deleted.
+
 The controller uses a custom predicate that triggers reconciliation on spec generation changes _or_ annotation changes (used by the webhook receiver to request immediate syncs).
 
 ### Mutating webhook

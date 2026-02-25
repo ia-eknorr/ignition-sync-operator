@@ -59,8 +59,12 @@ helm-sync: manifests ## Sync CRDs and verify RBAC between kustomize config and H
 	@echo "CRDs copied to $(HELM_CHART_DIR)/crds/"
 	@diff <(sed -n '/^rules:/,$$p' config/rbac/role.yaml | sed 's/^[[:space:]]*//' | grep -v '^$$') \
 	      <(sed -n '/^rules:/,$$p' $(HELM_CHART_DIR)/templates/clusterrole.yaml | sed 's/^[[:space:]]*//' | grep -v '^$$') \
-	  && echo "RBAC rules in sync" \
-	  || { echo "WARNING: RBAC rules have drifted — update $(HELM_CHART_DIR)/templates/clusterrole.yaml"; exit 1; }
+	  && echo "RBAC rules in sync (controller)" \
+	  || { echo "WARNING: Controller RBAC rules have drifted — update $(HELM_CHART_DIR)/templates/clusterrole.yaml"; exit 1; }
+	@diff <(sed -n '/^rules:/,$$p' config/rbac/agent_role.yaml | sed 's/^[[:space:]]*//' | grep -v '^$$') \
+	      <(sed -n '/^rules:/,$$p' $(HELM_CHART_DIR)/templates/agent-clusterrole.yaml | sed 's/^[[:space:]]*//' | grep -v '^$$') \
+	  && echo "RBAC rules in sync (agent)" \
+	  || { echo "WARNING: Agent RBAC rules have drifted — update $(HELM_CHART_DIR)/templates/agent-clusterrole.yaml"; exit 1; }
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.

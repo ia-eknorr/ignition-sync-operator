@@ -62,6 +62,12 @@ helm install stoker oci://ghcr.io/ia-eknorr/charts/stoker-operator \
 
 The webhook injects the agent sidecar into pods with annotation `stoker.io/inject: "true"`. By default, injection works in all namespaces except `kube-system` and `kube-node-lease`. Set `webhook.namespaceSelector.requireLabel=true` to require the `stoker.io/injection=enabled` namespace label.
 
+### Agent RBAC
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `rbac.autoBindAgent.enabled` | bool | `true` | Automatically create RoleBindings for the agent sidecar in namespaces where GatewaySync CRs exist. The controller discovers ServiceAccounts from gateway pods and binds them to the `stoker-agent` ClusterRole. Disable for environments that manage RBAC externally. |
+
 ### Push Receiver (Webhook)
 
 | Key | Type | Default | Description |

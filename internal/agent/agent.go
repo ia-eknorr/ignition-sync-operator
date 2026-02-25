@@ -12,6 +12,8 @@ import (
 	"github.com/go-logr/logr"
 	"golang.org/x/crypto/ssh"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
@@ -204,7 +206,16 @@ func (a *Agent) waitForMetadata(ctx context.Context) (*Metadata, error) {
 		}
 
 		if err != nil {
-			log.V(1).Info("metadata not available yet, retrying", "error", err)
+			if isForbidden(err) {
+				log.Error(err, "RBAC permission denied — agent cannot read metadata ConfigMap",
+					"namespace", a.Config.CRNamespace,
+					"configmap", MetadataConfigMapName(a.Config.CRName),
+					"hint", fmt.Sprintf("ensure agent RBAC is configured: kubectl create rolebinding stoker-agent -n %s --clusterrole=stoker-agent --serviceaccount=%s:<service-account>",
+						a.Config.CRNamespace, a.Config.CRNamespace),
+				)
+			} else {
+				log.V(1).Info("metadata not available yet, retrying", "error", err)
+			}
 		}
 
 		select {
@@ -533,6 +544,10 @@ func (a *Agent) syncWithProfile(ctx context.Context) (*syncengine.SyncResult, st
 	// Read pod labels for template context.
 	var pod corev1.Pod
 	if err := a.K8sClient.Get(ctx, client.ObjectKey{Name: a.Config.PodName, Namespace: a.Config.PodNamespace}, &pod); err != nil {
+		if isForbidden(err) {
+			log.Error(err, "RBAC permission denied — agent cannot read pod labels",
+				"pod", a.Config.PodName, "namespace", a.Config.PodNamespace)
+		}
 		return nil, profileName, profile.DryRun, fmt.Errorf("reading pod labels: %w", err)
 	}
 
@@ -593,10 +608,19 @@ func (a *Agent) fetchCRRef(ctx context.Context) {
 	u.SetGroupVersionKind(gatewaySyncGVK)
 	key := client.ObjectKey{Namespace: a.Config.CRNamespace, Name: a.Config.CRName}
 	if err := a.K8sClient.Get(ctx, key, u); err != nil {
-		logf.FromContext(ctx).Info("could not fetch GatewaySync for events (non-fatal)", "error", err)
+		if isForbidden(err) {
+			logf.FromContext(ctx).Error(err, "RBAC permission denied — agent cannot read GatewaySync CR for event emission (non-fatal)")
+		} else {
+			logf.FromContext(ctx).Info("could not fetch GatewaySync for events (non-fatal)", "error", err)
+		}
 		return
 	}
 	a.crRef = u
+}
+
+// isForbidden checks if an error (possibly wrapped) is a Kubernetes 403 Forbidden.
+func isForbidden(err error) bool {
+	return apierrors.IsForbidden(err) || apierrors.ReasonForError(err) == metav1.StatusReasonForbidden
 }
 
 // resolveFileAuth builds a go-git transport.AuthMethod from mounted credential files.

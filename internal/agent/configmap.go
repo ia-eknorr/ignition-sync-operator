@@ -10,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	stokertypes "github.com/ia-eknorr/stoker-operator/pkg/types"
 )
@@ -44,6 +45,10 @@ func ReadMetadataConfigMap(ctx context.Context, c client.Client, namespace, crNa
 	}
 
 	if err := c.Get(ctx, key, cm); err != nil {
+		if errors.IsForbidden(err) {
+			logf.FromContext(ctx).Error(err, "RBAC permission denied — cannot read metadata ConfigMap",
+				"configmap", key.Name, "namespace", namespace)
+		}
 		return nil, fmt.Errorf("reading metadata ConfigMap %s: %w", key.Name, err)
 	}
 
@@ -85,6 +90,12 @@ func WriteStatusConfigMap(ctx context.Context, c client.Client, namespace, crNam
 		cm := &corev1.ConfigMap{}
 		err := c.Get(ctx, key, cm)
 
+		if errors.IsForbidden(err) {
+			logf.FromContext(ctx).Error(err, "RBAC permission denied — cannot write status ConfigMap",
+				"configmap", cmName, "namespace", namespace,
+				"hint", fmt.Sprintf("ensure agent RBAC: kubectl create rolebinding stoker-agent -n %s --clusterrole=stoker-agent --serviceaccount=%s:<service-account>", namespace, namespace))
+			return fmt.Errorf("writing status ConfigMap (permission denied): %w", err)
+		}
 		if errors.IsNotFound(err) {
 			// Create new ConfigMap.
 			cm = &corev1.ConfigMap{

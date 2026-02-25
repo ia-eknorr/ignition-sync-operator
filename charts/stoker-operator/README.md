@@ -19,7 +19,7 @@ helm install stoker oci://ghcr.io/ia-eknorr/charts/stoker-operator
 ```
 
 See the post-install notes (`helm get notes <release>`) for next steps: creating
-secrets, applying CRs, and granting agent RBAC.
+secrets and applying CRs. Agent RBAC is managed automatically by default.
 
 ## Architecture
 
@@ -67,6 +67,8 @@ Kubernetes: `>= 1.28.0`
 | networkPolicy | object | `{"enabled":false}` | NetworkPolicy restricts ingress to the metrics port. Only allows traffic from namespaces labeled `metrics: enabled`. |
 | networkPolicy.enabled | bool | `false` | Create a NetworkPolicy for the controller. |
 | nodeSelector | object | `{}` | Node selector labels for scheduling the controller pod. Example:   nodeSelector:     kubernetes.io/os: linux |
+| rbac | object | `{"autoBindAgent":{"enabled":true}}` | RBAC configuration for the agent sidecar. |
+| rbac.autoBindAgent.enabled | bool | `true` | Automatically create RoleBindings for the agent sidecar in namespaces where GatewaySync CRs exist. The controller discovers ServiceAccounts from gateway pods and binds only those SAs to the stoker-agent ClusterRole. Disable for environments that manage RBAC externally (e.g., GitOps-managed RBAC). |
 | replicaCount | int | `1` | Number of controller replicas. Only one replica holds the leader lock at a time; additional replicas provide fast failover. |
 | resources | object | `{"limits":{"cpu":"500m","memory":"128Mi"},"requests":{"cpu":"10m","memory":"64Mi"}}` | CPU and memory resource requests/limits for the controller container. The controller runs git ls-remote (no clone) and watches CRs, so resource requirements are modest. |
 | serviceMonitor | object | `{"enabled":false}` | Prometheus ServiceMonitor for automatic scrape target discovery. Requires the prometheus-operator CRDs to be installed in the cluster. |

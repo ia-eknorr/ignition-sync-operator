@@ -313,6 +313,10 @@ type DiscoveredGateway struct {
 	// podName is the name of the gateway pod.
 	PodName string `json:"podName"`
 
+	// serviceAccountName is the ServiceAccount used by the gateway pod.
+	// +optional
+	ServiceAccountName string `json:"serviceAccountName,omitempty"`
+
 	// profile is the name of the sync profile used by this gateway.
 	// +optional
 	Profile string `json:"profile,omitempty"`

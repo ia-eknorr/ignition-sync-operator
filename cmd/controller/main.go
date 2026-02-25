@@ -168,10 +168,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	autoBindRBAC := os.Getenv("AUTO_BIND_AGENT_RBAC") != "false"
 	if err := (&controller.GatewaySyncReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		GitClient: &git.GoGitClient{},
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		GitClient:         &git.GoGitClient{},
+		AutoBindAgentRBAC: autoBindRBAC,
 		//nolint:staticcheck // TODO: migrate to events.EventRecorder
 		Recorder: mgr.GetEventRecorderFor("gatewaysync-controller"),
 	}).SetupWithManager(mgr); err != nil {
