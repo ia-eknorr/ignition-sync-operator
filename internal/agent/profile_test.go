@@ -9,6 +9,11 @@ import (
 	stokertypes "github.com/ia-eknorr/stoker-operator/pkg/types"
 )
 
+const (
+	mappingTypeDir  = "dir"
+	mappingTypeFile = "file"
+)
+
 func TestResolveTemplate_AllFields(t *testing.T) {
 	ctx := &TemplateContext{
 		GatewayName: "gw-blue",
@@ -100,8 +105,8 @@ func TestBuildSyncPlan_Basic(t *testing.T) {
 
 	profile := &stokertypes.ResolvedProfile{
 		Mappings: []stokertypes.ResolvedMapping{
-			{Source: "shared", Destination: "config/resources/core", Type: "dir"},
-			{Source: "site/{{.Vars.region}}", Destination: "config/resources/core", Type: "dir"},
+			{Source: "shared", Destination: "config/resources/core", Type: mappingTypeDir},
+			{Source: "site/{{.Vars.region}}", Destination: "config/resources/core", Type: mappingTypeDir},
 		},
 		Vars: map[string]string{"region": "us-east"},
 	}
@@ -140,7 +145,7 @@ func TestBuildSyncPlan_RequiredMissing(t *testing.T) {
 
 	profile := &stokertypes.ResolvedProfile{
 		Mappings: []stokertypes.ResolvedMapping{
-			{Source: "nonexistent", Destination: "config", Type: "dir", Required: true},
+			{Source: "nonexistent", Destination: "config", Type: mappingTypeDir, Required: true},
 		},
 	}
 
@@ -161,7 +166,7 @@ func TestBuildSyncPlan_ExcludesFromProfile(t *testing.T) {
 
 	profile := &stokertypes.ResolvedProfile{
 		Mappings: []stokertypes.ResolvedMapping{
-			{Source: "src", Destination: "dst", Type: "dir"},
+			{Source: "src", Destination: "dst", Type: mappingTypeDir},
 		},
 		ExcludePatterns: []string{"**/*.bak", "**/*.tmp", "**/*.log"},
 	}
@@ -310,7 +315,7 @@ func TestBuildSyncPlan_TemplateFlag(t *testing.T) {
 
 	profile := &stokertypes.ResolvedProfile{
 		Mappings: []stokertypes.ResolvedMapping{
-			{Source: "config", Destination: "config/resources", Type: "dir", Template: true},
+			{Source: "config", Destination: "config/resources", Type: mappingTypeDir, Template: true},
 		},
 	}
 	ctx := &TemplateContext{GatewayName: "gw-site1", Vars: map[string]string{}}
@@ -509,7 +514,7 @@ func TestInferMappingType_InfersDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	typ, err := inferMappingType(dir, "")
-	if err != nil || typ != "dir" {
+	if err != nil || typ != mappingTypeDir {
 		t.Errorf("inferMappingType(dir) = %q, %v; want dir, nil", typ, err)
 	}
 }
@@ -519,7 +524,7 @@ func TestInferMappingType_InfersFile(t *testing.T) {
 	f := filepath.Join(tmp, "config.json")
 	writeFile(t, f, "{}")
 	typ, err := inferMappingType(f, "")
-	if err != nil || typ != "file" {
+	if err != nil || typ != mappingTypeFile {
 		t.Errorf("inferMappingType(file) = %q, %v; want file, nil", typ, err)
 	}
 }
@@ -528,7 +533,7 @@ func TestInferMappingType_HintMismatch(t *testing.T) {
 	tmp := t.TempDir()
 	f := filepath.Join(tmp, "config.json")
 	writeFile(t, f, "{}")
-	_, err := inferMappingType(f, "dir") // file is actually a file, not dir
+	_, err := inferMappingType(f, mappingTypeDir) // file is actually a file, not dir
 	if err == nil {
 		t.Error("expected type mismatch error, got nil")
 	}
@@ -536,7 +541,7 @@ func TestInferMappingType_HintMismatch(t *testing.T) {
 
 func TestInferMappingType_NonexistentDefaultsToDir(t *testing.T) {
 	typ, err := inferMappingType("/nonexistent/path", "")
-	if err != nil || typ != "dir" {
+	if err != nil || typ != mappingTypeDir {
 		t.Errorf("nonexistent path: got %q, %v; want dir, nil", typ, err)
 	}
 }
@@ -561,7 +566,7 @@ func TestBuildSyncPlan_TypeInferredFromFilesystem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildSyncPlan: %v", err)
 	}
-	if plan.Mappings[0].Type != "file" {
+	if plan.Mappings[0].Type != mappingTypeFile {
 		t.Errorf("expected inferred type=file, got %q", plan.Mappings[0].Type)
 	}
 }
