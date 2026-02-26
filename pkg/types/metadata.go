@@ -18,4 +18,5 @@ type ResolvedMapping struct {
 	Destination string `json:"destination"`
 	Type        string `json:"type"`
 	Required    bool   `json:"required,omitempty"`
+	Template    bool   `json:"template,omitempty"`
 }

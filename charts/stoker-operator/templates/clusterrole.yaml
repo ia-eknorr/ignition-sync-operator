@@ -9,6 +9,7 @@ rules:
       - ""
     resources:
       - configmaps
+      - secrets
     verbs:
       - create
       - delete
@@ -28,7 +29,6 @@ rules:
       - ""
     resources:
       - pods
-      - secrets
     verbs:
       - get
       - list

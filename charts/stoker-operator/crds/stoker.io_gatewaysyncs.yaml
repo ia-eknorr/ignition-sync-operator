@@ -348,6 +348,13 @@ spec:
                         maximum: 3600
                         minimum: 5
                         type: integer
+                      vars:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          vars provides default template variables inherited by all profiles.
+                          Profile-level vars override these on a per-key basis; unmatched keys are inherited.
+                        type: object
                     type: object
                   profiles:
                     additionalProperties:
@@ -380,7 +387,7 @@ spec:
                               destination:
                                 description: |-
                                   destination is the gateway-relative path to copy to.
-                                  Supports Go template variables: {{.GatewayName}}, {{.CRName}},
+                                  Supports Go template variables: {{.GatewayName}}, {{.PodName}}, {{.CRName}},
                                   {{.Labels.key}}, {{.Vars.key}}, {{.Namespace}}, {{.Ref}}, {{.Commit}}.
                                 minLength: 1
                                 type: string
@@ -392,10 +399,17 @@ spec:
                               source:
                                 description: |-
                                   source is the repo-relative path to copy from.
-                                  Supports Go template variables: {{.GatewayName}}, {{.CRName}},
+                                  Supports Go template variables: {{.GatewayName}}, {{.PodName}}, {{.CRName}},
                                   {{.Labels.key}}, {{.Vars.key}}, {{.Namespace}}, {{.Ref}}, {{.Commit}}.
                                 minLength: 1
                                 type: string
+                              template:
+                                description: |-
+                                  template enables Go template rendering of file contents during staging.
+                                  When true, the agent resolves {{.GatewayName}}, {{.PodName}}, {{.Vars.key}},
+                                  and other TemplateContext fields inside each synced file before writing to disk.
+                                  Binary files (containing null bytes) are rejected with an error.
+                                type: boolean
                               type:
                                 default: dir
                                 description: type is the entry type — "dir" (default)

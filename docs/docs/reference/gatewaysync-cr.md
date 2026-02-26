@@ -156,6 +156,7 @@ Baseline settings inherited by all profiles. Individual profiles can override th
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `excludePatterns` | []string | No | `["**/.git/", "**/.gitkeep", "**/.resources/**"]` | Glob patterns for files to exclude from sync |
+| `vars` | map[string]string | No | — | Default template variables inherited by all profiles. Profile `vars` override these per-key. |
 | `syncPeriod` | int32 | No | `30` | Agent-side polling interval in seconds (min: 5, max: 3600) |
 | `designerSessionPolicy` | string | No | `"proceed"` | Behavior when Designer sessions are active: `proceed`, `wait`, or `fail` |
 | `dryRun` | bool | No | `false` | Sync to staging only — write diff to status ConfigMap without modifying `/ignition-data/` |
@@ -206,6 +207,7 @@ An ordered list of source-to-destination file mappings. Applied top to bottom; l
 | `destination` | string | Yes | — | Path relative to the Ignition data directory (`/ignition-data/`) |
 | `type` | string | No | `"dir"` | Entry type — `"dir"` or `"file"` |
 | `required` | bool | No | `false` | Fail sync if the source path doesn't exist |
+| `template` | bool | No | `false` | Resolve Go template variables inside file **contents** at sync time. Binary files (null bytes) are rejected. See [Content Templating](../guides/content-templating.md). |
 
 #### Template variables
 
@@ -214,9 +216,10 @@ Both `source` and `destination` support Go template variables:
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `{{.GatewayName}}` | Gateway identity from the `stoker.io/gateway-name` annotation (or `app.kubernetes.io/name` label) | `sites/{{.GatewayName}}/projects` |
+| `{{.PodName}}` | Kubernetes pod name — useful for StatefulSet replicas needing unique identity | `system-{{.PodName}}` |
 | `{{.CRName}}` | Name of the GatewaySync CR that owns this sync | `config/{{.CRName}}/resources` |
 | `{{.Labels.key}}` | Any label on the gateway pod (read at sync time) | `sites/{{.Labels.site}}/projects` |
-| `{{.Vars.key}}` | Custom variable from profile `vars` | `site{{.Vars.siteNumber}}/scripts` |
+| `{{.Vars.key}}` | Custom variable from profile or defaults `vars` (profile overrides default per-key) | `site{{.Vars.siteNumber}}/scripts` |
 | `{{.Namespace}}` | Pod namespace | `config/{{.Namespace}}/overlay` |
 | `{{.Ref}}` | Resolved git ref | — |
 | `{{.Commit}}` | Full commit SHA | — |

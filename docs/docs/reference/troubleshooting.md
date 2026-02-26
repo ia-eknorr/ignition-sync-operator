@@ -108,6 +108,75 @@ kubectl logs <pod> -n <ns> -c stoker-agent | grep -i "scan\|error"
 The Ignition REST API uses a custom header format: `X-Ignition-API-Token: name:secret`. Make sure the secret value includes both the token name and the secret, separated by a colon.
 :::
 
+### Content templating errors
+
+**Symptoms:** Agent logs show `templating <path>: ...` errors, sync aborts.
+
+#### Binary file rejected
+
+```
+templating config/resources/core/image.png: template=true on binary file is not supported: /ignition-data/.sync-staging/...
+```
+
+**Cause:** A mapping with `template: true` matched a binary file (contains null bytes).
+
+**Fix:** Split the mapping into two — one for text files with `template: true`, another for binary files without it. Or exclude binary files with `excludePatterns`:
+
+```yaml
+mappings:
+  - source: "config/resources/core"
+    destination: "config/resources/core"
+    type: dir
+    template: true
+    # If binaries are in a subdirectory:
+excludePatterns:
+  - "config/resources/core/images/**"
+```
+
+#### Undefined template variable
+
+```
+templating config/system-properties/config.json: resolving template in .../config.json: template: ...: map has no entry for key "siteCode"
+```
+
+**Cause:** A `{{.Vars.siteCode}}` expression references a key that doesn't exist in `spec.sync.defaults.vars` or the profile's `vars`.
+
+**Fix:** Add the missing key to your vars:
+
+```yaml
+sync:
+  defaults:
+    vars:
+      siteCode: "site1"   # add the missing key
+```
+
+#### Template syntax error
+
+```
+templating config/some-file.json: resolving template in .../some-file.json: template: ...: unexpected "}" in operand
+```
+
+**Cause:** Malformed Go template syntax in a file synced with `template: true`. Common causes: JSON files that happen to contain `{` or `}` characters in string values (e.g., regex patterns, JavaScript objects in config).
+
+**Fix:** Either escape the braces (`{{"{{"}}` renders as `{{`) or remove `template: true` from this mapping if the file doesn't need variable substitution.
+
+#### GitHub App token Secret missing
+
+**Symptoms:** Agent logs show `open /etc/stoker/git-token/token: no such file or directory` or auth errors on git clone.
+
+**Checklist:**
+
+1. Verify the controller-managed Secret exists:
+   ```bash
+   kubectl get secret stoker-github-token-<crName> -n <ns>
+   ```
+2. If missing, check controller logs for token exchange errors:
+   ```bash
+   kubectl logs -n stoker-system deploy/stoker-stoker-operator-controller-manager | grep "GitHub App\|token"
+   ```
+3. Verify the GitHub App has **Contents: Read** permission on the repository and is installed on the target repo.
+4. Check for clock skew — the JWT used for token exchange is valid for 60 seconds. A controller with clock skew >60s relative to GitHub will get 401 errors.
+
 ### Agent CrashLoopBackOff
 
 **Symptoms:** The `stoker-agent` container repeatedly crashes.
@@ -142,6 +211,9 @@ kubectl logs -n stoker-system deploy/stoker-stoker-operator-controller-manager -
 
 # What the controller sent to the agent
 kubectl get cm stoker-metadata-<crName> -n <ns> -o yaml
+
+# GitHub App token Secret (controller-managed)
+kubectl get secret stoker-github-token-<crName> -n <ns>
 
 # What the agent reported back (includes sync status and file change details)
 kubectl get cm stoker-status-<crName> -n <ns> -o jsonpath='{.data}' | python3 -m json.tool

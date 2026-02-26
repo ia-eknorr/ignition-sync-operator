@@ -181,6 +181,7 @@ func TestBuildSyncPlan_ExcludesFromProfile(t *testing.T) {
 func TestBuildTemplateContext(t *testing.T) {
 	cfg := &Config{
 		GatewayName: "gw-test",
+		PodName:     "ignition-0",
 		CRName:      "my-cr",
 		CRNamespace: "my-ns",
 	}
@@ -195,6 +196,9 @@ func TestBuildTemplateContext(t *testing.T) {
 
 	if ctx.GatewayName != "gw-test" {
 		t.Errorf("GatewayName = %q", ctx.GatewayName)
+	}
+	if ctx.PodName != "ignition-0" {
+		t.Errorf("PodName = %q, want ignition-0", ctx.PodName)
 	}
 	if ctx.Namespace != "my-ns" {
 		t.Errorf("Namespace = %q", ctx.Namespace)
@@ -216,6 +220,109 @@ func TestBuildTemplateContext(t *testing.T) {
 	}
 	if ctx.Vars["site"] != "us-east-1" {
 		t.Errorf("Vars[site] = %q", ctx.Vars["site"])
+	}
+}
+
+func TestResolveTemplate_PodName(t *testing.T) {
+	ctx := &TemplateContext{
+		GatewayName: "ignition",
+		PodName:     "ignition-2",
+		Vars:        map[string]string{},
+	}
+	got, err := resolveTemplate("system-{{.PodName}}", ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "system-ignition-2" {
+		t.Errorf("got %q, want system-ignition-2", got)
+	}
+}
+
+func TestApplyTemplateFunc_TextFile(t *testing.T) {
+	ctx := &TemplateContext{
+		GatewayName: "gw-site1",
+		PodName:     "ignition-0",
+		Namespace:   "prod",
+		Vars:        map[string]string{"deploymentMode": "production"},
+	}
+	fn := buildApplyTemplateFunc(ctx)
+
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "config.json")
+	writeFile(t, path, `{"systemName": "{{.GatewayName}}", "mode": "{{.Vars.deploymentMode}}"}`)
+
+	if err := fn(path); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"systemName": "gw-site1", "mode": "production"}`
+	if string(content) != want {
+		t.Errorf("got %q, want %q", string(content), want)
+	}
+}
+
+func TestApplyTemplateFunc_BinaryFileRejected(t *testing.T) {
+	ctx := &TemplateContext{GatewayName: "gw", Vars: map[string]string{}}
+	fn := buildApplyTemplateFunc(ctx)
+
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "binary.bin")
+	// Write a file with a null byte — should be rejected.
+	if err := os.WriteFile(path, []byte("hello\x00world"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := fn(path); err == nil {
+		t.Error("expected error for binary file, got nil")
+	}
+}
+
+func TestApplyTemplateFunc_NoTemplateSkipped(t *testing.T) {
+	ctx := &TemplateContext{GatewayName: "gw", Vars: map[string]string{}}
+	fn := buildApplyTemplateFunc(ctx)
+
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "plain.txt")
+	original := "no template syntax here"
+	writeFile(t, path, original)
+
+	if err := fn(path); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content, _ := os.ReadFile(path)
+	if string(content) != original {
+		t.Errorf("file was modified unexpectedly: %q", string(content))
+	}
+}
+
+func TestBuildSyncPlan_TemplateFlag(t *testing.T) {
+	tmp := t.TempDir()
+	repoPath := filepath.Join(tmp, "repo")
+	liveDir := filepath.Join(tmp, "live")
+
+	writeFile(t, filepath.Join(repoPath, "config", "system.json"), `{"name":"{{.GatewayName}}"}`)
+
+	profile := &stokertypes.ResolvedProfile{
+		Mappings: []stokertypes.ResolvedMapping{
+			{Source: "config", Destination: "config/resources", Type: "dir", Template: true},
+		},
+	}
+	ctx := &TemplateContext{GatewayName: "gw-site1", Vars: map[string]string{}}
+
+	plan, err := buildSyncPlan(profile, ctx, repoPath, liveDir)
+	if err != nil {
+		t.Fatalf("buildSyncPlan: %v", err)
+	}
+	if !plan.Mappings[0].Template {
+		t.Error("expected Template=true to propagate to SyncPlan mapping")
+	}
+	if plan.ApplyTemplate == nil {
+		t.Error("expected ApplyTemplate func to be set")
 	}
 }
 

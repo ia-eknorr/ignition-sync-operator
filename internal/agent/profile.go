@@ -16,6 +16,7 @@ import (
 // TemplateContext holds the variables available in mapping templates.
 type TemplateContext struct {
 	GatewayName string
+	PodName     string
 	Namespace   string
 	Ref         string
 	Commit      string
@@ -32,6 +33,7 @@ func buildTemplateContext(cfg *Config, meta *Metadata, profileVars map[string]st
 	maps.Copy(podLabels, labels)
 	return &TemplateContext{
 		GatewayName: cfg.GatewayName,
+		PodName:     cfg.PodName,
 		Namespace:   cfg.CRNamespace,
 		Ref:         meta.Ref,
 		Commit:      meta.Commit,
@@ -84,9 +86,10 @@ func buildSyncPlan(
 	stagingDir := filepath.Join(liveDir, ".sync-staging")
 
 	plan := &syncengine.SyncPlan{
-		StagingDir: stagingDir,
-		LiveDir:    liveDir,
-		DryRun:     profile.DryRun,
+		StagingDir:    stagingDir,
+		LiveDir:       liveDir,
+		DryRun:        profile.DryRun,
+		ApplyTemplate: buildApplyTemplateFunc(tmplCtx),
 	}
 
 	// Resolve and validate each mapping.
@@ -125,6 +128,7 @@ func buildSyncPlan(
 			Source:      absSrc,
 			Destination: dst,
 			Type:        typ,
+			Template:    m.Template,
 		})
 	}
 
@@ -132,4 +136,36 @@ func buildSyncPlan(
 	plan.ExcludePatterns = profile.ExcludePatterns
 
 	return plan, nil
+}
+
+// buildApplyTemplateFunc returns a function that resolves Go template variables
+// inside a staged file in-place. Binary files (containing null bytes) are
+// rejected with an error (fail-closed policy).
+func buildApplyTemplateFunc(tmplCtx *TemplateContext) func(string) error {
+	return func(stagedPath string) error {
+		content, err := os.ReadFile(stagedPath)
+		if err != nil {
+			return fmt.Errorf("reading file for templating: %w", err)
+		}
+
+		// Binary file detection: reject files containing null bytes.
+		if bytes.IndexByte(content, 0) >= 0 {
+			return fmt.Errorf("template=true on binary file is not supported: %s", stagedPath)
+		}
+
+		// Fast path: skip resolution if no template syntax present.
+		if !strings.Contains(string(content), "{{") {
+			return nil
+		}
+
+		resolved, err := resolveTemplate(string(content), tmplCtx)
+		if err != nil {
+			return fmt.Errorf("resolving template in %s: %w", stagedPath, err)
+		}
+
+		if err := os.WriteFile(stagedPath, []byte(resolved), 0644); err != nil {
+			return fmt.Errorf("writing templated file %s: %w", stagedPath, err)
+		}
+		return nil
+	}
 }

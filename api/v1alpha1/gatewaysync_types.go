@@ -197,6 +197,11 @@ type SyncDefaults struct {
 	// +optional
 	ExcludePatterns []string `json:"excludePatterns,omitempty"`
 
+	// vars provides default template variables inherited by all profiles.
+	// Profile-level vars override these on a per-key basis; unmatched keys are inherited.
+	// +optional
+	Vars map[string]string `json:"vars,omitempty"`
+
 	// syncPeriod is the agent-side polling interval in seconds.
 	// +kubebuilder:default=30
 	// +kubebuilder:validation:Minimum=5
@@ -261,14 +266,14 @@ type SyncProfileSpec struct {
 // SyncMapping defines a single source->destination file mapping.
 type SyncMapping struct {
 	// source is the repo-relative path to copy from.
-	// Supports Go template variables: {{.GatewayName}}, {{.CRName}},
+	// Supports Go template variables: {{.GatewayName}}, {{.PodName}}, {{.CRName}},
 	// {{.Labels.key}}, {{.Vars.key}}, {{.Namespace}}, {{.Ref}}, {{.Commit}}.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	Source string `json:"source"`
 
 	// destination is the gateway-relative path to copy to.
-	// Supports Go template variables: {{.GatewayName}}, {{.CRName}},
+	// Supports Go template variables: {{.GatewayName}}, {{.PodName}}, {{.CRName}},
 	// {{.Labels.key}}, {{.Vars.key}}, {{.Namespace}}, {{.Ref}}, {{.Commit}}.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
@@ -284,6 +289,13 @@ type SyncMapping struct {
 	// in the repo at the resolved commit.
 	// +optional
 	Required bool `json:"required,omitempty"`
+
+	// template enables Go template rendering of file contents during staging.
+	// When true, the agent resolves {{.GatewayName}}, {{.PodName}}, {{.Vars.key}},
+	// and other TemplateContext fields inside each synced file before writing to disk.
+	// Binary files (containing null bytes) are rejected with an error.
+	// +optional
+	Template bool `json:"template,omitempty"`
 }
 
 // ============================================================

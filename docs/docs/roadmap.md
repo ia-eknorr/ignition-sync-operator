@@ -6,25 +6,27 @@ description: Planned features and milestones for Stoker.
 
 # Roadmap
 
-Current version: **v0.3.0** — [see the changelog](https://github.com/ia-eknorr/stoker-operator/blob/main/CHANGELOG.md) for release history.
+Current version: **v0.4.0** — [see the changelog](https://github.com/ia-eknorr/stoker-operator/blob/main/CHANGELOG.md) for release history.
 
-## v0.4.0 — Production Readiness
+## v0.4.0 — Content Templating & Security
 
-Observability and security fundamentals — the prerequisites for production trust.
+Multi-site GitOps and security hardening — the prerequisites for production multi-gateway deployments.
 
+- ✅ **Content templating** (`template: true`) — resolve `{{.GatewayName}}`, `{{.PodName}}`, `{{.Vars.key}}`, and all context variables inside file **contents** at sync time; binary files rejected with a clear error
+- ✅ **`vars` in `spec.sync.defaults`** — define default template variables shared across all profiles; profile `vars` override per-key
+- ✅ **`{{.PodName}}` in TemplateContext** — enables unique system names for StatefulSet replicas
+- ✅ **GitHub App tokens → Secret** — installation tokens written to a controller-managed Secret (`stoker-github-token-{crName}`) and mounted into agent pods; no longer stored in ConfigMap
 - Prometheus metrics for controller (reconcile duration, ref resolution latency, gateway counts, error rates)
 - Prometheus metrics for agent (sync duration, files changed, git fetch duration, error counts) with dedicated metrics endpoint
 - Grafana dashboard JSON shipped in Helm chart
 - SSH host key verification with optional `knownHostsSecretRef` (fix `InsecureIgnoreHostKey`)
 - Exponential backoff for transient git and API errors (30s → 60s → 120s → 5m cap)
-- Migrate GitHub App tokens from ConfigMap to Secret
 
 ## v0.5.0 — Config Transforms
 
-The multi-site and multi-environment killer feature — adapt files at sync time without modifying source files in git.
+Deep config transformation without modifying source files in git.
 
-- **JSON path patches** — per-mapping patches that modify specific values in JSON files at sync time using jq-style paths (e.g., `.systemName`, `.remoteGateways[0].host`); patch values are templates that resolve against `{{ .Vars.* }}`, `{{ .Gateway.Name }}`, `{{ .Gateway.Namespace }}`, `{{ .Profile.Name }}`, and pod labels/annotations; source files stay unmodified in git
-- **Vars templating** — resolve `{{ .Vars.* }}` and gateway context inside file contents for mappings with `template: true`
+- **JSON path patches** — per-mapping patches that modify specific values in JSON files at sync time using jq-style paths (e.g., `.systemName`, `.remoteGateways[0].host`); patch values are templates that resolve against `{{ .Vars.* }}`, `{{ .GatewayName }}`, `{{ .PodName }}`, and pod labels; source files stay unmodified in git
 - Designer session project-level granularity (sync Project B while designer has Project A open)
 
 ## v0.6.0 — Scale & Operability
