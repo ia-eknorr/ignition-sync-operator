@@ -123,7 +123,7 @@ auth:
 | `githubApp.privateKeySecretRef.key` | string | Yes | — | Key within the Secret |
 | `githubApp.apiBaseURL` | string | No | `https://api.github.com` | GitHub API base URL (set for GitHub Enterprise Server) |
 
-The controller exchanges the PEM private key for a short-lived installation access token (1-hour expiry), caches it with a 5-minute pre-expiry refresh, and delivers it to the agent via the metadata ConfigMap. The PEM key never leaves the controller namespace — agent pods do not mount the PEM secret.
+The controller exchanges the PEM private key for a short-lived installation access token (1-hour expiry), caches it with a 5-minute pre-expiry refresh, and writes it to a controller-managed Secret (`stoker-github-token-{crName}`). The agent mounts this Secret at `/etc/stoker/git-token/token`. The PEM key never leaves the controller namespace — agent pods do not mount the PEM secret.
 
 ## `spec.polling`
 

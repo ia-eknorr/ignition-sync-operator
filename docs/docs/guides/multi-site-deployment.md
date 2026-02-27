@@ -246,7 +246,7 @@ spec:
 - [ ] `patches` are used for targeted JSON field updates (no source-file modification required)
 - [ ] `vars` keys in templates or patch values match the keys defined in `spec.sync.defaults.vars` or `spec.sync.profiles.<name>.vars`
 - [ ] Each gateway pod has `stoker.io/inject: "true"` and optionally `stoker.io/profile: "<name>"`
-- [ ] The namespace has label `stoker.io/injection=enabled`
+- [ ] If `webhook.namespaceSelector.requireLabel=true`, the namespace has label `stoker.io/injection=enabled` (not required with default configuration)
 - [ ] Binary files (images, compiled modules) are in a separate mapping **without** `template: true`, or are excluded
 - [ ] Gateway API key Secret exists in the namespace
 - [ ] Git auth Secret exists in the namespace (GitHub App PEM, SSH key, or token)

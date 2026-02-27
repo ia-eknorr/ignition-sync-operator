@@ -22,6 +22,8 @@ Stoker tends your Ignition gateways, continuously feeding them configuration fro
 - **Git-driven configuration sync** — gateway projects, tags, and resources managed in Git
 - **Multi-gateway support** — manage any number of gateways from a single repository with template variables (`{{.GatewayName}}`, `{{.Labels.key}}`, `{{.CRName}}`)
 - **Profile mappings** — declarative source-to-destination file mappings with glob patterns and per-pod template routing
+- **Content templating** — resolve `{{.GatewayName}}`, `{{.Vars.key}}`, and other variables inside file contents at sync time; no source file modification required
+- **JSON patches** — surgically update specific JSON fields per gateway using sjson dot-notation paths, without modifying source files in git
 - **Automatic sidecar injection** — MutatingWebhook injects the sync agent into annotated pods
 - **Gateway discovery** — controller discovers annotated pods and aggregates sync status
 - **Webhook receiver** — push-event-driven sync via `POST /webhook/{namespace}/{crName}`

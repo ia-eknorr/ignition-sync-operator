@@ -48,9 +48,10 @@ type Agent struct {
 	Watcher      *Watcher
 	Recorder     record.EventRecorder // may be nil
 
-	crRef            *unstructured.Unstructured // cached for event target
-	lastSyncedCommit string
-	initialSyncDone  bool
+	crRef              *unstructured.Unstructured // cached for event target
+	lastSyncedCommit   string
+	lastSyncedProfiles string // raw profiles JSON; re-sync when CR profile changes
+	initialSyncDone    bool
 }
 
 // New creates a new Agent with all dependencies wired.
@@ -127,7 +128,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	// Initial sync (blocking). Files land on disk before startup probe passes,
 	// so the gateway container won't start until config is ready.
 	log.Info("performing initial sync")
-	syncErr := a.syncOnce(ctx, result.Commit, result.Ref, true)
+	syncErr := a.syncOnce(ctx, result.Commit, result.Ref, true, meta.Profiles)
 	if syncErr != nil {
 		log.Error(syncErr, "initial sync had errors (continuing)")
 	}
@@ -187,7 +188,7 @@ func (a *Agent) postCommissionSync(ctx context.Context, commit, ref string) {
 		}
 
 		log.Info("gateway responsive, running post-commission re-sync")
-		if err := a.syncOnce(ctx, commit, ref, false); err != nil {
+		if err := a.syncOnce(ctx, commit, ref, false, a.lastSyncedProfiles); err != nil {
 			log.Error(err, "post-commission sync failed")
 		} else {
 			log.Info("post-commission sync complete")
@@ -250,13 +251,17 @@ func (a *Agent) handleSyncTrigger(ctx context.Context, gitURL string, auth trans
 		}
 	}
 
-	// Check if commit changed.
-	if meta.Commit == a.lastSyncedCommit {
-		log.V(1).Info("commit unchanged, skipping sync", "commit", meta.Commit)
+	// Check if commit or profiles changed.
+	if meta.Commit == a.lastSyncedCommit && meta.Profiles == a.lastSyncedProfiles {
+		log.V(1).Info("commit and profiles unchanged, skipping sync", "commit", meta.Commit)
 		return
 	}
 
-	log.Info("new commit detected", "old", a.lastSyncedCommit, "new", meta.Commit, "ref", meta.Ref)
+	if meta.Commit != a.lastSyncedCommit {
+		log.Info("new commit detected", "old", a.lastSyncedCommit, "new", meta.Commit, "ref", meta.Ref)
+	} else {
+		log.Info("profiles changed, re-syncing", "commit", meta.Commit)
+	}
 
 	// Fetch and checkout new commit.
 	result, err := a.GitClient.CloneOrFetch(ctx, gitURL, meta.Ref, a.Config.RepoPath, auth)
@@ -287,7 +292,7 @@ func (a *Agent) handleSyncTrigger(ctx context.Context, gitURL string, auth trans
 
 	_ = profileName // used in syncWithProfile via metadata re-read
 
-	if syncErr := a.syncOnce(ctx, result.Commit, result.Ref, false); syncErr != nil {
+	if syncErr := a.syncOnce(ctx, result.Commit, result.Ref, false, meta.Profiles); syncErr != nil {
 		log.Error(syncErr, "sync had errors")
 	}
 }
@@ -429,7 +434,7 @@ func formatDesignerSessions(sessions []ignition.DesignerSession) string {
 }
 
 // syncOnce performs a single sync cycle: copy files, trigger scan, report status.
-func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool) error {
+func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool, profiles string) error {
 	log := logf.FromContext(ctx).WithName("sync")
 
 	syncResult, profileName, isDryRun, err := a.syncWithProfile(ctx)
@@ -522,6 +527,7 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 		"Sync completed on %s: commit %s, %d file(s) changed", a.Config.GatewayName, commit[:min(12, len(commit))], filesChanged)
 
 	a.lastSyncedCommit = commit
+	a.lastSyncedProfiles = profiles
 	return nil
 }
 
