@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [v0.4.3] - 2026-02-28
 
 ### Changed
 
@@ -127,6 +127,9 @@ Initial release — controller + agent sidecar for Git-driven Ignition gateway c
 - **Functional test suite** with phased kind cluster tests (phases 02-09)
 - Unit tests with envtest for controller and syncengine
 
+[v0.4.3]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.3
+[v0.4.2]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.2
+[v0.4.1]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.1
 [v0.4.0]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.0
 [v0.3.0]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.3.0
 [v0.2.0]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.2.0
