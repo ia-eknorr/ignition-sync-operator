@@ -12,7 +12,9 @@ import (
 	gogit "github.com/go-git/go-git/v5"
 	gogitconfig "github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	transportclient "github.com/go-git/go-git/v5/plumbing/transport/client"
 )
 
 // Result holds the outcome of a clone or fetch operation.
@@ -39,23 +41,36 @@ type GoGitClient struct{}
 var _ Client = (*GoGitClient)(nil)
 
 func (g *GoGitClient) LsRemote(ctx context.Context, repoURL, ref string, auth transport.AuthMethod) (Result, error) {
-	remote := gogit.NewRemote(nil, &gogitconfig.RemoteConfig{
-		Name: "origin",
-		URLs: []string{repoURL},
-	})
+	ep, err := transport.NewEndpoint(repoURL)
+	if err != nil {
+		return Result{}, fmt.Errorf("parsing endpoint %s: %w", repoURL, err)
+	}
 
-	refs, err := remote.ListContext(ctx, &gogit.ListOptions{Auth: auth})
+	cli, err := transportclient.NewClient(ep)
+	if err != nil {
+		return Result{}, fmt.Errorf("creating transport for %s: %w", repoURL, err)
+	}
+
+	sess, err := cli.NewUploadPackSession(ep, auth)
+	if err != nil {
+		return Result{}, fmt.Errorf("opening session for %s: %w", repoURL, err)
+	}
+	defer sess.Close()
+
+	ar, err := sess.AdvertisedReferencesContext(ctx)
 	if err != nil {
 		return Result{}, fmt.Errorf("ls-remote %s: %w", repoURL, err)
 	}
 
-	return matchRef(refs, ref, repoURL)
+	return matchRef(ar, ref, repoURL)
 }
 
-// matchRef resolves a ref string against a list of remote references.
-// For annotated tags, it prefers the peeled (^{}) entry which contains the
-// actual commit hash, avoiding mismatches with the agent's rev-parse result.
-func matchRef(refs []*plumbing.Reference, ref, repoURL string) (Result, error) {
+// matchRef resolves a ref string against AdvertisedReferences.
+// For annotated tags, go-git's AdvRefs.Peeled map contains the actual commit
+// hash (what native git shows as refs/tags/X^{}). We check Peeled first to
+// avoid returning the tag object hash, which would cause the agent (which uses
+// rev-parse) to disagree and re-sync every cycle.
+func matchRef(ar *packp.AdvRefs, ref, repoURL string) (Result, error) {
 	// If ref is already a full SHA, return it directly
 	if plumbing.IsHash(ref) {
 		return Result{Commit: ref, Ref: ref}, nil
@@ -67,25 +82,19 @@ func matchRef(refs []*plumbing.Reference, ref, repoURL string) (Result, error) {
 		"refs/heads/" + ref,
 	}
 
-	// Check peeled tag refs first — annotated tags expose both refs/tags/X
-	// (tag object hash) and refs/tags/X^{} (actual commit hash). The agent
-	// resolves to the commit hash via rev-parse, so we must return the peeled
-	// (commit) hash to avoid an infinite re-sync loop.
+	// Check peeled refs first (annotated tags). The Peeled map keys are the
+	// ref names (e.g. "refs/tags/2.2.3") and values are the dereferenced
+	// commit hashes — exactly what the agent resolves via rev-parse.
 	for _, candidate := range candidates {
-		peeledName := candidate + "^{}"
-		for _, r := range refs {
-			if r.Name().String() == peeledName {
-				return Result{Commit: r.Hash().String(), Ref: ref}, nil
-			}
+		if hash, ok := ar.Peeled[candidate]; ok {
+			return Result{Commit: hash.String(), Ref: ref}, nil
 		}
 	}
 
 	// Fall back to non-peeled refs (lightweight tags, branches)
 	for _, candidate := range candidates {
-		for _, r := range refs {
-			if r.Name().String() == candidate {
-				return Result{Commit: r.Hash().String(), Ref: ref}, nil
-			}
+		if hash, ok := ar.References[candidate]; ok {
+			return Result{Commit: hash.String(), Ref: ref}, nil
 		}
 	}
 
