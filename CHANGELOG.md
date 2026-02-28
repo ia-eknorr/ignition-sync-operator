@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.4.5] - 2026-02-28
+
+### Fixed
+
+- **`safe.directory` ownership check** — git 2.35.2+ refuses to operate on a repository whose root directory is not owned by the current user; agent pods inherit the Ignition pod's `runAsUser` (e.g. `2003`) but the `/repo` emptyDir mount point is created by Kubernetes as root; fix writes a minimal `.gitconfig` to `/tmp` (which is `$HOME`) with `[safe] directory = *` before any git operation (#87)
+
 ## [v0.4.4] - 2026-02-28
 
 ### Fixed
@@ -137,6 +143,7 @@ Initial release — controller + agent sidecar for Git-driven Ignition gateway c
 - **Functional test suite** with phased kind cluster tests (phases 02-09)
 - Unit tests with envtest for controller and syncengine
 
+[v0.4.5]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.5
 [v0.4.4]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.4
 [v0.4.3]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.3
 [v0.4.2]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.2
