@@ -63,11 +63,12 @@ These annotations trigger an immediate reconciliation via the controller's predi
 |------------|-------|-------------|
 | `stoker.io/injected` | `"true"` | Set by the mutating webhook after successful sidecar injection. Used for tracking — do not set manually. |
 
-## Labels on owned resources
+## Annotations and labels on owned resources
 
-| Label | Value | Set on | Description |
-|-------|-------|--------|-------------|
-| `stoker.io/cr-name` | CR name | ConfigMaps | Identifies the parent GatewaySync CR that owns this resource |
+| Key | Type | Value | Set on | Description |
+|-----|------|-------|--------|-------------|
+| `stoker.io/cr-name` | Label | CR name | ConfigMaps, Secrets | Identifies the parent GatewaySync CR that owns this resource |
+| `stoker.io/secret-type` | Annotation | `"github-app-token"` | Secrets | Marks controller-managed Secrets with their purpose |
 
 ## Agent image resolution order
 

@@ -34,6 +34,7 @@ Any file in `config/system-properties/` that contains `{{...}}` syntax is render
 |----------|---------|-------------|
 | `{{.GatewayName}}` | `ignition-site1` | Gateway identity from annotation or `app.kubernetes.io/name` label |
 | `{{.PodName}}` | `ignition-0` | Kubernetes pod name (useful for StatefulSet replicas) |
+| `{{.PodOrdinal}}` | `0` | StatefulSet replica index (from `apps.kubernetes.io/pod-index` label with pod-name fallback; always `0` for non-StatefulSet pods) |
 | `{{.Namespace}}` | `production` | Kubernetes namespace of the gateway pod |
 | `{{.CRName}}` | `site1-sync` | Name of the GatewaySync CR |
 | `{{.Ref}}` | `refs/heads/main` | Git ref being synced |
