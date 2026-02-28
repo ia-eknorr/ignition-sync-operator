@@ -4,6 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
 
 	gogit "github.com/go-git/go-git/v5"
 	gogitconfig "github.com/go-git/go-git/v5/config"
@@ -204,10 +208,163 @@ func resolveRef(repo *gogit.Repository, ref string) (plumbing.Hash, error) {
 
 // isCloned checks if a directory contains a valid git repository.
 func isCloned(path string) bool {
-	info, err := os.Stat(path)
-	if err != nil || !info.IsDir() {
-		return false
-	}
-	_, err = gogit.PlainOpen(path)
+	_, err := os.Stat(filepath.Join(path, ".git"))
 	return err == nil
+}
+
+// NativeGitClient implements Client using the native git binary via exec.Command.
+// Unlike GoGitClient, it streams pack data rather than loading it into memory,
+// making it suitable for large repositories where go-git causes OOM kills.
+type NativeGitClient struct{}
+
+var _ Client = (*NativeGitClient)(nil)
+
+// LsRemote is not supported by NativeGitClient. The controller uses GoGitClient for this.
+func (g *NativeGitClient) LsRemote(_ context.Context, _, _ string, _ transport.AuthMethod) (Result, error) {
+	return Result{}, fmt.Errorf("NativeGitClient does not support LsRemote")
+}
+
+// CloneOrFetch clones or fetches using the native git binary.
+// The transport.AuthMethod parameter is ignored; auth is configured via
+// GIT_SSH_KEY_FILE (SSH key path) or GIT_TOKEN_FILE (token path) env vars.
+func (g *NativeGitClient) CloneOrFetch(ctx context.Context, repoURL, ref, path string, _ transport.AuthMethod) (Result, error) {
+	authURL, env, cleanup, err := buildGitEnv(repoURL)
+	if err != nil {
+		return Result{}, fmt.Errorf("setting up git env: %w", err)
+	}
+	defer cleanup()
+
+	if isCloned(path) {
+		return nativeFetchAndCheckout(ctx, authURL, ref, path, env)
+	}
+	return nativeCloneAndCheckout(ctx, authURL, ref, path, env)
+}
+
+// buildGitEnv prepares environment variables for native git commands.
+// For SSH repos, copies the key to /tmp with 0600 permissions and sets GIT_SSH_COMMAND.
+// For token repos, injects the token into the URL.
+// Returns the (possibly modified) URL, env vars, a cleanup func, and any error.
+func buildGitEnv(repoURL string) (string, []string, func(), error) {
+	base := []string{
+		"HOME=/tmp",
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_CONFIG_NOSYSTEM=1",
+	}
+	noop := func() {}
+
+	if keyFile := os.Getenv("GIT_SSH_KEY_FILE"); keyFile != "" {
+		keyData, err := os.ReadFile(keyFile)
+		if err != nil {
+			return repoURL, nil, noop, fmt.Errorf("reading SSH key %s: %w", keyFile, err)
+		}
+		tmpKey := "/tmp/stoker-ssh-key"
+		if err := os.WriteFile(tmpKey, keyData, 0600); err != nil {
+			return repoURL, nil, noop, fmt.Errorf("writing SSH key to /tmp: %w", err)
+		}
+		env := append(base, fmt.Sprintf(
+			"GIT_SSH_COMMAND=ssh -i %s -o StrictHostKeyChecking=no -o BatchMode=yes -o IdentitiesOnly=yes",
+			tmpKey,
+		))
+		return repoURL, env, func() { _ = os.Remove(tmpKey) }, nil
+	}
+
+	if tokenFile := os.Getenv("GIT_TOKEN_FILE"); tokenFile != "" {
+		tokenData, err := os.ReadFile(tokenFile)
+		if err != nil {
+			return repoURL, nil, noop, fmt.Errorf("reading token file %s: %w", tokenFile, err)
+		}
+		token := strings.TrimSpace(string(tokenData))
+		return injectTokenIntoURL(repoURL, token), base, noop, nil
+	}
+
+	return repoURL, base, noop, nil
+}
+
+// injectTokenIntoURL inserts an OAuth token credential into an HTTPS git URL.
+func injectTokenIntoURL(repoURL, token string) string {
+	if after, ok := strings.CutPrefix(repoURL, "https://"); ok {
+		return "https://x-access-token:" + token + "@" + after
+	}
+	if after, ok := strings.CutPrefix(repoURL, "http://"); ok {
+		return "http://x-access-token:" + token + "@" + after
+	}
+	return repoURL
+}
+
+func nativeCloneAndCheckout(ctx context.Context, repoURL, ref, path string, env []string) (Result, error) {
+	// For named refs (branches, tags), clone directly to the target ref in a single
+	// network operation. This matches what git-sync does and avoids a redundant fetch.
+	if _, err := runGit(ctx, []string{"clone", "--depth=1", "--branch", ref, repoURL, path}, "", env); err == nil {
+		return nativeRevParse(ctx, ref, path, env)
+	}
+
+	// Fallback for SHA refs or servers that don't support --branch with that ref:
+	// clean up any partial clone directory contents, then clone default + fetch.
+	cleanDir(path)
+	if _, err := runGit(ctx, []string{"clone", "--depth=1", repoURL, path}, "", env); err != nil {
+		return Result{}, fmt.Errorf("git clone: %w", err)
+	}
+	if _, err := runGit(ctx, []string{"fetch", "--depth=1", "origin", ref}, path, env); err != nil {
+		return Result{}, fmt.Errorf("git fetch %s: %w", ref, err)
+	}
+	if _, err := runGit(ctx, []string{"checkout", "-f", "FETCH_HEAD"}, path, env); err != nil {
+		return Result{}, fmt.Errorf("git checkout FETCH_HEAD: %w", err)
+	}
+	return nativeRevParse(ctx, ref, path, env)
+}
+
+// cleanDir removes the contents of a directory without removing the directory itself.
+// Used to reset a partially-cloned emptyDir mount before retrying.
+func cleanDir(path string) {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		_ = os.RemoveAll(filepath.Join(path, e.Name()))
+	}
+}
+
+func nativeFetchAndCheckout(ctx context.Context, repoURL, ref, path string, env []string) (Result, error) {
+	// Update remote URL in case it changed in the CR spec.
+	if _, err := runGit(ctx, []string{"remote", "set-url", "origin", repoURL}, path, env); err != nil {
+		return Result{}, fmt.Errorf("git remote set-url: %w", err)
+	}
+	if _, err := runGit(ctx, []string{"fetch", "--depth=1", "origin", ref}, path, env); err != nil {
+		return Result{}, fmt.Errorf("git fetch: %w", err)
+	}
+	if _, err := runGit(ctx, []string{"checkout", "-f", "FETCH_HEAD"}, path, env); err != nil {
+		return Result{}, fmt.Errorf("git checkout: %w", err)
+	}
+	return nativeRevParse(ctx, ref, path, env)
+}
+
+func nativeRevParse(ctx context.Context, ref, path string, env []string) (Result, error) {
+	commit, err := runGit(ctx, []string{"rev-parse", "HEAD"}, path, env)
+	if err != nil {
+		return Result{}, fmt.Errorf("git rev-parse HEAD: %w", err)
+	}
+	return Result{Commit: commit, Ref: ref}, nil
+}
+
+// runGit runs a git command and returns the trimmed combined output.
+func runGit(ctx context.Context, args []string, dir string, extraEnv []string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Env = append(os.Environ(), extraEnv...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("%s", sanitizeOutput(string(out)))
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// tokenRe matches credential tokens embedded in git URLs (https://user:token@host).
+var tokenRe = regexp.MustCompile(`://[^@\s]+@`)
+
+// sanitizeOutput strips credential tokens from git output before logging or surfacing in status.
+func sanitizeOutput(s string) string {
+	return tokenRe.ReplaceAllString(strings.TrimSpace(s), "://<redacted>@")
 }

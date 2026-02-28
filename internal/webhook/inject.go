@@ -30,6 +30,7 @@ const (
 	volumeGitCredentials = "git-credentials"
 	volumeAPIKey         = "api-key"
 	volumeGitHubToken    = "git-token"
+	volumeGitTmp         = "git-tmp"
 
 	// Mount paths inside the agent container.
 	mountRepo           = "/repo"
@@ -437,6 +438,7 @@ func agentVolumeMounts(gs *stokerv1alpha1.GatewaySync) []corev1.VolumeMount {
 	mounts := []corev1.VolumeMount{
 		{Name: volumeSyncRepo, MountPath: mountRepo},
 		{Name: volumeAPIKey, MountPath: mountAPIKey, ReadOnly: true},
+		{Name: volumeGitTmp, MountPath: "/tmp"},
 	}
 	if needsGitCredentialVolume(gs) {
 		mounts = append(mounts, corev1.VolumeMount{
@@ -457,6 +459,14 @@ func agentVolumes(gs *stokerv1alpha1.GatewaySync) []corev1.Volume {
 	vols := []corev1.Volume{
 		{
 			Name: volumeSyncRepo,
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
+			},
+		},
+		{
+			// Native git requires writable scratch space for lock files and known_hosts.
+			// readOnlyRootFilesystem: true blocks writes to $HOME, so we mount /tmp explicitly.
+			Name: volumeGitTmp,
 			VolumeSource: corev1.VolumeSource{
 				EmptyDir: &corev1.EmptyDirVolumeSource{},
 			},
