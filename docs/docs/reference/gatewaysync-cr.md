@@ -156,7 +156,7 @@ Baseline settings inherited by all profiles. Individual profiles can override th
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `excludePatterns` | []string | No | `["**/.git/", "**/.gitkeep", "**/.resources/**"]` | Glob patterns for files to exclude from sync |
-| `vars` | map[string]string | No | — | Default template variables inherited by all profiles. Profile `vars` override these per-key. |
+| `vars` | map[string]string | No | — | Default template variables inherited by all profiles. Profile `vars` override these per-key. Keys must be valid identifiers (letters, digits, underscores — no dashes). |
 | `syncPeriod` | int32 | No | `30` | Agent-side polling interval in seconds (min: 5, max: 3600) |
 | `designerSessionPolicy` | string | No | `"proceed"` | Behavior when Designer sessions are active: `proceed`, `wait`, or `fail` |
 | `dryRun` | bool | No | `false` | Sync to staging only — write diff to status ConfigMap without modifying `/ignition-data/` |
@@ -191,7 +191,7 @@ Each profile supports the following fields:
 |-------|------|----------|---------|-------------|
 | `mappings` | []object | Yes | — | Ordered list of source-to-destination file mappings |
 | `excludePatterns` | []string | No | — | Additional glob patterns merged with `spec.sync.defaults.excludePatterns` |
-| `vars` | map[string]string | No | — | Custom template variables available as `{{.Vars.key}}` |
+| `vars` | map[string]string | No | — | Custom template variables available as `{{.Vars.key}}`. Keys must be valid identifiers (letters, digits, underscores — no dashes). |
 | `syncPeriod` | int32 | No | inherited | Overrides `spec.sync.defaults.syncPeriod` |
 | `dryRun` | bool | No | inherited | Overrides `spec.sync.defaults.dryRun` |
 | `designerSessionPolicy` | string | No | inherited | Overrides `spec.sync.defaults.designerSessionPolicy` |

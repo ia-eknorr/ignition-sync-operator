@@ -58,6 +58,19 @@ podLabels:
 
 Now this gateway syncs from `sites/factory-north/`.
 
+:::warning Label key naming
+`key` in `{{.Labels.key}}` must be a **valid identifier** — letters, digits, and underscores only. **Dashes and dots are not supported** and cause a template parse error at sync time.
+
+| | |
+|---|---|
+| `{{.Labels.site}}` | ✅ |
+| `{{.Labels.factoryZone}}` | ✅ |
+| `{{.Labels.my-label}}` | ❌ parse error |
+| `{{.Labels.app.kubernetes.io}}` | ❌ silently wrong (looks up key `"app"`) |
+
+For K8s system labels like `app.kubernetes.io/name`, use `{{.GatewayName}}` or a `vars` entry instead.
+:::
+
 ## Custom variables
 
 Use `{{.Vars.key}}` with profile-level `vars` for values that don't map to Kubernetes labels or names:
@@ -68,13 +81,29 @@ spec:
     profiles:
       standard:
         vars:
-          region: us-east
+          region: us-east       # valid: letters and dashes not allowed
           tier: production
         mappings:
           - source: "{{.Vars.region}}/{{.Vars.tier}}/projects/"
             destination: "projects/"
             type: dir
 ```
+
+:::warning Var key naming
+Var keys follow the same identifier constraint as label keys — **letters, digits, and underscores only; no dashes**. The controller rejects CRs with invalid var keys immediately at reconcile time with a `ProfilesValid=False` status condition, so you'll catch errors before they reach sync.
+
+| | |
+|---|---|
+| `region`, `siteNumber`, `projectName` | ✅ |
+| `my-var`, `site.name` | ❌ rejected at apply time |
+
+To use a value that contains dashes (e.g. a project name), store it in a var with a valid key:
+```yaml
+vars:
+  projectName: "public-demo"    # stored with valid key; value can contain anything
+```
+Then reference it as `{{.Vars.projectName}}`. To combine it with a replica ordinal: `"{{.Vars.projectName}}-{{.PodOrdinal}}"`.
+:::
 
 ## Multiple named profiles
 
@@ -143,37 +172,6 @@ spec:
             type: dir
 ```
 
-## Default vars (shared across profiles)
-
-Use `spec.sync.defaults.vars` to define template variables shared by all profiles. Profile `vars` override defaults on a per-key basis — keys defined in defaults but not in a profile are inherited automatically.
-
-```yaml
-spec:
-  sync:
-    defaults:
-      vars:
-        environment: "production"
-        region: "us-east-1"
-    profiles:
-      frontend:
-        vars:
-          deploymentMode: "frontend"   # inherits environment and region from defaults
-        mappings:
-          - source: "config/base"
-            destination: "config/resources/core"
-            type: dir
-      backend:
-        vars:
-          deploymentMode: "backend"    # inherits environment and region from defaults
-          region: "us-west-2"         # overrides the default region for this profile
-        mappings:
-          - source: "config/base"
-            destination: "config/resources/core"
-            type: dir
-```
-
-This eliminates the need to repeat shared variables in every profile.
-
 ## Defaults inheritance
 
 Use `spec.sync.defaults` to set baseline values that all profiles inherit. Profiles only need to specify fields they want to override:
@@ -207,22 +205,21 @@ spec:
 
 ## Available template variables
 
-| Variable | Source | Example |
-|----------|--------|---------|
+| Variable | Source | Example value |
+|----------|--------|---------------|
 | `{{.GatewayName}}` | `stoker.io/gateway-name` annotation or `app.kubernetes.io/name` label | `ignition-blue` |
-| `{{.PodName}}` | Kubernetes pod name (downward API) | `ignition-0` |
-| `{{.Labels.key}}` | Any pod label | `factory-north` |
-| `{{.Vars.key}}` | Profile `vars` or `defaults.vars` (profile overrides default per-key) | `us-east` |
+| `{{.PodName}}` | Kubernetes pod name | `my-gateway-0` |
+| `{{.PodOrdinal}}` | StatefulSet replica index — from `apps.kubernetes.io/pod-index` label (K8s 1.27+), falls back to parsing pod name | `0`, `1`, `2` |
+| `{{.Labels.key}}` | Any pod label — key must be a valid identifier (no dashes) | `factory-north` |
+| `{{.Vars.key}}` | Profile or defaults `vars` map — key must be a valid identifier (no dashes) | `us-east` |
 | `{{.CRName}}` | GatewaySync CR name | `my-sync` |
 | `{{.Namespace}}` | Pod namespace | `production` |
 | `{{.Ref}}` | Resolved git ref | `main` |
 | `{{.Commit}}` | Full commit SHA | `4d19160...` |
 
-These variables are available in **path templates** (`source`, `destination`) and — when `template: true` is set on the mapping — in **file contents** as well. See [Content Templating](./content-templating.md).
+See the [CRD reference](../reference/gatewaysync-cr.md#template-variables) for the full variable list and identifier naming rules.
 
 ## Next steps
 
-- [Content Templating](./content-templating.md) — resolve variables inside file contents at sync time
-- [Multi-Site Deployment](./multi-site-deployment.md) — patterns for deploying across multiple sites or environments
 - [GatewaySync CR Reference](../reference/gatewaysync-cr.md#template-variables) — full template variable reference
 - [Webhook Sync](./webhook-sync.md) — trigger instant syncs on push events
