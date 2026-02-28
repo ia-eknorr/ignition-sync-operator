@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **Native git for agent clone/fetch** — replaced go-git's `CloneOrFetch` with `exec.Command("git", ...)` using `--depth=1` shallow clones; eliminates the OOM kills caused by go-git loading entire pack files into memory during initial clone of large repositories (#85)
+- **Agent base image** — replaced `distroless/static-debian12:nonroot` with `alpine:3.21 + git + openssh-client` to provide the native git binary; existing security context (`readOnlyRootFilesystem`, `drop ALL`, `seccompProfile: RuntimeDefault`) is unchanged (#85)
+
+### Fixed
+
+- Agent pod OOMKills on large repositories during initial clone (#85)
+
+### Added
+
+- Writable `/tmp` emptyDir injected into agent sidecar pods; native git requires scratch space for lock files and `known_hosts` under `readOnlyRootFilesystem: true` (#85)
+
 ## [v0.4.2] - 2026-02-28
 
 ### Added

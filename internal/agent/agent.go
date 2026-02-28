@@ -65,7 +65,7 @@ func New(cfg *Config, k8sClient client.Client, recorder record.EventRecorder) *A
 	return &Agent{
 		Config:       cfg,
 		K8sClient:    k8sClient,
-		GitClient:    &git.GoGitClient{},
+		GitClient:    &git.NativeGitClient{},
 		SyncEngine:   &syncengine.Engine{ExcludePatterns: excludes},
 		IgnitionAPI:  igClient,
 		HealthServer: NewHealthServer(":8082"),
