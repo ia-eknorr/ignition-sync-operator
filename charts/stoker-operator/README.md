@@ -67,6 +67,8 @@ Kubernetes: `>= 1.28.0`
 | networkPolicy | object | `{"enabled":false}` | NetworkPolicy restricts ingress to the metrics port. Only allows traffic from namespaces labeled `metrics: enabled`. |
 | networkPolicy.enabled | bool | `false` | Create a NetworkPolicy for the controller. |
 | nodeSelector | object | `{}` | Node selector labels for scheduling the controller pod. Example:   nodeSelector:     kubernetes.io/os: linux |
+| podAnnotations | object | `{}` | Additional annotations to add to the controller pod. |
+| podLabels | object | `{}` | Additional labels to add to the controller pod. |
 | rbac | object | `{"autoBindAgent":{"enabled":true}}` | RBAC configuration for the agent sidecar. |
 | rbac.autoBindAgent.enabled | bool | `true` | Automatically create RoleBindings for the agent sidecar in namespaces where GatewaySync CRs exist. The controller discovers ServiceAccounts from gateway pods and binds only those SAs to the stoker-agent ClusterRole. Disable for environments that manage RBAC externally (e.g., GitOps-managed RBAC). |
 | replicaCount | int | `1` | Number of controller replicas. Only one replica holds the leader lock at a time; additional replicas provide fast failover. |

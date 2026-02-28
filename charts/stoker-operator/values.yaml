@@ -122,6 +122,12 @@ webhookReceiver:
       # -- Key within the Secret.
       key: "webhook-secret"
 
+# -- Additional annotations to add to the controller pod.
+podAnnotations: {}
+
+# -- Additional labels to add to the controller pod.
+podLabels: {}
+
 # -- Node selector labels for scheduling the controller pod.
 # Example:
 #   nodeSelector:

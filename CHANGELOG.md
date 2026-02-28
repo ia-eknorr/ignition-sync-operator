@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.4.2] - 2026-02-28
+
+### Added
+
+- **`podAnnotations` and `podLabels`** — Helm values for adding arbitrary annotations and labels to the controller pod (#84)
+
+### Fixed
+
+- **Agent startup probe timeout** — increased `failureThreshold` from 30 → 150 (60s → 5min) to accommodate initial clone of large repositories before the first sync completes (#84)
+
 ## [v0.4.1] - 2026-02-28
 
 ### Added

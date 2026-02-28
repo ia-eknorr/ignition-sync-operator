@@ -228,7 +228,7 @@ func injectSidecar(pod *corev1.Pod, gs *stokerv1alpha1.GatewaySync) {
 				},
 			},
 			PeriodSeconds:    2,
-			FailureThreshold: 30,
+			FailureThreshold: 150,
 		},
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
