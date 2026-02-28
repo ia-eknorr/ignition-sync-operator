@@ -332,7 +332,7 @@ func TestInject_TokenAuth(t *testing.T) {
 	assertVolumeSecret(t, patched, volumeGitCredentials, "git-token-secret")
 }
 
-func TestInject_GitHubAppAuth_NoCredentialVolume(t *testing.T) {
+func TestInject_GitHubAppAuth_TokenSecretVolume(t *testing.T) {
 	gs := testGatewaySync()
 	gs.Spec.Git.Auth = &stokerv1alpha1.GitAuthSpec{
 		GitHubApp: &stokerv1alpha1.GitHubAppAuth{
@@ -363,7 +363,7 @@ func TestInject_GitHubAppAuth_NoCredentialVolume(t *testing.T) {
 		t.Fatal("stoker-agent not found")
 	}
 
-	// GitHubApp auth: no git-credentials volume or mount (PEM stays in controller)
+	// GitHubApp auth: PEM stays in controller — no git-credentials volume or mount.
 	for _, v := range patched.Spec.Volumes {
 		if v.Name == volumeGitCredentials {
 			t.Error("git-credentials volume should not be present for GitHubApp auth")
@@ -375,11 +375,29 @@ func TestInject_GitHubAppAuth_NoCredentialVolume(t *testing.T) {
 		}
 	}
 
-	// No GIT_TOKEN_FILE or GIT_SSH_KEY_FILE env vars
+	// No GIT_SSH_KEY_FILE (SSH is not used for GitHub App auth).
 	for _, env := range agent.Env {
-		if env.Name == "GIT_TOKEN_FILE" || env.Name == "GIT_SSH_KEY_FILE" {
+		if env.Name == "GIT_SSH_KEY_FILE" {
 			t.Errorf("unexpected env var %s for GitHubApp auth", env.Name)
 		}
+	}
+
+	// GitHub App token Secret IS mounted: GIT_TOKEN_FILE points to controller-managed Secret.
+	assertEnvVar(t, agent, "GIT_TOKEN_FILE", mountGitHubToken+"/token")
+	assertVolumeSecret(t, patched, volumeGitHubToken, gitHubTokenSecretName("my-sync"))
+
+	// Confirm the volume mount is present in the agent container.
+	found := false
+	for _, vm := range agent.VolumeMounts {
+		if vm.Name == volumeGitHubToken {
+			found = true
+			if vm.MountPath != mountGitHubToken {
+				t.Errorf("git-token mount path: got %q, want %q", vm.MountPath, mountGitHubToken)
+			}
+		}
+	}
+	if !found {
+		t.Error("git-token volume mount not found in stoker-agent")
 	}
 }
 

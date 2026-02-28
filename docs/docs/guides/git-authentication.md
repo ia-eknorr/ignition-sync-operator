@@ -139,7 +139,7 @@ spec:
   # ... gateway, sync config
 ```
 
-**How it works:** The controller exchanges the PEM private key for a short-lived installation access token (1-hour expiry) via the GitHub API, caches it with a 5-minute pre-expiry refresh, and delivers it to the agent via the metadata ConfigMap. The PEM key never leaves the controller namespace — agent pods do not mount the PEM secret.
+**How it works:** The controller exchanges the PEM private key for a short-lived installation access token (1-hour expiry) via the GitHub API, caches it with a 5-minute pre-expiry refresh, and writes it to a controller-managed Secret (`stoker-github-token-{crName}`). The agent mounts this Secret to authenticate git operations. The PEM key never leaves the controller namespace — agent pods do not mount the PEM secret.
 
 **When to use:** Organizations managing many repos, where individual tokens are impractical or against policy. App tokens auto-rotate and provide audit trails.
 
@@ -156,7 +156,7 @@ Set `apiBaseURL` to your GitHub Enterprise API endpoint (e.g., `https://github.e
 |--------|----------|-------|----------|-----------------|
 | Token | HTTPS | Per-token | Manual | Mounted Secret |
 | SSH key | SSH | Per-repo (deploy key) | Manual | Mounted Secret |
-| GitHub App | HTTPS | Per-installation | Automatic (1hr) | ConfigMap token (no Secret mount) |
+| GitHub App | HTTPS | Per-installation | Automatic (1hr) | Controller-managed Secret (PEM never mounted) |
 
 ## Next steps
 

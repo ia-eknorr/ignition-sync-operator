@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.4.0] - Unreleased
+
+### Added
+
+- **Content templating** (`template: true`) — resolve Go template variables (`{{.GatewayName}}`, `{{.PodName}}`, `{{.Vars.key}}`, etc.) inside file **contents** at sync time, without modifying source files in git; binary files (null bytes) are rejected with a clear error (#82)
+- **`vars` in `spec.sync.defaults`** — define default template variables shared across all profiles; profile `vars` override per-key (#82)
+- **`{{.PodName}}` in TemplateContext** — enables unique system names for StatefulSet replicas with ordinal-suffix pod names (#82)
+- **JSON path patches** — per-mapping `patches` blocks that set specific JSON fields at sync time using sjson dot-notation paths; patch values support Go template syntax; `file` field supports doublestar globs; type inference from filesystem when `type` field is omitted (#82)
+
+### Changed
+
+- **GitHub App tokens moved to dedicated Secret** — installation tokens are now written to `stoker-github-token-{crName}` (a controller-managed Secret) and mounted into agent pods; tokens are no longer stored in the metadata ConfigMap (#82)
+
+### Fixed
+
+- Agent now re-syncs when CR profiles change (new patches, vars, or mappings) even if the git commit has not changed; previously a profile change without a new commit was ignored until the next pod restart (#82)
+
 ## [v0.3.0] - 2026-02-25
 
 ### Breaking Changes
@@ -75,6 +92,7 @@ Initial release — controller + agent sidecar for Git-driven Ignition gateway c
 - **Functional test suite** with phased kind cluster tests (phases 02-09)
 - Unit tests with envtest for controller and syncengine
 
+[v0.4.0]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.0
 [v0.3.0]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.3.0
 [v0.2.0]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.2.0
 [v0.1.2]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.1.2

@@ -123,7 +123,7 @@ auth:
 | `githubApp.privateKeySecretRef.key` | string | Yes | — | Key within the Secret |
 | `githubApp.apiBaseURL` | string | No | `https://api.github.com` | GitHub API base URL (set for GitHub Enterprise Server) |
 
-The controller exchanges the PEM private key for a short-lived installation access token (1-hour expiry), caches it with a 5-minute pre-expiry refresh, and delivers it to the agent via the metadata ConfigMap. The PEM key never leaves the controller namespace — agent pods do not mount the PEM secret.
+The controller exchanges the PEM private key for a short-lived installation access token (1-hour expiry), caches it with a 5-minute pre-expiry refresh, and writes it to a controller-managed Secret (`stoker-github-token-{crName}`). The agent mounts this Secret at `/etc/stoker/git-token/token`. The PEM key never leaves the controller namespace — agent pods do not mount the PEM secret.
 
 ## `spec.polling`
 
@@ -156,6 +156,7 @@ Baseline settings inherited by all profiles. Individual profiles can override th
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `excludePatterns` | []string | No | `["**/.git/", "**/.gitkeep", "**/.resources/**"]` | Glob patterns for files to exclude from sync |
+| `vars` | map[string]string | No | — | Default template variables inherited by all profiles. Profile `vars` override these per-key. |
 | `syncPeriod` | int32 | No | `30` | Agent-side polling interval in seconds (min: 5, max: 3600) |
 | `designerSessionPolicy` | string | No | `"proceed"` | Behavior when Designer sessions are active: `proceed`, `wait`, or `fail` |
 | `dryRun` | bool | No | `false` | Sync to staging only — write diff to status ConfigMap without modifying `/ignition-data/` |
@@ -204,8 +205,39 @@ An ordered list of source-to-destination file mappings. Applied top to bottom; l
 |-------|------|----------|---------|-------------|
 | `source` | string | Yes | — | Repo-relative path to copy from |
 | `destination` | string | Yes | — | Path relative to the Ignition data directory (`/ignition-data/`) |
-| `type` | string | No | `"dir"` | Entry type — `"dir"` or `"file"` |
+| `type` | string | No | inferred | Entry type — `"dir"` or `"file"`. When omitted the agent infers the type from the filesystem at sync time. |
 | `required` | bool | No | `false` | Fail sync if the source path doesn't exist |
+| `template` | bool | No | `false` | Resolve Go template variables inside file **contents** at sync time. Binary files (null bytes) are rejected. See [Content Templating](../guides/content-templating.md). |
+| `patches` | []object | No | — | Targeted JSON field updates applied at sync time. See [JSON Patches](../guides/json-patches.md). |
+
+:::note
+`type` is inferred from `os.Stat` on the source path — no default value is required in the CR. If you set it explicitly, it acts as a validation hint: the agent errors if the actual filesystem type doesn't match. A source that doesn't exist (when `required: false`) defaults to `"dir"` and is silently skipped.
+:::
+
+#### `patches`
+
+Each entry in `patches` applies one set of JSON field updates to files matched by the `file` glob:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `file` | string | No | Path relative to the mapping's destination. Supports doublestar globs (`**/*.json`). For **file mappings** (`type: file`), omit to target the mapped file itself. |
+| `set` | map[string]string | Yes | sjson dot-notation paths to values. Values support Go template syntax (same variables as `template: true`). |
+
+```yaml
+mappings:
+  - source: "config/resources/ignition/core"
+    destination: "config/resources/ignition/core"
+    patches:
+      - file: "system-properties/config.json"
+        set:
+          systemName: "{{ .GatewayName }}"
+          httpPort: "{{ .Vars.gatewayPort }}"
+      - file: "db-connections/*.json"
+        set:
+          connection.host: "{{ .Vars.dbHost }}"
+```
+
+See the [JSON Patches guide](../guides/json-patches.md) for full examples, type inference rules, and path syntax.
 
 #### Template variables
 
@@ -214,9 +246,10 @@ Both `source` and `destination` support Go template variables:
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `{{.GatewayName}}` | Gateway identity from the `stoker.io/gateway-name` annotation (or `app.kubernetes.io/name` label) | `sites/{{.GatewayName}}/projects` |
+| `{{.PodName}}` | Kubernetes pod name — useful for StatefulSet replicas needing unique identity | `system-{{.PodName}}` |
 | `{{.CRName}}` | Name of the GatewaySync CR that owns this sync | `config/{{.CRName}}/resources` |
 | `{{.Labels.key}}` | Any label on the gateway pod (read at sync time) | `sites/{{.Labels.site}}/projects` |
-| `{{.Vars.key}}` | Custom variable from profile `vars` | `site{{.Vars.siteNumber}}/scripts` |
+| `{{.Vars.key}}` | Custom variable from profile or defaults `vars` (profile overrides default per-key) | `site{{.Vars.siteNumber}}/scripts` |
 | `{{.Namespace}}` | Pod namespace | `config/{{.Namespace}}/overlay` |
 | `{{.Ref}}` | Resolved git ref | — |
 | `{{.Commit}}` | Full commit SHA | — |

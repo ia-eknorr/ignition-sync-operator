@@ -21,7 +21,10 @@ const sidebars: SidebarsConfig = {
       items: [
         "guides/git-authentication",
         "guides/multi-gateway",
+        "guides/content-templating",
+        "guides/json-patches",
         "guides/webhook-sync",
+        "guides/multi-site-deployment",
       ],
     },
     {

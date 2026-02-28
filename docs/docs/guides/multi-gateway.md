@@ -143,6 +143,37 @@ spec:
             type: dir
 ```
 
+## Default vars (shared across profiles)
+
+Use `spec.sync.defaults.vars` to define template variables shared by all profiles. Profile `vars` override defaults on a per-key basis — keys defined in defaults but not in a profile are inherited automatically.
+
+```yaml
+spec:
+  sync:
+    defaults:
+      vars:
+        environment: "production"
+        region: "us-east-1"
+    profiles:
+      frontend:
+        vars:
+          deploymentMode: "frontend"   # inherits environment and region from defaults
+        mappings:
+          - source: "config/base"
+            destination: "config/resources/core"
+            type: dir
+      backend:
+        vars:
+          deploymentMode: "backend"    # inherits environment and region from defaults
+          region: "us-west-2"         # overrides the default region for this profile
+        mappings:
+          - source: "config/base"
+            destination: "config/resources/core"
+            type: dir
+```
+
+This eliminates the need to repeat shared variables in every profile.
+
 ## Defaults inheritance
 
 Use `spec.sync.defaults` to set baseline values that all profiles inherit. Profiles only need to specify fields they want to override:
@@ -179,14 +210,19 @@ spec:
 | Variable | Source | Example |
 |----------|--------|---------|
 | `{{.GatewayName}}` | `stoker.io/gateway-name` annotation or `app.kubernetes.io/name` label | `ignition-blue` |
+| `{{.PodName}}` | Kubernetes pod name (downward API) | `ignition-0` |
 | `{{.Labels.key}}` | Any pod label | `factory-north` |
-| `{{.Vars.key}}` | Profile `vars` map | `us-east` |
+| `{{.Vars.key}}` | Profile `vars` or `defaults.vars` (profile overrides default per-key) | `us-east` |
 | `{{.CRName}}` | GatewaySync CR name | `my-sync` |
 | `{{.Namespace}}` | Pod namespace | `production` |
 | `{{.Ref}}` | Resolved git ref | `main` |
 | `{{.Commit}}` | Full commit SHA | `4d19160...` |
 
+These variables are available in **path templates** (`source`, `destination`) and — when `template: true` is set on the mapping — in **file contents** as well. See [Content Templating](./content-templating.md).
+
 ## Next steps
 
+- [Content Templating](./content-templating.md) — resolve variables inside file contents at sync time
+- [Multi-Site Deployment](./multi-site-deployment.md) — patterns for deploying across multiple sites or environments
 - [GatewaySync CR Reference](../reference/gatewaysync-cr.md#template-variables) — full template variable reference
 - [Webhook Sync](./webhook-sync.md) — trigger instant syncs on push events

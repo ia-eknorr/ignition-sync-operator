@@ -51,8 +51,11 @@ const (
 
 	// Labels
 
-	// LabelCRName is used on owned resources (PVCs, ConfigMaps) to identify the parent CR.
+	// LabelCRName is used on owned resources (PVCs, ConfigMaps, Secrets) to identify the parent CR.
 	LabelCRName = AnnotationPrefix + "/cr-name"
+
+	// AnnotationSecretType annotates controller-managed Secrets with their purpose.
+	AnnotationSecretType = AnnotationPrefix + "/secret-type"
 
 	// LabelNamespaceInjection enables webhook injection for a namespace via namespaceSelector.
 	// Applied to namespaces: kubectl label namespace site1 stoker.io/injection=enabled

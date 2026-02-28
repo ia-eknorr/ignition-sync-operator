@@ -14,7 +14,12 @@ import (
 type ResolvedMapping struct {
 	Source      string // absolute path on disk
 	Destination string // relative to live dir
-	Type        string // "dir" or "file"
+	Type        string // "dir" or "file" (inferred from filesystem if empty)
+	Template    bool   // if true, resolve Go template vars in file contents during staging
+	// ApplyPatches is called on each staged file for this mapping. It receives the
+	// absolute path of the staged file and applies JSON field patches in-place.
+	// Nil means no patches are configured for this mapping.
+	ApplyPatches func(stagedPath string) error
 }
 
 // SyncPlan describes a complete profile-based sync operation.
@@ -24,6 +29,11 @@ type SyncPlan struct {
 	StagingDir      string
 	LiveDir         string
 	DryRun          bool
+	// ApplyTemplate is called on each staged file whose mapping has Template=true.
+	// It should rewrite the file in-place with template variables resolved.
+	// Binary files must be rejected by the implementation. If nil, template-enabled
+	// mappings are staged without content transformation (no error).
+	ApplyTemplate func(stagedPath string) error
 }
 
 // DryRunDiff reports what a dry-run sync would change.
@@ -54,11 +64,11 @@ func (e *Engine) ExecutePlan(plan *SyncPlan) (*SyncResult, error) {
 
 	for _, m := range plan.Mappings {
 		if m.Type == "file" {
-			if err := stageSingleFile(m, plan.StagingDir, excludes, stagedFiles); err != nil {
+			if err := stageSingleFile(m, plan.StagingDir, excludes, stagedFiles, plan.ApplyTemplate); err != nil {
 				return nil, err
 			}
 		} else {
-			if err := stageDirectory(m, plan.StagingDir, excludes, stagedFiles); err != nil {
+			if err := stageDirectory(m, plan.StagingDir, excludes, stagedFiles, plan.ApplyTemplate); err != nil {
 				return nil, err
 			}
 		}
@@ -104,7 +114,9 @@ func (e *Engine) ExecutePlan(plan *SyncPlan) (*SyncResult, error) {
 }
 
 // stageSingleFile copies a single file mapping into the staging directory.
-func stageSingleFile(m ResolvedMapping, stagingDir string, excludes []string, staged map[string]bool) error {
+// If applyTemplate is non-nil and m.Template is true, it is called on the staged file
+// to resolve Go template variables in-place.
+func stageSingleFile(m ResolvedMapping, stagingDir string, excludes []string, staged map[string]bool, applyTemplate func(string) error) error {
 	relDst := filepath.ToSlash(m.Destination)
 	if ShouldExclude(relDst, excludes) || IsProtected(relDst) {
 		return nil
@@ -118,13 +130,28 @@ func stageSingleFile(m ResolvedMapping, stagingDir string, excludes []string, st
 	if _, err := copyFileRaw(m.Source, dstPath); err != nil {
 		return fmt.Errorf("staging file %s: %w", m.Destination, err)
 	}
+
+	if m.Template && applyTemplate != nil {
+		if err := applyTemplate(dstPath); err != nil {
+			return fmt.Errorf("templating %s: %w", m.Destination, err)
+		}
+	}
+
+	if m.ApplyPatches != nil {
+		if err := m.ApplyPatches(dstPath); err != nil {
+			return fmt.Errorf("patching %s: %w", m.Destination, err)
+		}
+	}
+
 	staged[filepath.ToSlash(m.Destination)] = true
 	return nil
 }
 
 // stageDirectory walks a source directory and copies its contents into staging
-// under the mapping's destination prefix.
-func stageDirectory(m ResolvedMapping, stagingDir string, excludes []string, staged map[string]bool) error {
+// under the mapping's destination prefix. If applyTemplate is non-nil and
+// m.Template is true, it is called on each staged file to resolve Go template
+// variables in-place.
+func stageDirectory(m ResolvedMapping, stagingDir string, excludes []string, staged map[string]bool, applyTemplate func(string) error) error {
 	return filepath.WalkDir(m.Source, func(srcPath string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -170,6 +197,19 @@ func stageDirectory(m ResolvedMapping, stagingDir string, excludes []string, sta
 		if _, err := copyFileRaw(srcPath, dstPath); err != nil {
 			return fmt.Errorf("staging %s: %w", dstRel, err)
 		}
+
+		if m.Template && applyTemplate != nil {
+			if err := applyTemplate(dstPath); err != nil {
+				return fmt.Errorf("templating %s: %w", dstRel, err)
+			}
+		}
+
+		if m.ApplyPatches != nil {
+			if err := m.ApplyPatches(dstPath); err != nil {
+				return fmt.Errorf("patching %s: %w", dstRel, err)
+			}
+		}
+
 		staged[dstRelSlash] = true
 		return nil
 	})

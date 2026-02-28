@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -65,7 +66,7 @@ type GatewaySyncReconciler struct {
 // +kubebuilder:rbac:groups=stoker.io,resources=gatewaysyncs/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=stoker.io,resources=gatewaysyncs/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;create;update;delete;watch
@@ -272,21 +273,34 @@ func (r *GatewaySyncReconciler) resolveProfiles(gs *stokerv1alpha1.GatewaySync) 
 	resolved := make(map[string]stokertypes.ResolvedProfile, len(gs.Spec.Sync.Profiles))
 
 	for name, p := range gs.Spec.Sync.Profiles {
-		rp := stokertypes.ResolvedProfile{
-			Vars: p.Vars,
+		rp := stokertypes.ResolvedProfile{}
+
+		// Merge vars: defaults first, then profile overrides per-key.
+		merged := make(map[string]string, len(defaults.Vars)+len(p.Vars))
+		maps.Copy(merged, defaults.Vars)
+		maps.Copy(merged, p.Vars)
+		if len(merged) > 0 {
+			rp.Vars = merged
 		}
 
-		// Resolve mappings
+		// Resolve mappings — Type is intentionally passed through as-is (empty means
+		// infer from filesystem at sync time; non-empty is validated by the agent).
 		rp.Mappings = make([]stokertypes.ResolvedMapping, len(p.Mappings))
 		for i, m := range p.Mappings {
+			patches := make([]stokertypes.ResolvedPatch, len(m.Patches))
+			for j, p := range m.Patches {
+				patches[j] = stokertypes.ResolvedPatch{
+					File: p.File,
+					Set:  p.Set,
+				}
+			}
 			rp.Mappings[i] = stokertypes.ResolvedMapping{
 				Source:      m.Source,
 				Destination: m.Destination,
 				Type:        m.Type,
 				Required:    m.Required,
-			}
-			if rp.Mappings[i].Type == "" {
-				rp.Mappings[i].Type = "dir"
+				Template:    m.Template,
+				Patches:     patches,
 			}
 		}
 
@@ -408,7 +422,7 @@ func (r *GatewaySyncReconciler) resolveGitHubAppToken(ctx context.Context, gs *s
 	return result.Token, nil
 }
 
-// cleanupOwnedResources removes ConfigMaps owned by this CR during deletion.
+// cleanupOwnedResources removes ConfigMaps and Secrets owned by this CR during deletion.
 func (r *GatewaySyncReconciler) cleanupOwnedResources(ctx context.Context, gs *stokerv1alpha1.GatewaySync) error {
 	log := logf.FromContext(ctx)
 
@@ -432,6 +446,19 @@ func (r *GatewaySyncReconciler) cleanupOwnedResources(ctx context.Context, gs *s
 			return fmt.Errorf("deleting ConfigMap %s: %w", name, err)
 		}
 		log.Info("deleted ConfigMap", "name", name)
+	}
+
+	// Clean up GitHub App token Secret (if one was created for this CR).
+	tokenSecretName := fmt.Sprintf("stoker-github-token-%s", gs.Name)
+	tokenSecret := &corev1.Secret{}
+	err := r.Get(ctx, types.NamespacedName{Name: tokenSecretName, Namespace: gs.Namespace}, tokenSecret)
+	if err == nil {
+		if err := r.Delete(ctx, tokenSecret); err != nil && !errors.IsNotFound(err) {
+			return fmt.Errorf("deleting token Secret %s: %w", tokenSecretName, err)
+		}
+		log.Info("deleted token Secret", "name", tokenSecretName)
+	} else if !errors.IsNotFound(err) {
+		return fmt.Errorf("getting token Secret %s: %w", tokenSecretName, err)
 	}
 
 	return nil
@@ -505,13 +532,15 @@ func (r *GatewaySyncReconciler) ensureMetadataConfigMap(ctx context.Context, gs 
 	// Include auth type so agent knows which credential source to use.
 	data["authType"] = resolveAuthType(gs.Spec.Git.Auth)
 
-	// For GitHub App auth, include the cached installation token so the agent
-	// can authenticate git operations without mounting the PEM secret.
+	// For GitHub App auth, write the installation token to a Secret so the agent
+	// can authenticate git operations via a mounted file (not a ConfigMap).
 	if gs.Spec.Git.Auth != nil && gs.Spec.Git.Auth.GitHubApp != nil {
 		appAuth := gs.Spec.Git.Auth.GitHubApp
 		cacheKey := fmt.Sprintf("%d:%d", appAuth.AppID, appAuth.InstallationID)
 		if cached, ok := r.tokenCache[cacheKey]; ok {
-			data["gitToken"] = cached.token
+			if err := r.ensureGitHubTokenSecret(ctx, gs, cached.token); err != nil {
+				return fmt.Errorf("ensuring GitHub App token Secret: %w", err)
+			}
 		}
 	}
 
@@ -556,6 +585,51 @@ func (r *GatewaySyncReconciler) ensureMetadataConfigMap(ctx context.Context, gs 
 	}
 	cm.Data = data
 	return r.Update(ctx, cm)
+}
+
+// ensureGitHubTokenSecret creates or updates a Secret holding the GitHub App installation
+// token. The agent mounts this Secret at /etc/stoker/git-token/token and uses it for
+// git clone authentication. Storing the token in a Secret (not a ConfigMap) restricts
+// access via RBAC and prevents it from appearing in ConfigMap audit logs.
+func (r *GatewaySyncReconciler) ensureGitHubTokenSecret(ctx context.Context, gs *stokerv1alpha1.GatewaySync, token string) error {
+	secretName := fmt.Sprintf("stoker-github-token-%s", gs.Name)
+	secret := &corev1.Secret{}
+	key := types.NamespacedName{Name: secretName, Namespace: gs.Namespace}
+
+	err := r.Get(ctx, key, secret)
+	if errors.IsNotFound(err) {
+		secret = &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      secretName,
+				Namespace: gs.Namespace,
+				Labels: map[string]string{
+					"app.kubernetes.io/managed-by": "stoker-controller",
+					stokertypes.LabelCRName:        gs.Name,
+				},
+				Annotations: map[string]string{
+					stokertypes.AnnotationSecretType: "github-app-token",
+				},
+			},
+			Type: corev1.SecretTypeOpaque,
+			Data: map[string][]byte{
+				"token": []byte(token),
+			},
+		}
+		if err := controllerutil.SetControllerReference(gs, secret, r.Scheme); err != nil {
+			return fmt.Errorf("setting owner ref on token Secret: %w", err)
+		}
+		return r.Create(ctx, secret)
+	}
+	if err != nil {
+		return fmt.Errorf("getting token Secret %s: %w", secretName, err)
+	}
+
+	// Update token if it changed (refreshed installation token).
+	if string(secret.Data["token"]) == token {
+		return nil
+	}
+	secret.Data["token"] = []byte(token)
+	return r.Update(ctx, secret)
 }
 
 // resolveAuthType determines the auth type string from the git auth spec.
@@ -666,6 +740,7 @@ func (r *GatewaySyncReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&stokerv1alpha1.GatewaySync{}, builder.WithPredicates(annotationOrGenerationChanged{})).
 		Owns(&corev1.ConfigMap{}).
+		Owns(&corev1.Secret{}).
 		Owns(&rbacv1.RoleBinding{}).
 		Watches(&corev1.Pod{}, handler.EnqueueRequestsFromMapFunc(r.findGatewaySyncForPod)).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 5}).

@@ -197,6 +197,11 @@ type SyncDefaults struct {
 	// +optional
 	ExcludePatterns []string `json:"excludePatterns,omitempty"`
 
+	// vars provides default template variables inherited by all profiles.
+	// Profile-level vars override these on a per-key basis; unmatched keys are inherited.
+	// +optional
+	Vars map[string]string `json:"vars,omitempty"`
+
 	// syncPeriod is the agent-side polling interval in seconds.
 	// +kubebuilder:default=30
 	// +kubebuilder:validation:Minimum=5
@@ -261,21 +266,21 @@ type SyncProfileSpec struct {
 // SyncMapping defines a single source->destination file mapping.
 type SyncMapping struct {
 	// source is the repo-relative path to copy from.
-	// Supports Go template variables: {{.GatewayName}}, {{.CRName}},
+	// Supports Go template variables: {{.GatewayName}}, {{.PodName}}, {{.CRName}},
 	// {{.Labels.key}}, {{.Vars.key}}, {{.Namespace}}, {{.Ref}}, {{.Commit}}.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	Source string `json:"source"`
 
 	// destination is the gateway-relative path to copy to.
-	// Supports Go template variables: {{.GatewayName}}, {{.CRName}},
+	// Supports Go template variables: {{.GatewayName}}, {{.PodName}}, {{.CRName}},
 	// {{.Labels.key}}, {{.Vars.key}}, {{.Namespace}}, {{.Ref}}, {{.Commit}}.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	Destination string `json:"destination"`
 
-	// type is the entry type — "dir" (default) or "file".
-	// +kubebuilder:default="dir"
+	// type is optional and inferred automatically from the repository at sync time.
+	// Explicit values ("dir" or "file") are validated against the actual entry type.
 	// +kubebuilder:validation:Enum=dir;file
 	// +optional
 	Type string `json:"type,omitempty"`
@@ -284,6 +289,36 @@ type SyncMapping struct {
 	// in the repo at the resolved commit.
 	// +optional
 	Required bool `json:"required,omitempty"`
+
+	// template enables Go template rendering of file contents during staging.
+	// When true, the agent resolves {{.GatewayName}}, {{.PodName}}, {{.Vars.key}},
+	// and other TemplateContext fields inside each synced file before writing to disk.
+	// Binary files (containing null bytes) are rejected with an error.
+	// +optional
+	Template bool `json:"template,omitempty"`
+
+	// patches applies surgical JSON field updates to files within this mapping after staging.
+	// Only valid for JSON files. Each patch targets a specific file (or glob pattern) and
+	// sets one or more fields using sjson-style dot-notation paths.
+	// +optional
+	Patches []MappingPatch `json:"patches,omitempty"`
+}
+
+// MappingPatch applies sjson-style field updates to a JSON file within a mapping.
+type MappingPatch struct {
+	// file is the path to the JSON file to patch, relative to the mapping's destination.
+	// Supports glob patterns (e.g. "*.json", "connections/*.json") for directory mappings.
+	// For file mappings, file may be omitted — the mapped file itself is patched.
+	// +optional
+	File string `json:"file,omitempty"`
+
+	// set is a map of sjson dot-notation paths to template values.
+	// Nested fields use dots: "SystemName", "networkInterfaces.0.address".
+	// Values support Go template syntax: {{.GatewayName}}, {{.Vars.key}}, etc.
+	// Values are type-inferred: JSON literals (true, false, numbers) are set as their
+	// native types; everything else is set as a string.
+	// +kubebuilder:validation:MinProperties=1
+	Set map[string]string `json:"set"`
 }
 
 // ============================================================
