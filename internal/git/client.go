@@ -252,6 +252,11 @@ func buildGitEnv(repoURL string) (string, []string, func(), error) {
 	}
 	noop := func() {}
 
+	// Write a gitconfig to $HOME (/tmp) marking all directories as safe.
+	// Required when the container runs as a non-root UID that doesn't own the
+	// emptyDir mount point (git 2.35.2+ safe.directory ownership check).
+	_ = os.WriteFile("/tmp/.gitconfig", []byte("[safe]\n\tdirectory = *\n"), 0644)
+
 	if keyFile := os.Getenv("GIT_SSH_KEY_FILE"); keyFile != "" {
 		keyData, err := os.ReadFile(keyFile)
 		if err != nil {
