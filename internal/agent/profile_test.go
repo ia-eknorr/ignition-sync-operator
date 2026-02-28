@@ -229,6 +229,63 @@ func TestBuildTemplateContext(t *testing.T) {
 	}
 }
 
+func TestPodOrdinal(t *testing.T) {
+	cases := []struct {
+		name    string
+		podName string
+		labels  map[string]string
+		wantOrd int
+	}{
+		{
+			name:    "k8s label takes priority",
+			podName: "pod-99",
+			labels:  map[string]string{"apps.kubernetes.io/pod-index": "3"},
+			wantOrd: 3,
+		},
+		{
+			name:    "fallback to pod name ordinal",
+			podName: "my-gateway-2",
+			labels:  map[string]string{},
+			wantOrd: 2,
+		},
+		{
+			name:    "non-statefulset pod returns 0",
+			podName: "my-deployment-abc12-xyz99",
+			labels:  map[string]string{},
+			wantOrd: 0,
+		},
+		{
+			name:    "invalid label value falls back to pod name",
+			podName: "my-gateway-5",
+			labels:  map[string]string{"apps.kubernetes.io/pod-index": "not-a-number"},
+			wantOrd: 5,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := podOrdinal(tc.podName, tc.labels)
+			if got != tc.wantOrd {
+				t.Errorf("podOrdinal(%q, %v) = %d, want %d", tc.podName, tc.labels, got, tc.wantOrd)
+			}
+		})
+	}
+}
+
+func TestResolveTemplate_PodOrdinal(t *testing.T) {
+	ctx := &TemplateContext{
+		PodName:    "public-demo-fe-gateway-0",
+		PodOrdinal: 0,
+		Vars:       map[string]string{"projectName": "public-demo"},
+	}
+	got, err := resolveTemplate("{{.Vars.projectName}}-{{.PodOrdinal}}", ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "public-demo-0" {
+		t.Errorf("got %q, want public-demo-0", got)
+	}
+}
+
 func TestResolveTemplate_PodName(t *testing.T) {
 	ctx := &TemplateContext{
 		GatewayName: "ignition",

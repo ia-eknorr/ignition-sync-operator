@@ -7,6 +7,7 @@ import (
 	"maps"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -236,9 +237,18 @@ func (r *GatewaySyncReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
 
-// validateProfiles validates all embedded profiles for path safety.
+// validVarKey matches Go identifiers: letters, digits, underscores; must start with letter or underscore.
+var validVarKey = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+
+// validateProfiles validates all embedded profiles for path safety and var key naming.
 func (r *GatewaySyncReconciler) validateProfiles(gs *stokerv1alpha1.GatewaySync) error {
+	if err := validateVarKeys(gs.Spec.Sync.Defaults.Vars, "sync.defaults.vars"); err != nil {
+		return err
+	}
 	for name, profile := range gs.Spec.Sync.Profiles {
+		if err := validateVarKeys(profile.Vars, fmt.Sprintf("profiles[%s].vars", name)); err != nil {
+			return err
+		}
 		for i, m := range profile.Mappings {
 			if err := validatePath(m.Source, fmt.Sprintf("profiles[%s].mappings[%d].source", name, i)); err != nil {
 				return err
@@ -246,6 +256,17 @@ func (r *GatewaySyncReconciler) validateProfiles(gs *stokerv1alpha1.GatewaySync)
 			if err := validatePath(m.Destination, fmt.Sprintf("profiles[%s].mappings[%d].destination", name, i)); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+// validateVarKeys rejects var keys that are not valid Go identifiers. Keys with
+// dashes, dots, or slashes cannot be accessed via {{.Vars.key}} in templates.
+func validateVarKeys(vars map[string]string, field string) error {
+	for k := range vars {
+		if !validVarKey.MatchString(k) {
+			return fmt.Errorf("%s: key %q is not a valid identifier (use letters, digits, underscores only — dashes are not supported in template variable names)", field, k)
 		}
 	}
 	return nil
