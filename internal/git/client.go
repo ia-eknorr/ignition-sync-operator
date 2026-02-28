@@ -55,7 +55,7 @@ func (g *GoGitClient) LsRemote(ctx context.Context, repoURL, ref string, auth tr
 	if err != nil {
 		return Result{}, fmt.Errorf("opening session for %s: %w", repoURL, err)
 	}
-	defer sess.Close()
+	defer func() { _ = sess.Close() }()
 
 	ar, err := sess.AdvertisedReferencesContext(ctx)
 	if err != nil {
