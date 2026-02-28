@@ -341,37 +341,10 @@ func injectTokenIntoURL(repoURL, token string) string {
 }
 
 func nativeCloneAndCheckout(ctx context.Context, repoURL, ref, path string, env []string) (Result, error) {
-	// For named refs (branches, tags), clone directly to the target ref in a single
-	// network operation. This matches what git-sync does and avoids a redundant fetch.
-	if _, err := runGit(ctx, []string{"clone", "--depth=1", "--branch", ref, repoURL, path}, "", env); err == nil {
-		return nativeRevParse(ctx, ref, path, env)
-	}
-
-	// Fallback for SHA refs or servers that don't support --branch with that ref:
-	// clean up any partial clone directory contents, then clone default + fetch.
-	cleanDir(path)
-	if _, err := runGit(ctx, []string{"clone", "--depth=1", repoURL, path}, "", env); err != nil {
-		return Result{}, fmt.Errorf("git clone: %w", err)
-	}
-	if _, err := runGit(ctx, []string{"fetch", "--depth=1", "origin", ref}, path, env); err != nil {
-		return Result{}, fmt.Errorf("git fetch %s: %w", ref, err)
-	}
-	if _, err := runGit(ctx, []string{"checkout", "-f", "FETCH_HEAD"}, path, env); err != nil {
-		return Result{}, fmt.Errorf("git checkout FETCH_HEAD: %w", err)
+	if _, err := runGit(ctx, []string{"clone", "--depth=1", "--branch", ref, repoURL, path}, "", env); err != nil {
+		return Result{}, fmt.Errorf("git clone --branch %s: %w", ref, err)
 	}
 	return nativeRevParse(ctx, ref, path, env)
-}
-
-// cleanDir removes the contents of a directory without removing the directory itself.
-// Used to reset a partially-cloned emptyDir mount before retrying.
-func cleanDir(path string) {
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		return
-	}
-	for _, e := range entries {
-		_ = os.RemoveAll(filepath.Join(path, e.Name()))
-	}
 }
 
 func nativeFetchAndCheckout(ctx context.Context, repoURL, ref, path string, env []string) (Result, error) {
