@@ -7,6 +7,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -21,6 +22,7 @@ import (
 type TemplateContext struct {
 	GatewayName string
 	PodName     string
+	PodOrdinal  int // StatefulSet replica index (0, 1, 2, ...); 0 for non-StatefulSet pods
 	Namespace   string
 	Ref         string
 	Commit      string
@@ -38,6 +40,7 @@ func buildTemplateContext(cfg *Config, meta *Metadata, profileVars map[string]st
 	return &TemplateContext{
 		GatewayName: cfg.GatewayName,
 		PodName:     cfg.PodName,
+		PodOrdinal:  podOrdinal(cfg.PodName, labels),
 		Namespace:   cfg.CRNamespace,
 		Ref:         meta.Ref,
 		Commit:      meta.Commit,
@@ -45,6 +48,24 @@ func buildTemplateContext(cfg *Config, meta *Metadata, profileVars map[string]st
 		Labels:      podLabels,
 		Vars:        vars,
 	}
+}
+
+// podOrdinal extracts the StatefulSet replica index for a pod. It prefers the
+// K8s-native apps.kubernetes.io/pod-index label (set automatically by K8s 1.27+)
+// and falls back to parsing the trailing integer from the pod name. Returns 0
+// for non-StatefulSet pods or any pod whose name does not end in a digit.
+func podOrdinal(podName string, labels map[string]string) int {
+	if idxStr, ok := labels["apps.kubernetes.io/pod-index"]; ok {
+		if n, err := strconv.Atoi(idxStr); err == nil {
+			return n
+		}
+	}
+	if parts := strings.Split(podName, "-"); len(parts) > 0 {
+		if n, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
+			return n
+		}
+	}
+	return 0
 }
 
 // resolveTemplate resolves a Go template string using the given context.

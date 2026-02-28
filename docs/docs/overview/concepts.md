@@ -38,7 +38,7 @@ These terms are specific to Stoker and appear throughout the documentation.
 | **GatewaySync** | The custom resource (CR) you create to define a sync. It specifies the Git repo, ref, authentication, gateway settings, and sync profiles. Short name: `gs`. |
 | **Profile** | A named set of file mappings within a GatewaySync CR. Different gateways can use different profiles to get different subsets of the repo. Selected by the `stoker.io/profile` pod annotation. |
 | **Mapping** | A source-to-destination rule inside a profile. For example, `source: "projects/"` → `destination: "projects/"` copies the `projects/` directory from Git to the gateway's data directory. |
-| **Template variable** | Placeholders like `{{.GatewayName}}` or `{{.Labels.site}}` in mapping paths. Resolved per-gateway so one profile can route different files to different gateways. |
+| **Template variable** | Placeholders like `{{.GatewayName}}`, `{{.PodOrdinal}}`, or `{{.Vars.key}}` in mapping paths and patch values. Resolved per-gateway at sync time so one profile can route different files to different gateways. Label and var keys must be valid identifiers (letters, digits, underscores — no dashes). |
 | **Ref resolution** | The process of converting a branch name or tag to a specific Git commit SHA via `git ls-remote`. The controller does this without cloning the repo. |
 | **Metadata ConfigMap** | `stoker-metadata-{crName}` — written by the controller, read by agents. Contains the resolved ref, commit, auth type, and profile mappings. |
 | **Status ConfigMap** | `stoker-status-{crName}` — written by agents, read by the controller. Contains per-gateway sync results, error messages, and file change counts. |

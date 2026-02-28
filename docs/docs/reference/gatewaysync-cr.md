@@ -156,7 +156,7 @@ Baseline settings inherited by all profiles. Individual profiles can override th
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `excludePatterns` | []string | No | `["**/.git/", "**/.gitkeep", "**/.resources/**"]` | Glob patterns for files to exclude from sync |
-| `vars` | map[string]string | No | — | Default template variables inherited by all profiles. Profile `vars` override these per-key. |
+| `vars` | map[string]string | No | — | Default template variables inherited by all profiles. Profile `vars` override these per-key. Keys must be valid identifiers (letters, digits, underscores — no dashes). |
 | `syncPeriod` | int32 | No | `30` | Agent-side polling interval in seconds (min: 5, max: 3600) |
 | `designerSessionPolicy` | string | No | `"proceed"` | Behavior when Designer sessions are active: `proceed`, `wait`, or `fail` |
 | `dryRun` | bool | No | `false` | Sync to staging only — write diff to status ConfigMap without modifying `/ignition-data/` |
@@ -191,7 +191,7 @@ Each profile supports the following fields:
 |-------|------|----------|---------|-------------|
 | `mappings` | []object | Yes | — | Ordered list of source-to-destination file mappings |
 | `excludePatterns` | []string | No | — | Additional glob patterns merged with `spec.sync.defaults.excludePatterns` |
-| `vars` | map[string]string | No | — | Custom template variables available as `{{.Vars.key}}` |
+| `vars` | map[string]string | No | — | Custom template variables available as `{{.Vars.key}}`. Keys must be valid identifiers (letters, digits, underscores — no dashes). |
 | `syncPeriod` | int32 | No | inherited | Overrides `spec.sync.defaults.syncPeriod` |
 | `dryRun` | bool | No | inherited | Overrides `spec.sync.defaults.dryRun` |
 | `designerSessionPolicy` | string | No | inherited | Overrides `spec.sync.defaults.designerSessionPolicy` |
@@ -246,15 +246,40 @@ Both `source` and `destination` support Go template variables:
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `{{.GatewayName}}` | Gateway identity from the `stoker.io/gateway-name` annotation (or `app.kubernetes.io/name` label) | `sites/{{.GatewayName}}/projects` |
-| `{{.PodName}}` | Kubernetes pod name — useful for StatefulSet replicas needing unique identity | `system-{{.PodName}}` |
+| `{{.PodName}}` | Kubernetes pod name | `system-{{.PodName}}` |
+| `{{.PodOrdinal}}` | StatefulSet replica index (`0`, `1`, `2`, ...). Always `0` for non-StatefulSet pods. Sourced from the `apps.kubernetes.io/pod-index` label (K8s 1.27+) with pod-name fallback. | `"{{.Vars.projectName}}-{{.PodOrdinal}}"` |
 | `{{.CRName}}` | Name of the GatewaySync CR that owns this sync | `config/{{.CRName}}/resources` |
-| `{{.Labels.key}}` | Any label on the gateway pod (read at sync time) | `sites/{{.Labels.site}}/projects` |
+| `{{.Labels.key}}` | Any label on the gateway pod — `key` must be a simple identifier (letters, digits, underscores). See note below. | `sites/{{.Labels.site}}/projects` |
 | `{{.Vars.key}}` | Custom variable from profile or defaults `vars` (profile overrides default per-key) | `site{{.Vars.siteNumber}}/scripts` |
 | `{{.Namespace}}` | Pod namespace | `config/{{.Namespace}}/overlay` |
 | `{{.Ref}}` | Resolved git ref | — |
 | `{{.Commit}}` | Full commit SHA | — |
 
 Using `{{.GatewayName}}` or `{{.Labels.key}}` in source paths lets a single profile serve multiple gateways, each syncing from its own directory in the repo.
+
+##### Example: StatefulSet replica systemName with `{{.PodOrdinal}}`
+
+For StatefulSets with multiple replicas, use `{{.PodOrdinal}}` to produce a unique, stable name per replica:
+
+```yaml
+sync:
+  defaults:
+    vars:
+      projectName: "my-gateway"   # key must be a valid identifier
+  profiles:
+    frontend:
+      mappings:
+        - source: "config/system-properties"
+          destination: "config/system-properties"
+          type: dir
+          patches:
+            - file: "config.json"
+              set:
+                systemName: "{{.Vars.projectName}}-{{.PodOrdinal}}"
+                # → my-gateway-0, my-gateway-1, my-gateway-2, ...
+```
+
+The `-` between `}}` and `{{` is literal text outside the template delimiters — this is valid syntax even though dashes cannot appear *inside* `{{ }}`.
 
 ##### Example: label-based routing
 
@@ -277,6 +302,16 @@ sync:
 A pod with label `site: ignition-blue` syncs from `services/ignition-blue/`, while `site: ignition-red` syncs from `services/ignition-red/` — same profile, different files.
 
 :::note
+**Label and var key naming constraint:** Go's template engine requires map keys to be valid identifiers when accessed with dot notation. Keys must use only letters, digits, and underscores — **dashes, dots, and slashes are not supported**.
+
+- `{{.Labels.site}}` ✅ — simple identifier
+- `{{.Labels.my-label}}` ❌ — parse error (`bad character '-'`)
+- `{{.Labels.app.kubernetes.io}}` ❌ — silently looks up key `"app"`, not `"app.kubernetes.io"`
+
+For K8s system labels with dots or slashes (e.g., `apps.kubernetes.io/pod-index`), use `{{.PodOrdinal}}` or a `vars` entry instead of `{{.Labels.*}}`.
+
+The same constraint applies to `vars` keys: `{{.Vars.myVar}}` ✅, `{{.Vars.my-var}}` ❌. The controller rejects CRs with invalid var keys at reconcile time with a clear status condition.
+
 `{{.Labels.key}}` reads from the pod's Kubernetes labels at sync time. The agent needs `get` permission on pods (included in the agent ClusterRole).
 :::
 
