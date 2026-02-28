@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.4.6] - 2026-02-28
+
+### Fixed
+
+- **Annotated tag resolution** — `LsRemote` now returns the peeled commit hash (`^{}`) instead of the tag object hash for annotated tags; previously the controller and agent disagreed on the resolved commit, causing an infinite re-sync loop every 30s
+- **Root-level file mapping orphan wipe** — `computeManagedRoots` used `filepath.Dir(dst)` for file-type mappings, which collapses to `"."` for root-level destinations (e.g. `.versions.json`); `isUnderManagedRoot` then matched every path, causing orphan cleanup to delete all Ignition runtime files on every sync (internal database, `local` resource collection manifest, OPC-UA keystores) and fault the gateway (#89)
+
 ## [v0.4.5] - 2026-02-28
 
 ### Fixed
@@ -143,6 +150,7 @@ Initial release — controller + agent sidecar for Git-driven Ignition gateway c
 - **Functional test suite** with phased kind cluster tests (phases 02-09)
 - Unit tests with envtest for controller and syncengine
 
+[v0.4.6]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.6
 [v0.4.5]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.5
 [v0.4.4]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.4
 [v0.4.3]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.3

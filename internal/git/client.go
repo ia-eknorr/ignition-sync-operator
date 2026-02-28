@@ -49,6 +49,13 @@ func (g *GoGitClient) LsRemote(ctx context.Context, repoURL, ref string, auth tr
 		return Result{}, fmt.Errorf("ls-remote %s: %w", repoURL, err)
 	}
 
+	return matchRef(refs, ref, repoURL)
+}
+
+// matchRef resolves a ref string against a list of remote references.
+// For annotated tags, it prefers the peeled (^{}) entry which contains the
+// actual commit hash, avoiding mismatches with the agent's rev-parse result.
+func matchRef(refs []*plumbing.Reference, ref, repoURL string) (Result, error) {
 	// If ref is already a full SHA, return it directly
 	if plumbing.IsHash(ref) {
 		return Result{Commit: ref, Ref: ref}, nil
@@ -60,19 +67,23 @@ func (g *GoGitClient) LsRemote(ctx context.Context, repoURL, ref string, auth tr
 		"refs/heads/" + ref,
 	}
 
+	// Check peeled tag refs first — annotated tags expose both refs/tags/X
+	// (tag object hash) and refs/tags/X^{} (actual commit hash). The agent
+	// resolves to the commit hash via rev-parse, so we must return the peeled
+	// (commit) hash to avoid an infinite re-sync loop.
 	for _, candidate := range candidates {
+		peeledName := candidate + "^{}"
 		for _, r := range refs {
-			if r.Name().String() == candidate {
+			if r.Name().String() == peeledName {
 				return Result{Commit: r.Hash().String(), Ref: ref}, nil
 			}
 		}
 	}
 
-	// Check for peeled tag refs (annotated tags have ^{} entries)
+	// Fall back to non-peeled refs (lightweight tags, branches)
 	for _, candidate := range candidates {
-		peeledName := candidate + "^{}"
 		for _, r := range refs {
-			if r.Name().String() == peeledName {
+			if r.Name().String() == candidate {
 				return Result{Commit: r.Hash().String(), Ref: ref}, nil
 			}
 		}

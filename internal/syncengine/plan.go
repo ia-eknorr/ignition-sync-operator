@@ -221,27 +221,27 @@ func copyFileRaw(src, dst string) (bool, error) {
 	return copyFile(src, dst)
 }
 
-// computeManagedRoots returns the set of top-level destination directories
-// that are managed by the plan's mappings.
+// computeManagedRoots returns the set of destination paths managed by the plan's mappings.
+// For directory mappings: the destination directory itself.
+// For file mappings: the destination file path itself (NOT the parent directory).
+// Using the parent directory for file mappings would add "." for root-level files like
+// ".versions.json", causing isUnderManagedRoot to match every path and orphan-delete all
+// files in the live directory that Ignition wrote at runtime.
 func computeManagedRoots(mappings []ResolvedMapping) map[string]bool {
 	roots := make(map[string]bool)
 	for _, m := range mappings {
-		dst := filepath.ToSlash(m.Destination)
-		if m.Type == "file" {
-			// For file mappings, the managed root is the parent directory.
-			roots[filepath.ToSlash(filepath.Dir(dst))] = true
-		} else {
-			roots[dst] = true
-		}
+		roots[filepath.ToSlash(m.Destination)] = true
 	}
 	return roots
 }
 
 // isUnderManagedRoot checks if a path falls within any managed root.
+// For directory roots: matches the root itself and all paths below it.
+// For file roots: exact match only.
 func isUnderManagedRoot(relPath string, managedRoots map[string]bool) bool {
 	relPath = filepath.ToSlash(relPath)
 	for root := range managedRoots {
-		if root == "." || relPath == root || strings.HasPrefix(relPath, root+"/") {
+		if relPath == root || strings.HasPrefix(relPath, root+"/") {
 			return true
 		}
 	}

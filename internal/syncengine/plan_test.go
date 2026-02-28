@@ -435,6 +435,60 @@ func TestExecutePlan_SkipsSymlinks(t *testing.T) {
 	}
 }
 
+// TestExecutePlan_RootLevelFileMappingDoesNotOrphanUnmanagedPaths verifies that a
+// file mapping whose destination is at the live-dir root (e.g. ".versions.json")
+// does NOT cause orphan cleanup to delete files outside that specific file.
+// Previously, computeManagedRoots used filepath.Dir(".versions.json") == "." which
+// made isUnderManagedRoot return true for every path, wiping Ignition runtime files.
+func TestExecutePlan_RootLevelFileMappingDoesNotOrphanUnmanagedPaths(t *testing.T) {
+	tmp := t.TempDir()
+
+	srcFile := filepath.Join(tmp, "src", ".versions.json")
+	staging := filepath.Join(tmp, "staging")
+	live := filepath.Join(tmp, "live")
+
+	writeTestFile(t, srcFile, `{"version":"1.0"}`)
+
+	// Pre-populate live with a file that should NOT be touched by orphan cleanup.
+	writeTestFile(t, filepath.Join(live, "config", "resources", "local", "manifest.json"), "ignition-runtime")
+	writeTestFile(t, filepath.Join(live, "db", "config.idb"), "ignition-db")
+
+	engine := &Engine{}
+	plan := &SyncPlan{
+		Mappings: []ResolvedMapping{
+			{Source: srcFile, Destination: ".versions.json", Type: "file"},
+		},
+		StagingDir: staging,
+		LiveDir:    live,
+	}
+
+	result, err := engine.ExecutePlan(plan)
+	if err != nil {
+		t.Fatalf("ExecutePlan: %v", err)
+	}
+
+	// .versions.json should be written.
+	got := readTestFile(t, filepath.Join(live, ".versions.json"))
+	if got != `{"version":"1.0"}` {
+		t.Errorf("unexpected .versions.json content: %q", got)
+	}
+
+	// Ignition runtime files must NOT be deleted by orphan cleanup.
+	if _, err := os.Stat(filepath.Join(live, "config", "resources", "local", "manifest.json")); os.IsNotExist(err) {
+		t.Error("config/resources/local/manifest.json was incorrectly deleted by orphan cleanup")
+	}
+	if _, err := os.Stat(filepath.Join(live, "db", "config.idb")); os.IsNotExist(err) {
+		t.Error("db/config.idb was incorrectly deleted by orphan cleanup")
+	}
+
+	if result.FilesAdded != 1 {
+		t.Errorf("expected 1 added, got %d", result.FilesAdded)
+	}
+	if result.FilesDeleted != 0 {
+		t.Errorf("expected 0 deleted, got %d (orphan cleanup should not affect unmanaged paths)", result.FilesDeleted)
+	}
+}
+
 // Helpers
 
 func writeTestFile(t *testing.T, path, content string) {

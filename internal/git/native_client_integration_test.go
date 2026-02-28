@@ -12,7 +12,8 @@ import (
 
 // TestNativeGitClientClone_PublicDemo validates that NativeGitClient can clone
 // the publicdemo-all repo without OOMing. Run with:
-//   GIT_SSH_KEY_FILE=/tmp/test-ssh-key go test ./internal/git -tags integration -run TestNativeGitClientClone_PublicDemo -v -timeout 120s
+//
+//	GIT_SSH_KEY_FILE=/tmp/test-ssh-key go test ./internal/git -tags integration -run TestNativeGitClientClone_PublicDemo -v -timeout 120s
 func TestNativeGitClientClone_PublicDemo(t *testing.T) {
 	keyFile := os.Getenv("GIT_SSH_KEY_FILE")
 	if keyFile == "" {
