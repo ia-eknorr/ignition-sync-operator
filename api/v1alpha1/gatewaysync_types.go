@@ -462,7 +462,7 @@ type GatewaySyncStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:storageversion
 // +kubebuilder:resource:shortName=gs
-// +kubebuilder:printcolumn:name="Ref",type="string",JSONPath=`.spec.git.ref`
+// +kubebuilder:printcolumn:name="Ref",type="string",JSONPath=`.status.lastSyncRef`
 // +kubebuilder:printcolumn:name="Commit",type="string",JSONPath=`.status.lastSyncCommitShort`
 // +kubebuilder:printcolumn:name="Profiles",type="integer",JSONPath=`.status.profileCount`
 // +kubebuilder:printcolumn:name="Synced",type="string",JSONPath=`.status.conditions[?(@.type=="AllGatewaysSynced")].status`

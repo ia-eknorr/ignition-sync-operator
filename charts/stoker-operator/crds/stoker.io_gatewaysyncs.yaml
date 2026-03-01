@@ -17,7 +17,7 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.git.ref
+    - jsonPath: .status.lastSyncRef
       name: Ref
       type: string
     - jsonPath: .status.lastSyncCommitShort
