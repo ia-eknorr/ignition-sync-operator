@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.4.10] - 2026-02-28
+
+### Fixed
+
+- **`Ref` column now shows resolved ref** — the `kubectl get gs` `Ref` printer column previously read `spec.git.ref` (written by ArgoCD, lags up to 3 minutes after a promotion); changed to `status.lastSyncRef` so the column reflects the ref the controller actually resolved and synced, updating in seconds after a webhook trigger
+
 ## [v0.4.9] - 2026-03-01
 
 ### Fixed
