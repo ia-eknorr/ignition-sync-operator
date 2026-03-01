@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.4.7] - 2026-03-01
+
+### Added
+
+- **Webhook receiver Ingress** — `webhookReceiver.ingress` block in Helm values; creates an Ingress resource exposing the receiver outside the cluster for push-event-driven syncs from Kargo, GitHub, or other external systems; generic annotations/hosts/tls structure works with any ingress controller (ALB, nginx, Traefik)
+
 ## [v0.4.6] - 2026-02-28
 
 ### Fixed
@@ -150,6 +156,7 @@ Initial release — controller + agent sidecar for Git-driven Ignition gateway c
 - **Functional test suite** with phased kind cluster tests (phases 02-09)
 - Unit tests with envtest for controller and syncengine
 
+[v0.4.7]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.7
 [v0.4.6]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.6
 [v0.4.5]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.5
 [v0.4.4]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.4
