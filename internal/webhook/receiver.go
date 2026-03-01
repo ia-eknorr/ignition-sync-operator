@@ -29,10 +29,11 @@ const (
 // Receiver is an HTTP server that receives webhook payloads and annotates
 // GatewaySync CRs with the requested ref. It implements manager.Runnable.
 type Receiver struct {
-	Client     client.Client
-	HMACSecret string
-	Port       int32
-	Recorder   record.EventRecorder
+	Client      client.Client
+	HMACSecret  string
+	BearerToken string
+	Port        int32
+	Recorder    record.EventRecorder
 }
 
 // Start starts the webhook HTTP server. Blocks until ctx is cancelled.
@@ -78,13 +79,11 @@ func (rv *Receiver) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate HMAC BEFORE any CR lookup — prevents enumeration attacks
-	if rv.HMACSecret != "" {
-		signature := r.Header.Get("X-Hub-Signature-256")
-		if err := ValidateHMAC(body, signature, rv.HMACSecret); err != nil {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
+	// Validate auth BEFORE any CR lookup — prevents enumeration attacks.
+	// If any auth method is configured, at least one must succeed.
+	if !rv.authorize(r, body) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
 	}
 
 	// Parse ref from payload (auto-detect format)
@@ -133,6 +132,28 @@ func (rv *Receiver) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		"accepted": true,
 		"ref":      ref,
 	})
+}
+
+// authorize returns true if the request passes at least one configured auth
+// method. If no auth is configured, all requests are allowed. Supports two
+// methods — either can satisfy the check:
+//   - HMAC: X-Hub-Signature-256 header validated against HMACSecret
+//   - Bearer token: Authorization: Bearer <token> validated against BearerToken
+func (rv *Receiver) authorize(r *http.Request, body []byte) bool {
+	if rv.HMACSecret == "" && rv.BearerToken == "" {
+		return true
+	}
+	if rv.HMACSecret != "" {
+		if ValidateHMAC(body, r.Header.Get("X-Hub-Signature-256"), rv.HMACSecret) == nil {
+			return true
+		}
+	}
+	if rv.BearerToken != "" {
+		if r.Header.Get("Authorization") == "Bearer "+rv.BearerToken {
+			return true
+		}
+	}
+	return false
 }
 
 // parsePayload auto-detects the payload format and extracts the ref.

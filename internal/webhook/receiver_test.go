@@ -82,6 +82,10 @@ func TestParsePayload_InvalidJSON(t *testing.T) {
 // --- HTTP handler tests ---
 
 func newTestReceiver(hmacSecret string, objects ...runtime.Object) (*Receiver, *http.ServeMux) {
+	return newTestReceiverFull(hmacSecret, "", objects...)
+}
+
+func newTestReceiverFull(hmacSecret, bearerToken string, objects ...runtime.Object) (*Receiver, *http.ServeMux) {
 	scheme := runtime.NewScheme()
 	_ = stokerv1alpha1.AddToScheme(scheme)
 
@@ -91,10 +95,11 @@ func newTestReceiver(hmacSecret string, objects ...runtime.Object) (*Receiver, *
 		Build()
 
 	rv := &Receiver{
-		Client:     fakeClient,
-		HMACSecret: hmacSecret,
-		Port:       9443,
-		Recorder:   record.NewFakeRecorder(20),
+		Client:      fakeClient,
+		HMACSecret:  hmacSecret,
+		BearerToken: bearerToken,
+		Port:        9443,
+		Recorder:    record.NewFakeRecorder(20),
 	}
 
 	mux := http.NewServeMux()
@@ -257,5 +262,64 @@ func TestHandler_HMACValidatedBeforeCRLookup(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 (HMAC before CR lookup), got %d", w.Code)
+	}
+}
+
+func TestHandler_AcceptsBearerToken(t *testing.T) {
+	_, mux := newTestReceiverFull("", "secret-token", testCR())
+
+	body := []byte(`{"ref":"v2.0.0"}`)
+	req := httptest.NewRequest("POST", "/webhook/default/my-sync", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer secret-token")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d", w.Code)
+	}
+}
+
+func TestHandler_RejectsMissingBearerToken(t *testing.T) {
+	_, mux := newTestReceiverFull("", "secret-token")
+
+	body := []byte(`{"ref":"v2.0.0"}`)
+	req := httptest.NewRequest("POST", "/webhook/default/my-sync", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", w.Code)
+	}
+}
+
+func TestHandler_RejectsWrongBearerToken(t *testing.T) {
+	_, mux := newTestReceiverFull("", "secret-token")
+
+	body := []byte(`{"ref":"v2.0.0"}`)
+	req := httptest.NewRequest("POST", "/webhook/default/my-sync", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer wrong-token")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", w.Code)
+	}
+}
+
+func TestHandler_BearerTokenAuthorizesFallbackWhenHMACSet(t *testing.T) {
+	// Both HMAC and bearer token configured — bearer token should authorize even
+	// though no X-Hub-Signature-256 header is present.
+	_, mux := newTestReceiverFull("hmac-secret", "bearer-token", testCR())
+
+	body := []byte(`{"ref":"v2.0.0"}`)
+	req := httptest.NewRequest("POST", "/webhook/default/my-sync", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer bearer-token")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: bearer token should authorize when HMAC is also configured", w.Code)
 	}
 }

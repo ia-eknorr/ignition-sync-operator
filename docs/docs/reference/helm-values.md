@@ -76,12 +76,20 @@ The webhook injects the agent sidecar into pods with annotation `stoker.io/injec
 |-----|------|---------|-------------|
 | `webhookReceiver.enabled` | bool | `false` | Enable the webhook receiver HTTP server and its Service. When disabled, the controller does not start the receiver. |
 | `webhookReceiver.port` | int | `9444` | Port for the inbound git webhook receiver (when enabled). |
-| `webhookReceiver.hmac.secret` | string | `""` | HMAC secret value for signature validation. Ignored if `secretRef` is set. |
+| `webhookReceiver.hmac.secret` | string | `""` | HMAC secret value for `X-Hub-Signature-256` validation. Ignored if `secretRef` is set. |
 | `webhookReceiver.hmac.secretRef.name` | string | `""` | Name of an existing Secret containing the HMAC key. |
-| `webhookReceiver.hmac.secretRef.key` | string | `webhook-secret` | Key within the Secret. |
+| `webhookReceiver.hmac.secretRef.key` | string | `webhook-secret` | Key within the HMAC Secret. |
+| `webhookReceiver.token.secret` | string | `""` | Static bearer token for `Authorization: Bearer` validation. Ignored if `secretRef` is set. |
+| `webhookReceiver.token.secretRef.name` | string | `""` | Name of an existing Secret containing the bearer token. |
+| `webhookReceiver.token.secretRef.key` | string | `webhook-token` | Key within the token Secret. |
+| `webhookReceiver.ingress.enabled` | bool | `false` | Create an Ingress resource for the webhook receiver. |
+| `webhookReceiver.ingress.ingressClassName` | string | `""` | Ingress class name (e.g. `nginx`, `traefik`, `alb`). Uses cluster default when empty. |
+| `webhookReceiver.ingress.annotations` | object | `{}` | Annotations for the Ingress resource (ingress controller config, cert-manager, etc.). |
+| `webhookReceiver.ingress.hosts` | list | `[]` | List of `{host, paths[]}` entries. Each path requires `path` and `pathType`. |
+| `webhookReceiver.ingress.tls` | list | `[]` | TLS configuration — list of `{secretName, hosts[]}` entries. |
 
-The push receiver accepts `POST /webhook/{namespace}/{crName}` and auto-detects payload format from GitHub releases, ArgoCD notifications, Kargo promotions, or generic `{"ref": "..."}` bodies. HMAC validation uses the `X-Hub-Signature-256` header.
+The push receiver accepts `POST /webhook/{namespace}/{crName}` and auto-detects payload format from GitHub releases, ArgoCD notifications, Kargo promotions, or generic `{"ref": "..."}` bodies. If both HMAC and bearer token are configured, either method can authorize a request.
 
 :::warning
-When enabled without HMAC, any client that can reach the Service can trigger a reconcile. Always configure HMAC for production use.
+When enabled without any auth, any client that can reach the endpoint can trigger a reconcile. Configure `hmac` (GitHub-style) or `token` (bearer token, for Kargo and other CI/CD systems) for production use.
 :::

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.4.8] - 2026-03-01
+
+### Added
+
+- **Bearer token auth for webhook receiver** — `webhookReceiver.token` Helm block (parallel to `hmac`); controller reads `WEBHOOK_BEARER_TOKEN` env var and validates `Authorization: Bearer <token>` header; if both HMAC and token are configured, either method can authorize a request; enables Kargo and other callers that cannot compute HMAC-SHA256 signatures
+
 ## [v0.4.7] - 2026-03-01
 
 ### Added
@@ -156,6 +162,7 @@ Initial release — controller + agent sidecar for Git-driven Ignition gateway c
 - **Functional test suite** with phased kind cluster tests (phases 02-09)
 - Unit tests with envtest for controller and syncengine
 
+[v0.4.8]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.8
 [v0.4.7]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.7
 [v0.4.6]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.6
 [v0.4.5]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.5

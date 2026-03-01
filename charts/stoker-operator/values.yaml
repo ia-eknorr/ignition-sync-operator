@@ -121,6 +121,18 @@ webhookReceiver:
       name: ""
       # -- Key within the Secret.
       key: "webhook-secret"
+  # -- Static bearer token for authenticating webhook requests.
+  # Kargo and other callers that cannot compute HMAC signatures should use this.
+  # If both token and hmac are configured, either method can authorize a request.
+  token:
+    # -- Bearer token value. Ignored if secretRef is set.
+    secret: ""
+    # -- Reference to an existing Secret containing the bearer token.
+    secretRef:
+      # -- Name of the Secret.
+      name: ""
+      # -- Key within the Secret.
+      key: "webhook-token"
   # -- Ingress for the webhook receiver. Exposes the receiver outside the cluster
   # for push-event-driven syncs from Kargo, GitHub, or other external systems.
   ingress:

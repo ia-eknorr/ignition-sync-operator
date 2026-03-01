@@ -16,7 +16,7 @@ The webhook receiver is disabled by default. Enable it in your Helm values:
 webhookReceiver:
   enabled: true
   hmac:
-    secret: "my-webhook-secret"  # recommended for production
+    secret: "my-webhook-secret"  # recommended for GitHub webhooks
 ```
 
 Or via `--set`:
@@ -30,7 +30,7 @@ helm upgrade stoker oci://ghcr.io/ia-eknorr/charts/stoker-operator \
 
 The controller runs an HTTP server (port 9444) that accepts webhook payloads. When a payload arrives, the receiver:
 
-1. Validates the HMAC signature (if configured)
+1. Validates auth (if configured — HMAC or bearer token, first match wins)
 2. Extracts the ref from the payload (auto-detects format)
 3. Annotates the GatewaySync CR with the requested ref
 4. The controller's reconciliation predicate detects the annotation change and triggers an immediate sync
@@ -48,28 +48,27 @@ When `webhookReceiver.enabled` is true, the Helm chart creates a Service for the
 
 ## Exposing the receiver
 
-The webhook receiver Service needs to be reachable from your git hosting provider. Common approaches:
+The webhook receiver Service needs to be reachable from your git hosting provider or CI/CD system. Common approaches:
 
-**Ingress (recommended for production):**
+**Ingress via Helm values (recommended):**
 
 ```yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: stoker-webhook
-  namespace: stoker-system
-spec:
-  rules:
-    - host: stoker-webhook.example.com
-      http:
+webhookReceiver:
+  enabled: true
+  ingress:
+    enabled: true
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    hosts:
+      - host: stoker.example.com
         paths:
           - path: /webhook
             pathType: Prefix
-            backend:
-              service:
-                name: stoker-stoker-operator-webhook-receiver
-                port:
-                  number: 9444
+    tls:
+      - secretName: stoker-webhook-tls
+        hosts:
+          - stoker.example.com
 ```
 
 **Port-forward (for testing):**
@@ -131,36 +130,45 @@ Any system can trigger a sync by sending:
 }
 ```
 
-## HMAC signature validation
+## Authentication
 
-To verify that payloads come from a trusted source, configure HMAC validation.
+Configure at least one auth method for production. If both are set, either method can authorize a request.
 
-### Option 1: Inline secret
+### HMAC (GitHub-compatible)
 
-```yaml
-# Helm values
-webhookReceiver:
-  hmac:
-    secret: "my-webhook-secret"
-```
-
-### Option 2: Existing secret
-
-```bash
-kubectl create secret generic webhook-hmac -n stoker-system \
-  --from-literal=webhook-secret=my-webhook-secret
-```
+HMAC validates the `X-Hub-Signature-256` header — the standard used by GitHub webhooks. Use this when your sender can compute signatures (GitHub, custom senders).
 
 ```yaml
-# Helm values
 webhookReceiver:
   hmac:
-    secretRef:
-      name: webhook-hmac
-      key: webhook-secret
+    secret: "my-webhook-secret"        # inline
+    # secretRef:                       # or from an existing Secret
+    #   name: webhook-hmac
+    #   key: webhook-secret
 ```
 
-The receiver validates the `X-Hub-Signature-256` header against the payload using HMAC-SHA256. Requests with missing or invalid signatures are rejected with HTTP 401.
+### Bearer token (Kargo, CI/CD systems)
+
+Systems like Kargo that cannot compute HMAC-SHA256 signatures can authenticate with a static bearer token. The receiver validates the `Authorization: Bearer <token>` header.
+
+```yaml
+webhookReceiver:
+  token:
+    secret: "my-token"                 # inline
+    # secretRef:                       # or from an existing Secret
+    #   name: webhook-token-secret
+    #   key: webhook-token
+```
+
+The sender must include the header:
+
+```
+Authorization: Bearer <token>
+```
+
+:::warning
+When enabled without any auth, any client that can reach the endpoint can trigger a reconcile. Always configure HMAC or a bearer token for production use.
+:::
 
 ## GitHub webhook setup
 

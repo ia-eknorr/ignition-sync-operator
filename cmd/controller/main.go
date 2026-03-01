@@ -192,13 +192,13 @@ func main() {
 
 	// Register webhook receiver if port is set
 	if webhookReceiverPort > 0 {
-		hmacSecret := os.Getenv("WEBHOOK_HMAC_SECRET")
 		//nolint:staticcheck // TODO: migrate to events.EventRecorder
 		receiver := &iswebhook.Receiver{
-			Client:     mgr.GetClient(),
-			HMACSecret: hmacSecret,
-			Port:       int32(webhookReceiverPort),
-			Recorder:   mgr.GetEventRecorderFor("webhook-receiver"),
+			Client:      mgr.GetClient(),
+			HMACSecret:  os.Getenv("WEBHOOK_HMAC_SECRET"),
+			BearerToken: os.Getenv("WEBHOOK_BEARER_TOKEN"),
+			Port:        int32(webhookReceiverPort),
+			Recorder:    mgr.GetEventRecorderFor("webhook-receiver"),
 		}
 		if err := mgr.Add(receiver); err != nil {
 			setupLog.Error(err, "unable to add webhook receiver")
