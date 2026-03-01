@@ -147,9 +147,9 @@ webhookReceiver:
     #   key: webhook-secret
 ```
 
-### Bearer token (Kargo, CI/CD systems)
+### Bearer token
 
-Systems like Kargo that cannot compute HMAC-SHA256 signatures can authenticate with a static bearer token. The receiver validates the `Authorization: Bearer <token>` header.
+Any HTTP client that can set headers can authenticate with a static bearer token. The receiver validates the `Authorization: Bearer <token>` header — no signature computation required.
 
 ```yaml
 webhookReceiver:
