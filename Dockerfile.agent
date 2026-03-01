@@ -21,6 +21,6 @@ RUN apk add --no-cache git openssh-client nss_wrapper
 WORKDIR /
 COPY --from=builder /workspace/agent .
 USER 65534:65534
-EXPOSE 8082
+EXPOSE 8082 8083
 
 ENTRYPOINT ["/agent"]

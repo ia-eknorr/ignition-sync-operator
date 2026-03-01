@@ -38,6 +38,9 @@ spec:
             - --leader-elect
             {{- end }}
             - --health-probe-bind-address=:8081
+          {{- if .Values.metrics.enabled }}
+            - --metrics-bind-address=:{{ .Values.metrics.service.port }}
+          {{- end }}
           {{- if and .Values.webhook.enabled .Values.certManager.enabled }}
             - --webhook-cert-path=/etc/webhook-certs
           {{- end }}
@@ -68,6 +71,11 @@ spec:
               value: {{ .Values.webhookReceiver.token.secret | quote }}
             {{- end }}
           ports:
+          {{- if .Values.metrics.enabled }}
+            - containerPort: {{ .Values.metrics.service.port }}
+              name: metrics
+              protocol: TCP
+          {{- end }}
           {{- if .Values.webhook.enabled }}
             - containerPort: {{ .Values.webhook.port | default 9443 }}
               name: webhook-server
