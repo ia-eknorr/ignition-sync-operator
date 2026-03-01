@@ -57,6 +57,10 @@ const (
 	// AnnotationSecretType annotates controller-managed Secrets with their purpose.
 	AnnotationSecretType = AnnotationPrefix + "/secret-type"
 
+	// LabelAgent is set on pods with an injected stoker-agent sidecar.
+	// Used by PodMonitor for metrics scrape discovery (labels are indexed, annotations are not).
+	LabelAgent = AnnotationPrefix + "/agent"
+
 	// LabelNamespaceInjection enables webhook injection for a namespace via namespaceSelector.
 	// Applied to namespaces: kubectl label namespace site1 stoker.io/injection=enabled
 	LabelNamespaceInjection = AnnotationPrefix + "/injection"

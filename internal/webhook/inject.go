@@ -63,11 +63,13 @@ func (p *PodInjector) Handle(ctx context.Context, req admission.Request) admissi
 
 	// Early return for non-annotated pods (~1ms, no network calls)
 	if pod.Annotations[stokertypes.AnnotationInject] != annotationTrue {
+		webhookInjectorInjectionsTotal.WithLabelValues(req.Namespace, "skipped").Inc()
 		return admission.Allowed("injection not requested")
 	}
 
 	// Idempotency: skip if already injected
 	if isAlreadyInjected(pod) {
+		webhookInjectorInjectionsTotal.WithLabelValues(req.Namespace, "skipped").Inc()
 		return admission.Allowed("already injected")
 	}
 
@@ -121,6 +123,7 @@ func (p *PodInjector) Handle(ctx context.Context, req admission.Request) admissi
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
 
+	webhookInjectorInjectionsTotal.WithLabelValues(req.Namespace, "injected").Inc()
 	log.Info("injected stoker-agent sidecar", "pod", pod.Name, "cr", crName, "namespace", req.Namespace)
 	return admission.PatchResponseFromRaw(req.Object.Raw, marshaledPod)
 }
@@ -210,6 +213,9 @@ func injectSidecar(pod *corev1.Pod, gs *stokerv1alpha1.GatewaySync) {
 		RestartPolicy:   &restartAlways,
 		Env:             env,
 		Resources:       resources,
+		Ports: []corev1.ContainerPort{
+			{Name: "metrics", ContainerPort: 8083, Protocol: corev1.ProtocolTCP},
+		},
 		SecurityContext: &corev1.SecurityContext{
 			RunAsNonRoot:             boolPtr(true),
 			ReadOnlyRootFilesystem:   boolPtr(true),
@@ -283,6 +289,12 @@ func injectSidecar(pod *corev1.Pod, gs *stokerv1alpha1.GatewaySync) {
 		pod.Annotations = make(map[string]string)
 	}
 	pod.Annotations[stokertypes.AnnotationInjected] = annotationTrue
+
+	// Set agent label for PodMonitor discovery (labels are indexed, annotations are not).
+	if pod.Labels == nil {
+		pod.Labels = make(map[string]string)
+	}
+	pod.Labels[stokertypes.LabelAgent] = annotationTrue
 }
 
 // resolveAgentImage resolves the agent image using 3-tier priority:

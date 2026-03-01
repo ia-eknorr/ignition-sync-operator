@@ -74,3 +74,36 @@ func (hs *HealthServer) handleStartupz(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("starting"))
 	}
 }
+
+// MetricsServer serves the /metrics endpoint on a dedicated port (separate from health probes).
+type MetricsServer struct {
+	server *http.Server
+}
+
+// NewMetricsServer creates a metrics server on the given address (e.g., ":8083").
+func NewMetricsServer(addr string, handler http.Handler) *MetricsServer {
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", handler)
+
+	return &MetricsServer{
+		server: &http.Server{
+			Addr:    addr,
+			Handler: mux,
+		},
+	}
+}
+
+// Start begins serving metrics. Blocks until ctx is cancelled.
+func (ms *MetricsServer) Start(ctx context.Context) {
+	log := logf.FromContext(ctx).WithName("metrics")
+
+	go func() {
+		<-ctx.Done()
+		_ = ms.server.Close()
+	}()
+
+	log.Info("metrics server starting", "addr", ms.server.Addr)
+	if err := ms.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Error(err, "metrics server error")
+	}
+}

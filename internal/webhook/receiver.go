@@ -75,6 +75,7 @@ func (rv *Receiver) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxPayloadBytes))
 	if err != nil {
 		log.Error(err, "failed to read request body")
+		webhookReceiverRequestsTotal.WithLabelValues("unknown", "400").Inc()
 		http.Error(w, "failed to read body", http.StatusBadRequest)
 		return
 	}
@@ -82,6 +83,7 @@ func (rv *Receiver) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	// Validate auth BEFORE any CR lookup — prevents enumeration attacks.
 	// If any auth method is configured, at least one must succeed.
 	if !rv.authorize(r, body) {
+		webhookReceiverRequestsTotal.WithLabelValues("unknown", "401").Inc()
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -89,6 +91,7 @@ func (rv *Receiver) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	// Parse ref from payload (auto-detect format)
 	ref, source := parsePayload(body)
 	if ref == "" {
+		webhookReceiverRequestsTotal.WithLabelValues("unknown", "400").Inc()
 		http.Error(w, `{"error":"no ref found in payload"}`, http.StatusBadRequest)
 		return
 	}
@@ -98,6 +101,7 @@ func (rv *Receiver) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	key := types.NamespacedName{Name: crName, Namespace: namespace}
 	if err := rv.Client.Get(r.Context(), key, &gs); err != nil {
 		log.Error(err, "CR not found", "namespace", namespace, "name", crName)
+		webhookReceiverRequestsTotal.WithLabelValues(source, "404").Inc()
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
@@ -105,6 +109,7 @@ func (rv *Receiver) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	// Check if the ref is already set (idempotent) — return 202 so callers
 	// with successExpression: response.status == 202 don't treat this as an error.
 	if gs.Annotations != nil && gs.Annotations[stokertypes.AnnotationRequestedRef] == ref {
+		webhookReceiverRequestsTotal.WithLabelValues(source, "202").Inc()
 		writeJSON(w, http.StatusAccepted, map[string]any{
 			"accepted": true,
 			"ref":      ref,
@@ -123,12 +128,14 @@ func (rv *Receiver) handleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	if err := rv.Client.Update(r.Context(), &gs); err != nil {
 		log.Error(err, "failed to annotate CR", "namespace", namespace, "name", crName)
+		webhookReceiverRequestsTotal.WithLabelValues(source, "500").Inc()
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
 	rv.Recorder.Eventf(&gs, corev1.EventTypeNormal, "WebhookReceived", "Webhook from %s, ref %q", source, ref)
 	log.Info("webhook accepted", "namespace", namespace, "cr", crName, "ref", ref, "source", source)
+	webhookReceiverRequestsTotal.WithLabelValues(source, "202").Inc()
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"accepted": true,
 		"ref":      ref,

@@ -52,6 +52,11 @@ Kubernetes: `>= 1.28.0`
 | certManager | object | `{"enabled":true}` | cert-manager integration for webhook TLS certificates. Requires cert-manager to be installed in the cluster. |
 | certManager.enabled | bool | `true` | Create a self-signed Issuer and Certificate for webhook TLS. Requires cert-manager to be installed in the cluster. |
 | fullnameOverride | string | `""` | Override the full release name used in resource names. |
+| grafanaDashboard | object | `{"annotations":{},"enabled":false,"labels":{},"namespace":""}` | Grafana dashboard provisioning via ConfigMap with sidecar auto-discovery. The ConfigMap is labeled with `grafana_dashboard: "1"` for automatic import. |
+| grafanaDashboard.annotations | object | `{}` | Annotations for the dashboard ConfigMap. |
+| grafanaDashboard.enabled | bool | `false` | Create a ConfigMap containing the Stoker Grafana dashboard. |
+| grafanaDashboard.labels | object | `{}` | Additional labels for the dashboard ConfigMap. |
+| grafanaDashboard.namespace | string | `""` | Namespace for the dashboard ConfigMap. Defaults to the release namespace. |
 | image | object | `{"pullPolicy":"IfNotPresent","repository":"ghcr.io/ia-eknorr/stoker-operator","tag":""}` | Controller container image configuration. |
 | image.pullPolicy | string | `"IfNotPresent"` | Image pull policy (Always, IfNotPresent, Never). |
 | image.repository | string | `"ghcr.io/ia-eknorr/stoker-operator"` | Image repository for the controller manager. |
@@ -69,12 +74,24 @@ Kubernetes: `>= 1.28.0`
 | nodeSelector | object | `{}` | Node selector labels for scheduling the controller pod. Example:   nodeSelector:     kubernetes.io/os: linux |
 | podAnnotations | object | `{}` | Additional annotations to add to the controller pod. |
 | podLabels | object | `{}` | Additional labels to add to the controller pod. |
+| podMonitor | object | `{"enabled":false,"interval":"","labels":{},"scrapeTimeout":""}` | PodMonitor for scraping agent sidecar metrics across all namespaces. Requires the prometheus-operator CRDs to be installed in the cluster. |
+| podMonitor.enabled | bool | `false` | Create a PodMonitor resource for agent sidecars. |
+| podMonitor.interval | string | `""` | Scrape interval. Falls back to the Prometheus default if empty. |
+| podMonitor.labels | object | `{}` | Additional labels for the PodMonitor (e.g. for Prometheus selector matching). |
+| podMonitor.scrapeTimeout | string | `""` | Scrape timeout. Falls back to the Prometheus default if empty. |
+| prometheusRule | object | `{"additionalRules":[],"enabled":false,"labels":{}}` | PrometheusRule for Stoker alerting rules. Requires the prometheus-operator CRDs to be installed in the cluster. |
+| prometheusRule.additionalRules | list | `[]` | Additional alerting rules appended to the default set. |
+| prometheusRule.enabled | bool | `false` | Create a PrometheusRule resource with default alerts. |
+| prometheusRule.labels | object | `{}` | Additional labels for the PrometheusRule. |
 | rbac | object | `{"autoBindAgent":{"enabled":true}}` | RBAC configuration for the agent sidecar. |
 | rbac.autoBindAgent.enabled | bool | `true` | Automatically create RoleBindings for the agent sidecar in namespaces where GatewaySync CRs exist. The controller discovers ServiceAccounts from gateway pods and binds only those SAs to the stoker-agent ClusterRole. Disable for environments that manage RBAC externally (e.g., GitOps-managed RBAC). |
 | replicaCount | int | `1` | Number of controller replicas. Only one replica holds the leader lock at a time; additional replicas provide fast failover. |
 | resources | object | `{"limits":{"cpu":"500m","memory":"128Mi"},"requests":{"cpu":"10m","memory":"64Mi"}}` | CPU and memory resource requests/limits for the controller container. The controller runs git ls-remote (no clone) and watches CRs, so resource requirements are modest. |
-| serviceMonitor | object | `{"enabled":false}` | Prometheus ServiceMonitor for automatic scrape target discovery. Requires the prometheus-operator CRDs to be installed in the cluster. |
+| serviceMonitor | object | `{"enabled":false,"interval":"","labels":{},"scrapeTimeout":""}` | Prometheus ServiceMonitor for automatic scrape target discovery. Requires the prometheus-operator CRDs to be installed in the cluster. |
 | serviceMonitor.enabled | bool | `false` | Create a ServiceMonitor resource. |
+| serviceMonitor.interval | string | `""` | Scrape interval. Falls back to the Prometheus default if empty. |
+| serviceMonitor.labels | object | `{}` | Additional labels for the ServiceMonitor (e.g. for Prometheus selector matching). |
+| serviceMonitor.scrapeTimeout | string | `""` | Scrape timeout. Falls back to the Prometheus default if empty. |
 | tolerations | list | `[]` | Tolerations for scheduling the controller pod on tainted nodes. |
 | webhook | object | `{"enabled":true,"namespaceSelector":{"requireLabel":false},"port":9443}` | Mutating webhook for sidecar injection. When enabled, pods with annotation `stoker.io/inject: "true"` get the stoker-agent sidecar injected automatically. By default, injection works in all namespaces except kube-system and kube-node-lease. |
 | webhook.enabled | bool | `true` | Enable the MutatingWebhookConfiguration and webhook Service. |

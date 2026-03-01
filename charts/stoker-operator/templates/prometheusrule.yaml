@@ -1,0 +1,64 @@
+{{- if .Values.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "stoker-operator.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stoker-operator.labels" . | nindent 4 }}
+    {{- with .Values.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: stoker.rules
+      rules:
+        - alert: StokerCRNotReady
+          expr: stoker_controller_cr_ready == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "GatewaySync CR {{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} is not Ready"
+            description: "The GatewaySync CR has been in a non-Ready state for more than 10 minutes."
+
+        - alert: StokerRefResolutionSlow
+          expr: histogram_quantile(0.95, rate(stoker_controller_ref_resolve_duration_seconds_bucket[5m])) > 10
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Git ref resolution is slow for {{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }}"
+            description: "The p95 ref resolution duration has exceeded 10 seconds for 5 minutes."
+
+        - alert: StokerAgentSyncFailing
+          expr: stoker_agent_last_sync_success == 0
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Stoker agent sync is failing"
+            description: "The agent's last sync attempt has been unsuccessful for more than 15 minutes."
+
+        - alert: StokerDesignerSessionsBlocking
+          expr: stoker_agent_designer_sessions_blocked == 1
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Designer sessions are blocking sync"
+            description: "Active designer sessions have been blocking file sync for more than 30 minutes."
+
+        - alert: StokerGitHubAppTokenExpiringSoon
+          expr: (stoker_controller_github_app_token_expiry_timestamp_seconds - time()) < 60
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "GitHub App token expiring soon for app {{ "{{" }} $labels.app_id {{ "}}" }}"
+            description: "The cached GitHub App installation token expires in less than 60 seconds."
+
+        {{- with .Values.prometheusRule.additionalRules }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+{{- end }}

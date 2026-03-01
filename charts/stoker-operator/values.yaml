@@ -62,6 +62,46 @@ metrics:
 serviceMonitor:
   # -- Create a ServiceMonitor resource.
   enabled: false
+  # -- Additional labels for the ServiceMonitor (e.g. for Prometheus selector matching).
+  labels: {}
+  # -- Scrape interval. Falls back to the Prometheus default if empty.
+  interval: ""
+  # -- Scrape timeout. Falls back to the Prometheus default if empty.
+  scrapeTimeout: ""
+
+# -- PodMonitor for scraping agent sidecar metrics across all namespaces.
+# Requires the prometheus-operator CRDs to be installed in the cluster.
+podMonitor:
+  # -- Create a PodMonitor resource for agent sidecars.
+  enabled: false
+  # -- Additional labels for the PodMonitor (e.g. for Prometheus selector matching).
+  labels: {}
+  # -- Scrape interval. Falls back to the Prometheus default if empty.
+  interval: ""
+  # -- Scrape timeout. Falls back to the Prometheus default if empty.
+  scrapeTimeout: ""
+
+# -- PrometheusRule for Stoker alerting rules.
+# Requires the prometheus-operator CRDs to be installed in the cluster.
+prometheusRule:
+  # -- Create a PrometheusRule resource with default alerts.
+  enabled: false
+  # -- Additional labels for the PrometheusRule.
+  labels: {}
+  # -- Additional alerting rules appended to the default set.
+  additionalRules: []
+
+# -- Grafana dashboard provisioning via ConfigMap with sidecar auto-discovery.
+# The ConfigMap is labeled with `grafana_dashboard: "1"` for automatic import.
+grafanaDashboard:
+  # -- Create a ConfigMap containing the Stoker Grafana dashboard.
+  enabled: false
+  # -- Namespace for the dashboard ConfigMap. Defaults to the release namespace.
+  namespace: ""
+  # -- Additional labels for the dashboard ConfigMap.
+  labels: {}
+  # -- Annotations for the dashboard ConfigMap.
+  annotations: {}
 
 # -- NetworkPolicy restricts ingress to the metrics port. Only allows traffic
 # from namespaces labeled `metrics: enabled`.

@@ -45,6 +45,7 @@ type Agent struct {
 	SyncEngine   *syncengine.Engine
 	IgnitionAPI  *ignition.Client
 	HealthServer *HealthServer
+	Metrics      *AgentMetrics
 	Watcher      *Watcher
 	Recorder     record.EventRecorder // may be nil
 
@@ -69,6 +70,7 @@ func New(cfg *Config, k8sClient client.Client, recorder record.EventRecorder) *A
 		SyncEngine:   &syncengine.Engine{ExcludePatterns: excludes},
 		IgnitionAPI:  igClient,
 		HealthServer: NewHealthServer(":8082"),
+		Metrics:      NewAgentMetrics(),
 		Watcher:      NewWatcher(k8sClient, cfg.CRNamespace, cfg.CRName, time.Duration(cfg.SyncPeriod)*time.Second),
 		Recorder:     recorder,
 	}
@@ -91,6 +93,10 @@ func (a *Agent) Run(ctx context.Context) error {
 
 	// Start health server immediately so startup probe has an endpoint.
 	go a.HealthServer.Start(ctx)
+
+	// Start metrics server on a dedicated port (separate from health probes).
+	metricsServer := NewMetricsServer(":8083", a.Metrics.Handler())
+	go metricsServer.Start(ctx)
 
 	// Read metadata ConfigMap to get git URL and commit.
 	log.Info("reading metadata ConfigMap")
@@ -118,11 +124,15 @@ func (a *Agent) Run(ctx context.Context) error {
 
 	// Initial clone.
 	log.Info("cloning repository", "url", gitURL, "ref", meta.Ref)
+	cloneStart := time.Now()
 	result, err := a.GitClient.CloneOrFetch(ctx, gitURL, meta.Ref, a.Config.RepoPath, auth)
+	a.Metrics.GitFetchDuration.WithLabelValues("clone").Observe(time.Since(cloneStart).Seconds())
 	if err != nil {
+		a.Metrics.GitFetchTotal.WithLabelValues("clone", "error").Inc()
 		a.event(corev1.EventTypeWarning, conditions.ReasonCloneFailed, "Initial clone failed: %v", err)
 		return fmt.Errorf("initial clone: %w", err)
 	}
+	a.Metrics.GitFetchTotal.WithLabelValues("clone", "success").Inc()
 	log.Info("clone complete", "commit", result.Commit)
 
 	// Initial sync (blocking). Files land on disk before startup probe passes,
@@ -264,12 +274,16 @@ func (a *Agent) handleSyncTrigger(ctx context.Context, gitURL string, auth trans
 	}
 
 	// Fetch and checkout new commit.
+	fetchStart := time.Now()
 	result, err := a.GitClient.CloneOrFetch(ctx, gitURL, meta.Ref, a.Config.RepoPath, auth)
+	a.Metrics.GitFetchDuration.WithLabelValues("fetch").Observe(time.Since(fetchStart).Seconds())
 	if err != nil {
+		a.Metrics.GitFetchTotal.WithLabelValues("fetch", "error").Inc()
 		log.Error(err, "git fetch failed")
 		a.reportError(ctx, meta.Commit, meta.Ref, fmt.Sprintf("git fetch: %v", err))
 		return
 	}
+	a.Metrics.GitFetchTotal.WithLabelValues("fetch", "success").Inc()
 
 	log.Info("git updated", "commit", result.Commit)
 
@@ -286,8 +300,10 @@ func (a *Agent) handleSyncTrigger(ctx context.Context, gitURL string, auth trans
 
 	if !profile.Paused && !profile.DryRun {
 		if blocked := a.checkDesignerSessions(ctx, profile.DesignerSessionPolicy, result.Commit, result.Ref); blocked {
+			a.Metrics.DesignerBlocked.Set(1)
 			return
 		}
+		a.Metrics.DesignerBlocked.Set(0)
 	}
 
 	_ = profileName // used in syncWithProfile via metadata re-read
@@ -437,13 +453,20 @@ func formatDesignerSessions(sessions []ignition.DesignerSession) string {
 func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool, profiles string) error {
 	log := logf.FromContext(ctx).WithName("sync")
 
+	syncStart := time.Now()
 	syncResult, profileName, isDryRun, err := a.syncWithProfile(ctx)
+	a.Metrics.SyncDuration.WithLabelValues(profileName).Observe(time.Since(syncStart).Seconds())
 
 	if err != nil {
+		a.Metrics.SyncTotal.WithLabelValues(profileName, "error").Inc()
+		a.Metrics.LastSyncSuccess.Set(0)
 		a.reportError(ctx, commit, ref, fmt.Sprintf("sync engine: %v", err))
 		a.event(corev1.EventTypeWarning, conditions.ReasonSyncFailed, "Sync failed: %v", err)
 		return fmt.Errorf("sync engine: %w", err)
 	}
+
+	filesChanged := int32(syncResult.FilesAdded + syncResult.FilesModified + syncResult.FilesDeleted)
+	a.Metrics.FilesChanged.WithLabelValues(profileName).Set(float64(filesChanged))
 
 	log.Info("files synced",
 		"added", syncResult.FilesAdded,
@@ -462,11 +485,15 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 		log.Info("dry-run mode, skipping scan API")
 	} else if !isInitial {
 		log.Info("triggering Ignition scan API")
+		scanStart := time.Now()
 		scanResult := a.IgnitionAPI.TriggerScan()
+		a.Metrics.ScanDuration.Observe(time.Since(scanStart).Seconds())
 		scanResultStr = scanResult.String()
 		if scanResult.Error != "" {
+			a.Metrics.ScanTotal.WithLabelValues("error").Inc()
 			log.Info("scan API failed (non-fatal)", "error", scanResult.Error)
 		} else {
+			a.Metrics.ScanTotal.WithLabelValues("success").Inc()
 			log.Info("scan complete", "result", scanResultStr)
 		}
 	} else {
@@ -495,7 +522,6 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 	}
 
 	// Report status to ConfigMap.
-	filesChanged := int32(syncResult.FilesAdded + syncResult.FilesModified + syncResult.FilesDeleted)
 	status := &stokertypes.GatewayStatus{
 		SyncStatus:       syncStatus,
 		SyncedCommit:     commit,
@@ -522,6 +548,10 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 	} else {
 		log.Info("status written to ConfigMap", "gateway", a.Config.GatewayName, "status", syncStatus)
 	}
+
+	a.Metrics.SyncTotal.WithLabelValues(profileName, "success").Inc()
+	a.Metrics.LastSyncTimestamp.Set(float64(time.Now().Unix()))
+	a.Metrics.LastSyncSuccess.Set(1)
 
 	a.event(corev1.EventTypeNormal, conditions.ReasonSyncCompleted,
 		"Sync completed on %s: commit %s, %d file(s) changed", a.Config.GatewayName, commit[:min(12, len(commit))], filesChanged)

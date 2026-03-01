@@ -428,6 +428,37 @@ func TestInject_AgentImageOverrideViaAnnotation(t *testing.T) {
 	}
 }
 
+func TestInject_AgentLabelAndMetricsPort(t *testing.T) {
+	gs := testGatewaySync()
+	pod := basePod(map[string]string{
+		stokertypes.AnnotationInject: "true",
+		stokertypes.AnnotationCRName: "my-sync",
+	})
+
+	patched := injectDirect(t, pod, gs)
+
+	// Verify stoker.io/agent label is set.
+	if patched.Labels[stokertypes.LabelAgent] != "true" {
+		t.Errorf("expected label %s=true, got %q", stokertypes.LabelAgent, patched.Labels[stokertypes.LabelAgent])
+	}
+
+	// Verify metrics containerPort is present on the agent container.
+	agent := findInitContainer(patched)
+	if agent == nil {
+		t.Fatal("stoker-agent not found")
+	}
+	found := false
+	for _, port := range agent.Ports {
+		if port.Name == "metrics" && port.ContainerPort == 8083 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected metrics port (8083) on stoker-agent container")
+	}
+}
+
 func TestInject_AgentResourcesFromCR(t *testing.T) {
 	gs := testGatewaySync()
 	gs.Spec.Agent.Resources = &corev1.ResourceRequirements{
