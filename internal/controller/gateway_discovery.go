@@ -100,7 +100,7 @@ func (r *GatewaySyncReconciler) discoverGateways(ctx context.Context, gs *stoker
 		discovered = append(discovered, gateway)
 	}
 
-	log.Info("discovered gateways", "count", len(discovered))
+	log.V(1).Info("discovered gateways", "count", len(discovered))
 	return discovered, nil
 }
 
@@ -126,7 +126,7 @@ func (r *GatewaySyncReconciler) collectGatewayStatus(ctx context.Context, gs *st
 
 	if err := r.Get(ctx, key, cm); err != nil {
 		if errors.IsNotFound(err) {
-			log.Info("status ConfigMap not found, gateways remain Pending", "configmap", cmName)
+			log.V(1).Info("status ConfigMap not found, gateways remain Pending", "configmap", cmName)
 		} else {
 			log.Error(err, "failed to get status ConfigMap", "configmap", cmName)
 		}
@@ -183,7 +183,7 @@ func (r *GatewaySyncReconciler) updateAllGatewaysSyncedCondition(ctx context.Con
 
 	if totalGateways == 0 {
 		r.setCondition(ctx, gs, conditions.TypeAllGatewaysSynced, metav1.ConditionFalse,
-			conditions.ReasonNoGateways, "No gateways discovered")
+			conditions.ReasonNoGateways, "0/0 synced")
 		return
 	}
 
@@ -199,13 +199,13 @@ func (r *GatewaySyncReconciler) updateAllGatewaysSyncedCondition(ctx context.Con
 	}
 
 	if syncedCount == totalGateways {
-		message := fmt.Sprintf("%d/%d gateways synced", syncedCount, totalGateways)
+		message := fmt.Sprintf("%d/%d synced", syncedCount, totalGateways)
 		r.setCondition(ctx, gs, conditions.TypeAllGatewaysSynced, metav1.ConditionTrue,
 			conditions.ReasonSyncSucceeded, message)
 	} else {
-		message := fmt.Sprintf("%d/%d gateways synced", syncedCount, totalGateways)
+		message := fmt.Sprintf("%d/%d synced", syncedCount, totalGateways)
 		if missingSidecarCount > 0 {
-			message = fmt.Sprintf("%d/%d gateways synced (%d missing sidecar)", syncedCount, totalGateways, missingSidecarCount)
+			message = fmt.Sprintf("%d/%d synced (%d missing sidecar)", syncedCount, totalGateways, missingSidecarCount)
 		}
 		r.setCondition(ctx, gs, conditions.TypeAllGatewaysSynced, metav1.ConditionFalse,
 			conditions.ReasonSyncInProgress, message)

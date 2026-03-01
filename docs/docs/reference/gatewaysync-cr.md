@@ -369,11 +369,11 @@ The GatewaySync CR status is managed by the controller and reports:
 `kubectl get gs` shows these columns by default:
 
 ```text
-NAME         REF    COMMIT    PROFILES   SYNCED   GATEWAYS             READY   AGE
-my-gateway   main   4d19160   1          True     1/1 gateways synced  True    5m
+NAME         REF    GATEWAYS     READY   STATUS              AGE
+my-gateway   main   1/1 synced   True    All gateways synced 5m
 ```
 
-`kubectl get gs -o wide` adds `LAST SYNC` (relative time since last commit change).
+`kubectl get gs -o wide` adds `COMMIT`, `PROFILES`, and `LAST SYNC`.
 
 ### Sync status lifecycle
 

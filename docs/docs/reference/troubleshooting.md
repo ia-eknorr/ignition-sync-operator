@@ -35,7 +35,7 @@ description: Common issues, debug commands, and FAQ.
 
 ### Status stuck at Pending
 
-**Symptoms:** `kubectl get gs` shows READY=False, SYNCED=False, but RefResolved is True.
+**Symptoms:** `kubectl get gs` shows READY=False and STATUS shows "Waiting for gateways to sync", but RefResolved is True.
 
 **Checklist:**
 
@@ -249,7 +249,7 @@ Quick reference for common debugging commands:
 ```bash
 # Check GatewaySync CR status
 kubectl get gs -n <ns>
-kubectl get gs -n <ns> -o wide  # includes LAST SYNC column
+kubectl get gs -n <ns> -o wide  # includes COMMIT, PROFILES, LAST SYNC columns
 
 # Detailed CR status with conditions
 kubectl describe gs <name> -n <ns>

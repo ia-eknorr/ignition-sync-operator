@@ -97,7 +97,7 @@ Verify the controller resolved the git ref:
 kubectl get gatewaysyncs -n quickstart
 ```
 
-The `REF` column should show `main` and `COMMIT` should show a short hash. `READY` will be `False` until a gateway is deployed and synced.
+The `REF` column should show `main` and `STATUS` should indicate the current state. `READY` will be `False` until a gateway is deployed and synced. Use `-o wide` to see `COMMIT`, `PROFILES`, and `LAST SYNC` columns.
 
 ## 4. Deploy an Ignition gateway
 
@@ -183,8 +183,8 @@ kubectl get gs -n quickstart
 After 1-2 minutes you should see:
 
 ```text
-NAME         REF    COMMIT    PROFILES   SYNCED   GATEWAYS             READY   AGE
-quickstart   main   4d19160   1          True     1/1 gateways synced  True    5m
+NAME         REF    GATEWAYS     READY   STATUS              AGE
+quickstart   main   1/1 synced   True    All gateways synced 5m
 ```
 
 ### Describe the GatewaySync CR
@@ -209,8 +209,10 @@ kubectl logs -n quickstart -l app.kubernetes.io/name=ignition -c stoker-agent --
 Look for:
 
 - `clone complete` — the repo was cloned successfully
-- `files synced` with `added` and `projects` — files were delivered to the gateway
-- `scan complete` with `projects=200 config=200` — Ignition acknowledged the sync
+- `initial sync complete, startup probe now passing` — files were delivered before the gateway started
+- `new commit detected` — the agent saw a commit change and will sync
+
+In steady state, agent logs are silent when nothing changes. To see detailed sync activity (file counts, scan results), increase the log verbosity with `--zap-log-level=1` or set `LOG_LEVEL=debug`.
 
 ### Inspect the status ConfigMap
 

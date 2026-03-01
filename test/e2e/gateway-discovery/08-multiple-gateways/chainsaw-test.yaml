@@ -6,7 +6,7 @@ spec:
   description: >
     Three Running pods with stoker.io/cr-name should all appear in
     status.discoveredGateways and AllGatewaysSynced message should
-    reflect the count (0/3 gateways synced).
+    reflect the count (0/3 synced).
   steps:
     - name: deploy git server and api-key secret
       try:
@@ -136,8 +136,8 @@ spec:
                 STATUS=$(kubectl get gatewaysync test-mg -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="AllGatewaysSynced")].status}' 2>/dev/null)
                 REASON=$(kubectl get gatewaysync test-mg -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="AllGatewaysSynced")].reason}' 2>/dev/null)
                 MSG=$(kubectl get gatewaysync test-mg -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="AllGatewaysSynced")].message}' 2>/dev/null)
-                [ "$STATUS" = "False" ] && [ "$REASON" = "SyncInProgress" ] && [ "$MSG" = "0/3 gateways synced" ] && exit 0
+                [ "$STATUS" = "False" ] && [ "$REASON" = "SyncInProgress" ] && [ "$MSG" = "0/3 synced" ] && exit 0
                 sleep 2
               done
-              echo "Timed out waiting for AllGatewaysSynced=False/SyncInProgress/0/3, got: status=$STATUS reason=$REASON message=$MSG"
+              echo "Timed out waiting for AllGatewaysSynced=False/SyncInProgress/'0/3 synced', got: status=$STATUS reason=$REASON message=$MSG"
               exit 1

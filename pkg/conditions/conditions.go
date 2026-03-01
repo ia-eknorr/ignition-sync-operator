@@ -39,6 +39,7 @@ const (
 // Event reasons for K8s Events (not used as condition reasons).
 const (
 	ReasonSyncCompleted           = "SyncCompleted"
+	ReasonSyncSkipped             = "SyncSkipped"
 	ReasonSyncFailed              = "SyncFailed"
 	ReasonDesignerSessionsBlocked = "DesignerSessionsBlocked"
 	ReasonWebhookReceived         = "WebhookReceived"

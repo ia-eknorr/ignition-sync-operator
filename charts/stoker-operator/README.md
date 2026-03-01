@@ -87,6 +87,8 @@ Kubernetes: `>= 1.28.0`
 | agentImage.tag | string | `""` | Image tag. Defaults to the chart's appVersion if empty. |
 | certManager | object | `{"enabled":true}` | cert-manager integration for webhook TLS certificates. Requires cert-manager to be installed in the cluster. |
 | certManager.enabled | bool | `true` | Create a self-signed Issuer and Certificate for webhook TLS. Requires cert-manager to be installed in the cluster. |
+| controller | object | `{"logDevMode":"false"}` | Controller configuration. |
+| controller.logDevMode | string | `"false"` | Enable zap Development mode for the controller logger. Development mode disables V-level filtering and uses console-friendly output. Set to "true" only for local development. |
 | fullnameOverride | string | `""` | Override the full release name used in resource names. |
 | grafanaDashboard | object | `{"annotations":{},"enabled":false,"labels":{},"namespace":""}` | Grafana dashboard provisioning via sidecar auto-discovery. Creates a ConfigMap labeled `grafana_dashboard: "1"` that the Grafana sidecar (k8s-sidecar) detects and provisions automatically. This is the standard pattern used by kube-prometheus-stack and does not affect existing dashboards. If your Grafana instance does not use the sidecar, you can import the dashboard JSON manually from charts/stoker-operator/dashboards/stoker-overview.json. |
 | grafanaDashboard.annotations | object | `{}` | Annotations for the dashboard ConfigMap. |

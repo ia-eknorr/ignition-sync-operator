@@ -167,7 +167,7 @@ func (a *Agent) Run(ctx context.Context) error {
 			log.Info("shutting down")
 			return nil
 		case <-a.Watcher.Events():
-			log.Info("sync triggered")
+			log.V(1).Info("sync triggered")
 			a.handleSyncTrigger(ctx, gitURL, auth)
 		}
 	}
@@ -251,7 +251,7 @@ func (a *Agent) handleSyncTrigger(ctx context.Context, gitURL string, auth trans
 	}
 
 	if meta.Paused == "true" {
-		log.Info("CR is paused, skipping sync")
+		log.V(1).Info("CR is paused, skipping sync")
 		a.Metrics.SyncSkippedTotal.WithLabelValues("paused").Inc()
 		return
 	}
@@ -289,7 +289,7 @@ func (a *Agent) handleSyncTrigger(ctx context.Context, gitURL string, auth trans
 	}
 	a.Metrics.GitFetchTotal.WithLabelValues("fetch", "success").Inc()
 
-	log.Info("git updated", "commit", result.Commit)
+	log.V(1).Info("git updated", "commit", result.Commit)
 
 	// Pre-sync designer session check via resolved profile from metadata.
 	profile, profileName, err := a.lookupProfile(meta)
@@ -307,6 +307,8 @@ func (a *Agent) handleSyncTrigger(ctx context.Context, gitURL string, auth trans
 		if blocked := a.checkDesignerSessions(ctx, profile.DesignerSessionPolicy, result.Commit, result.Ref); blocked {
 			a.Metrics.DesignerBlocked.Set(1)
 			a.Metrics.SyncSkippedTotal.WithLabelValues("designer_blocked").Inc()
+			a.event(corev1.EventTypeWarning, conditions.ReasonSyncSkipped,
+				"Sync skipped: designer sessions blocked sync (policy=%s)", profile.DesignerSessionPolicy)
 			return
 		}
 		a.Metrics.DesignerBlocked.Set(0)
@@ -335,7 +337,7 @@ func (a *Agent) applySyncPeriod(profile *stokertypes.ResolvedProfile, log logr.L
 	if profile.SyncPeriod > 0 {
 		newPeriod := time.Duration(profile.SyncPeriod) * time.Second
 		a.Watcher.UpdatePeriod(newPeriod)
-		log.Info("using profile-level syncPeriod", "syncPeriod", profile.SyncPeriod)
+		log.V(1).Info("using profile-level syncPeriod", "syncPeriod", profile.SyncPeriod)
 	}
 }
 
@@ -480,7 +482,11 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 	a.Metrics.FilesModified.WithLabelValues(profileName).Set(float64(syncResult.FilesModified))
 	a.Metrics.FilesDeleted.WithLabelValues(profileName).Set(float64(syncResult.FilesDeleted))
 
-	log.Info("files synced",
+	syncLog := log.V(1)
+	if filesChanged > 0 {
+		syncLog = log
+	}
+	syncLog.Info("files synced",
 		"added", syncResult.FilesAdded,
 		"modified", syncResult.FilesModified,
 		"deleted", syncResult.FilesDeleted,
@@ -496,7 +502,7 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 	if isDryRun {
 		log.Info("dry-run mode, skipping scan API")
 	} else if !isInitial {
-		log.Info("triggering Ignition scan API")
+		log.V(1).Info("triggering Ignition scan API")
 		scanStart := time.Now()
 		scanResult := a.IgnitionAPI.TriggerScan()
 		a.Metrics.ScanDuration.Observe(time.Since(scanStart).Seconds())
@@ -506,7 +512,7 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 			log.Info("scan API failed (non-fatal)", "error", scanResult.Error)
 		} else {
 			a.Metrics.ScanTotal.WithLabelValues("success").Inc()
-			log.Info("scan complete", "result", scanResultStr)
+			log.V(1).Info("scan complete", "result", scanResultStr)
 		}
 	} else {
 		// On initial sync, attempt a health check but don't require it.
@@ -558,7 +564,7 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 	if err := WriteStatusConfigMap(ctx, a.K8sClient, a.Config.CRNamespace, a.Config.CRName, a.Config.GatewayName, status); err != nil {
 		log.Error(err, "failed to write status ConfigMap")
 	} else {
-		log.Info("status written to ConfigMap", "gateway", a.Config.GatewayName, "status", syncStatus)
+		log.V(1).Info("status written to ConfigMap", "gateway", a.Config.GatewayName, "status", syncStatus)
 	}
 
 	a.Metrics.SyncTotal.WithLabelValues(profileName, "success").Inc()
@@ -590,7 +596,7 @@ func (a *Agent) syncWithProfile(ctx context.Context) (*syncengine.SyncResult, st
 		return nil, "", false, err
 	}
 
-	log.Info("using profile", "name", profileName)
+	log.V(1).Info("using profile", "name", profileName)
 
 	// Check if profile is paused.
 	if profile.Paused {
@@ -620,7 +626,7 @@ func (a *Agent) syncWithProfile(ctx context.Context) (*syncengine.SyncResult, st
 	// Add engine-level excludes to the plan.
 	plan.ExcludePatterns = append(plan.ExcludePatterns, a.SyncEngine.ExcludePatterns...)
 
-	log.Info("executing sync plan",
+	log.V(1).Info("executing sync plan",
 		"mappings", len(plan.Mappings),
 		"dryRun", plan.DryRun,
 		"excludes", len(plan.ExcludePatterns),

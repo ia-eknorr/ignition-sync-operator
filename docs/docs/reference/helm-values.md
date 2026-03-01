@@ -37,6 +37,7 @@ helm install stoker oci://ghcr.io/ia-eknorr/charts/stoker-operator \
 | `podAnnotations` | object | `{}` | Additional annotations to add to the controller pod. |
 | `podLabels` | object | `{}` | Additional labels to add to the controller pod. |
 | `affinity` | object | `{}` | Affinity rules for the controller pod. |
+| `controller.logDevMode` | string | `"false"` | Enable zap Development mode for the controller logger. Development mode disables V-level filtering and uses console-friendly output. Set to `"true"` only for local development. |
 
 ### cert-manager
 

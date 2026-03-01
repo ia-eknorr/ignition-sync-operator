@@ -50,6 +50,8 @@ spec:
               value: "{{ .Values.agentImage.repository }}:{{ .Values.agentImage.tag | default .Chart.AppVersion }}"
             - name: AUTO_BIND_AGENT_RBAC
               value: {{ .Values.rbac.autoBindAgent.enabled | quote }}
+            - name: LOG_DEV_MODE
+              value: {{ .Values.controller.logDevMode | quote }}
             {{- if and .Values.webhookReceiver.enabled .Values.webhookReceiver.hmac.secretRef.name }}
             - name: WEBHOOK_HMAC_SECRET
               valueFrom:

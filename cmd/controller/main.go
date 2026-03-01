@@ -69,8 +69,9 @@ func main() {
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	flag.IntVar(&webhookReceiverPort, "webhook-receiver-port", 9444,
 		"Port for the inbound webhook receiver (git push events). Set to 0 to disable.")
+	devMode := os.Getenv("LOG_DEV_MODE") == "true"
 	opts := zap.Options{
-		Development: true,
+		Development: devMode,
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()

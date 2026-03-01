@@ -148,6 +148,13 @@ certManager:
   # Requires cert-manager to be installed in the cluster.
   enabled: true
 
+# -- Controller configuration.
+controller:
+  # -- Enable zap Development mode for the controller logger.
+  # Development mode disables V-level filtering and uses console-friendly output.
+  # Set to "true" only for local development.
+  logDevMode: "false"
+
 # -- Git webhook receiver for push-event-driven sync.
 # Disabled by default — enable when you want push-event-driven syncs.
 # When disabled, the controller does not start the HTTP receiver server.

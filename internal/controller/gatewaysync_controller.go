@@ -119,11 +119,11 @@ func (r *GatewaySyncReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// --- Step 0.5: Check if paused ---
 
 	if gs.Spec.Paused {
-		log.Info("CR is paused, skipping reconciliation")
 		crPaused.WithLabelValues(gs.Name, gs.Namespace).Set(1)
 		wasPaused := conditionHasReason(gs.Status.Conditions, conditions.TypeReady, conditions.ReasonPaused)
 		r.setCondition(ctx, &gs, conditions.TypeReady, metav1.ConditionFalse, conditions.ReasonPaused, "Reconciliation paused")
 		if !wasPaused {
+			log.Info("CR is paused, skipping reconciliation")
 			r.Recorder.Event(&gs, corev1.EventTypeNormal, conditions.ReasonPaused, "Reconciliation paused")
 		}
 		return ctrl.Result{}, r.patchStatus(ctx, &gs, base)
@@ -244,21 +244,13 @@ func (r *GatewaySyncReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// --- Step 8: Requeue ---
 
-	requeueAfter := r.pollingInterval(&gs)
+	requeueAfter := r.requeueInterval(&gs)
 
-	// If GitHub App auth, requeue before token expires to ensure proactive refresh.
-	if gs.Spec.Git.Auth != nil && gs.Spec.Git.Auth.GitHubApp != nil {
-		appAuth := gs.Spec.Git.Auth.GitHubApp
-		cacheKey := fmt.Sprintf("%d:%d", appAuth.AppID, appAuth.InstallationID)
-		if cached, ok := r.tokenCache[cacheKey]; ok {
-			tokenRefresh := time.Until(cached.expiry) - tokenRefreshBuffer
-			if tokenRefresh > 0 && (requeueAfter == 0 || tokenRefresh < requeueAfter) {
-				requeueAfter = tokenRefresh
-			}
-		}
+	reconcileLog := log.V(1)
+	if base.Status.LastSyncCommit != gs.Status.LastSyncCommit || len(base.Status.DiscoveredGateways) != len(gs.Status.DiscoveredGateways) {
+		reconcileLog = log
 	}
-
-	log.Info("reconciliation complete", "commit", result.Commit, "gateways", len(gs.Status.DiscoveredGateways), "requeueAfter", requeueAfter)
+	reconcileLog.Info("reconciliation complete", "commit", result.Commit, "gateways", len(gs.Status.DiscoveredGateways), "requeueAfter", requeueAfter)
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
 
@@ -751,6 +743,25 @@ func (r *GatewaySyncReconciler) pollingInterval(gs *stokerv1alpha1.GatewaySync) 
 		return 60 * time.Second
 	}
 	return d
+}
+
+// requeueInterval returns the requeue interval, accounting for both the polling
+// interval and GitHub App token expiry (whichever is sooner).
+func (r *GatewaySyncReconciler) requeueInterval(gs *stokerv1alpha1.GatewaySync) time.Duration {
+	interval := r.pollingInterval(gs)
+
+	if gs.Spec.Git.Auth != nil && gs.Spec.Git.Auth.GitHubApp != nil {
+		appAuth := gs.Spec.Git.Auth.GitHubApp
+		cacheKey := fmt.Sprintf("%d:%d", appAuth.AppID, appAuth.InstallationID)
+		if cached, ok := r.tokenCache[cacheKey]; ok {
+			tokenRefresh := time.Until(cached.expiry) - tokenRefreshBuffer
+			if tokenRefresh > 0 && (interval == 0 || tokenRefresh < interval) {
+				interval = tokenRefresh
+			}
+		}
+	}
+
+	return interval
 }
 
 // clearRequestedRefIfCaughtUp removes the requested-ref annotation once spec.git.ref

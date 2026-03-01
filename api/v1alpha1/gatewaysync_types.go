@@ -463,13 +463,13 @@ type GatewaySyncStatus struct {
 // +kubebuilder:storageversion
 // +kubebuilder:resource:shortName=gs
 // +kubebuilder:printcolumn:name="Ref",type="string",JSONPath=`.status.lastSyncRef`
-// +kubebuilder:printcolumn:name="Commit",type="string",JSONPath=`.status.lastSyncCommitShort`
-// +kubebuilder:printcolumn:name="Profiles",type="integer",JSONPath=`.status.profileCount`
-// +kubebuilder:printcolumn:name="Synced",type="string",JSONPath=`.status.conditions[?(@.type=="AllGatewaysSynced")].status`
 // +kubebuilder:printcolumn:name="Gateways",type="string",JSONPath=`.status.conditions[?(@.type=="AllGatewaysSynced")].message`
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=`.status.conditions[?(@.type=="Ready")].status`
-// +kubebuilder:printcolumn:name="Last Sync",type="date",JSONPath=`.status.lastSyncTime`,priority=1
+// +kubebuilder:printcolumn:name="Status",type="string",JSONPath=`.status.conditions[?(@.type=="Ready")].message`
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=`.metadata.creationTimestamp`
+// +kubebuilder:printcolumn:name="Commit",type="string",JSONPath=`.status.lastSyncCommitShort`,priority=1
+// +kubebuilder:printcolumn:name="Profiles",type="integer",JSONPath=`.status.profileCount`,priority=1
+// +kubebuilder:printcolumn:name="Last Sync",type="date",JSONPath=`.status.lastSyncTime`,priority=1
 
 // GatewaySync is the Schema for the gatewaysyncs API.
 type GatewaySync struct {

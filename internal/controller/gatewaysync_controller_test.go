@@ -740,7 +740,7 @@ var _ = Describe("GatewaySync Controller", func() {
 			}
 			Expect(allSyncedCond).NotTo(BeNil())
 			Expect(allSyncedCond.Status).To(Equal(metav1.ConditionTrue))
-			Expect(allSyncedCond.Message).To(Equal("1/1 gateways synced"))
+			Expect(allSyncedCond.Message).To(Equal("1/1 synced"))
 		})
 
 		It("should set Ready=False when gateways are not all synced", func() {
@@ -795,7 +795,7 @@ var _ = Describe("GatewaySync Controller", func() {
 			}
 			Expect(allSyncedCond).NotTo(BeNil())
 			Expect(allSyncedCond.Status).To(Equal(metav1.ConditionFalse))
-			Expect(allSyncedCond.Message).To(Equal("1/2 gateways synced"))
+			Expect(allSyncedCond.Message).To(Equal("1/2 synced"))
 		})
 
 		It("should set AllGatewaysSynced=False with NoGateways when no pods found", func() {
