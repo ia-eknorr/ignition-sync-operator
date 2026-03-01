@@ -121,6 +121,39 @@ webhookReceiver:
       name: ""
       # -- Key within the Secret.
       key: "webhook-secret"
+  # -- Ingress for the webhook receiver. Exposes the receiver outside the cluster
+  # for push-event-driven syncs from Kargo, GitHub, or other external systems.
+  ingress:
+    # -- Create an Ingress resource for the webhook receiver.
+    enabled: false
+    # -- Ingress class name (e.g. "nginx", "traefik", "alb").
+    # When empty, the cluster default ingress class is used.
+    ingressClassName: ""
+    # -- Annotations for the Ingress resource. Use to configure your ingress
+    # controller or attach a cert-manager certificate.
+    # Example (AWS ALB internal):
+    #   kubernetes.io/ingress.class: alb
+    #   alb.ingress.kubernetes.io/scheme: internal
+    #   alb.ingress.kubernetes.io/group.name: my-group
+    #   alb.ingress.kubernetes.io/target-type: ip
+    # Example (nginx + cert-manager):
+    #   cert-manager.io/cluster-issuer: letsencrypt-prod
+    #   nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    annotations: {}
+    # -- Hosts and paths to expose. At least one host is required when enabled.
+    # Example:
+    #   - host: stoker.example.com
+    #     paths:
+    #       - path: /webhook
+    #         pathType: Prefix
+    hosts: []
+    # -- TLS configuration. Omit to rely on ingress controller defaults or
+    # cert-manager annotations.
+    # Example:
+    #   - secretName: stoker-webhook-tls
+    #     hosts:
+    #       - stoker.example.com
+    tls: []
 
 # -- Additional annotations to add to the controller pod.
 podAnnotations: {}

@@ -1,0 +1,36 @@
+{{- if and .Values.webhookReceiver.enabled .Values.webhookReceiver.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "stoker-operator.fullname" . }}-webhook-receiver
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "stoker-operator.labels" . | nindent 4 }}
+  {{- with .Values.webhookReceiver.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.webhookReceiver.ingress.ingressClassName }}
+  ingressClassName: {{ .Values.webhookReceiver.ingress.ingressClassName }}
+  {{- end }}
+  {{- if .Values.webhookReceiver.ingress.tls }}
+  tls:
+    {{- toYaml .Values.webhookReceiver.ingress.tls | nindent 4 }}
+  {{- end }}
+  rules:
+  {{- range .Values.webhookReceiver.ingress.hosts }}
+  - host: {{ .host | quote }}
+    http:
+      paths:
+      {{- range .paths }}
+      - path: {{ .path }}
+        pathType: {{ .pathType }}
+        backend:
+          service:
+            name: {{ include "stoker-operator.fullname" $ }}-webhook-receiver
+            port:
+              number: {{ $.Values.webhookReceiver.port | default 9444 }}
+      {{- end }}
+  {{- end }}
+{{- end }}
