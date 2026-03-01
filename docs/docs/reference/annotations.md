@@ -51,11 +51,11 @@ These annotations are set automatically on GatewaySync CRs by the webhook receiv
 
 | Annotation | Value | Description |
 |------------|-------|-------------|
-| `stoker.io/requested-ref` | string | Git ref requested by the last webhook payload |
+| `stoker.io/requested-ref` | string | Git ref requested by the last webhook payload. Acts as a fast-path override of `spec.git.ref` — the controller uses this value immediately without waiting for ArgoCD to sync. Automatically cleared once `spec.git.ref` catches up (with `v`-prefix normalization). |
 | `stoker.io/requested-at` | RFC 3339 timestamp | When the webhook request was received |
 | `stoker.io/requested-by` | `"github"`, `"argocd"`, `"kargo"`, or `"generic"` | Source format detected from the payload |
 
-These annotations trigger an immediate reconciliation via the controller's predicate filter.
+These annotations trigger an immediate reconciliation via the controller's predicate filter. The `requested-ref` annotation is self-cleaning: once `spec.git.ref` is updated (typically by ArgoCD syncing the values change), the controller removes the annotation so it doesn't permanently override the spec.
 
 ## Internal annotations (set by webhook)
 

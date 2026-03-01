@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.4.9] - 2026-03-01
+
+### Fixed
+
+- **Stale `requested-ref` annotation** — the controller now clears the `stoker.io/requested-ref` annotation once `spec.git.ref` catches up to the value the webhook set (with `v`-prefix normalization so `v2.2.3` matches `2.2.3`); previously the annotation was never removed, permanently overriding `spec.git.ref` and leaving the controller pinned to an old ref whenever a subsequent promotion's webhook failed silently
+- **Idempotent webhook returns 202** — the webhook receiver now returns `202 Accepted` (not `200 OK`) when the requested ref is already set; clients using `successExpression: response.status == 202` (e.g. Kargo) no longer treat idempotent calls as failures
+
 ## [v0.4.8] - 2026-03-01
 
 ### Added
@@ -162,6 +169,7 @@ Initial release — controller + agent sidecar for Git-driven Ignition gateway c
 - **Functional test suite** with phased kind cluster tests (phases 02-09)
 - Unit tests with envtest for controller and syncengine
 
+[v0.4.9]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.9
 [v0.4.8]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.8
 [v0.4.7]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.7
 [v0.4.6]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.6

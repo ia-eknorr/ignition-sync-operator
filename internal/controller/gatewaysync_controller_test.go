@@ -277,6 +277,45 @@ var _ = Describe("GatewaySync Controller", func() {
 			Expect(gitClient.calls).To(Equal(1))
 		})
 
+		It("should clear requested-ref annotation once spec.git.ref catches up", func() {
+			// Simulate the webhook fast-path: annotation overrides spec.git.ref while
+			// ArgoCD is still syncing. Once spec.git.ref matches the annotation, the
+			// controller must remove it so a future failed webhook doesn't pin the ref.
+
+			cr := &stokerv1alpha1.GatewaySync{}
+			Expect(k8sClient.Get(ctx, nn, cr)).To(Succeed())
+			if cr.Annotations == nil {
+				cr.Annotations = make(map[string]string)
+			}
+			// Annotation uses the git tag as-is ("v1.2.3"); spec.git.ref uses "1.2.3".
+			// The controller must treat these as equivalent (v-prefix normalization).
+			cr.Annotations[stokertypes.AnnotationRequestedRef] = "v1.2.3"
+			Expect(k8sClient.Update(ctx, cr)).To(Succeed())
+
+			gitClient := &fakeGitClient{result: git.Result{Commit: "deadbeef", Ref: "v1.2.3"}}
+			r := newReconciler(gitClient)
+
+			// Reconcile 1: add finalizer (spec.git.ref="main", annotation="v1.2.3")
+			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Simulate ArgoCD catching up: spec.git.ref updated to "1.2.3" (no "v" prefix,
+			// matching the values.yaml convention). This must still trigger annotation clearing.
+			Expect(k8sClient.Get(ctx, nn, cr)).To(Succeed())
+			cr.Spec.Git.Ref = "1.2.3"
+			Expect(k8sClient.Update(ctx, cr)).To(Succeed())
+
+			// Reconcile 2: annotation "v1.2.3" normalizes to "1.2.3" == spec.git.ref →
+			// annotation should be cleared.
+			_, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			updated := &stokerv1alpha1.GatewaySync{}
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			Expect(updated.Annotations).NotTo(HaveKey(stokertypes.AnnotationRequestedRef),
+				"requested-ref annotation should be cleared once spec.git.ref matches (v-prefix normalized)")
+		})
+
 		It("should set error condition when ref resolution fails", func() {
 			gitClient := &fakeGitClient{err: fmt.Errorf("authentication failed")}
 			r := newReconciler(gitClient)

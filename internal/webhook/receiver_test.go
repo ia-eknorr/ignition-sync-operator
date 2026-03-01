@@ -219,7 +219,7 @@ func TestHandler_AnnotatesCR(t *testing.T) {
 	}
 }
 
-func TestHandler_DuplicateRefReturns200(t *testing.T) {
+func TestHandler_DuplicateRefReturns202(t *testing.T) {
 	cr := testCR()
 	cr.Annotations = map[string]string{
 		stokertypes.AnnotationRequestedRef: testRef,
@@ -231,9 +231,10 @@ func TestHandler_DuplicateRefReturns200(t *testing.T) {
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
-	// Duplicate ref should return 200 (not 202)
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200 for duplicate ref, got %d: %s", w.Code, w.Body.String())
+	// Duplicate ref should return 202 so callers using successExpression: response.status == 202
+	// (e.g. Kargo) don't treat an already-current ref as an error.
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 for duplicate ref, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

@@ -102,9 +102,10 @@ func (rv *Receiver) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if the ref is already set (idempotent)
+	// Check if the ref is already set (idempotent) — return 202 so callers
+	// with successExpression: response.status == 202 don't treat this as an error.
 	if gs.Annotations != nil && gs.Annotations[stokertypes.AnnotationRequestedRef] == ref {
-		writeJSON(w, http.StatusOK, map[string]any{
+		writeJSON(w, http.StatusAccepted, map[string]any{
 			"accepted": true,
 			"ref":      ref,
 			"message":  "ref already set",

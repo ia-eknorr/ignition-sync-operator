@@ -217,6 +217,9 @@ func (r *GatewaySyncReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
+	// --- Step 7.5: Clear stale requested-ref annotation ---
+	r.clearRequestedRefIfCaughtUp(ctx, req, &gs)
+
 	// --- Step 8: Requeue ---
 
 	requeueAfter := r.pollingInterval(&gs)
@@ -718,6 +721,42 @@ func (r *GatewaySyncReconciler) pollingInterval(gs *stokerv1alpha1.GatewaySync) 
 		return 60 * time.Second
 	}
 	return d
+}
+
+// clearRequestedRefIfCaughtUp removes the requested-ref annotation once spec.git.ref
+// has caught up to the value the webhook set (i.e., ArgoCD has synced the values change).
+//
+// The annotation is a fast-path override that lets the controller act immediately
+// after a Kargo promotion without waiting for ArgoCD's polling cycle. Once ArgoCD
+// syncs, the annotation is stale — leaving it would permanently override spec.git.ref,
+// pinning the controller to an old ref if a future webhook fails to fire.
+//
+// Comparison uses "v"-prefix normalization so "v2.2.3" (git tag) matches "2.2.3"
+// (values.yaml convention).
+func (r *GatewaySyncReconciler) clearRequestedRefIfCaughtUp(ctx context.Context, req ctrl.Request, gs *stokerv1alpha1.GatewaySync) {
+	annRef, ok := gs.Annotations[stokertypes.AnnotationRequestedRef]
+	if !ok || annRef == "" {
+		return
+	}
+	if strings.TrimPrefix(annRef, "v") != strings.TrimPrefix(gs.Spec.Git.Ref, "v") {
+		return
+	}
+	log := logf.FromContext(ctx)
+	// Re-fetch to get latest resourceVersion and avoid a conflict with the status patch.
+	var fresh stokerv1alpha1.GatewaySync
+	if err := r.Get(ctx, req.NamespacedName, &fresh); err != nil {
+		return
+	}
+	if fresh.Annotations[stokertypes.AnnotationRequestedRef] != annRef {
+		return // already cleared by a concurrent reconcile
+	}
+	freshBase := fresh.DeepCopy()
+	delete(fresh.Annotations, stokertypes.AnnotationRequestedRef)
+	if patchErr := r.Patch(ctx, &fresh, client.MergeFrom(freshBase)); patchErr != nil {
+		log.Error(patchErr, "failed to clear requested-ref annotation")
+	} else {
+		log.Info("cleared requested-ref annotation (spec.git.ref matched)", "ref", annRef)
+	}
 }
 
 // conditionHasStatus returns true if the conditions slice already contains

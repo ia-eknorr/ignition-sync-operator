@@ -1,6 +1,6 @@
 # stoker-operator
 
-![Version: 0.4.7](https://img.shields.io/badge/Version-0.4.7-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.4.7](https://img.shields.io/badge/AppVersion-0.4.7-informational?style=flat-square)
+![Version: 0.4.8](https://img.shields.io/badge/Version-0.4.8-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.4.8](https://img.shields.io/badge/AppVersion-0.4.8-informational?style=flat-square)
 
 Kubernetes operator that syncs Ignition gateway projects from a Git repository
 
@@ -80,7 +80,7 @@ Kubernetes: `>= 1.28.0`
 | webhook.enabled | bool | `true` | Enable the MutatingWebhookConfiguration and webhook Service. |
 | webhook.namespaceSelector.requireLabel | bool | `false` | Require the stoker.io/injection=enabled label on namespaces for sidecar injection. When false (default), the webhook intercepts pod creates in all namespaces except kube-system and kube-node-lease. Enable for regulated environments that require explicit namespace opt-in. |
 | webhook.port | int | `9443` | Webhook server port on the controller container. |
-| webhookReceiver | object | `{"enabled":false,"hmac":{"secret":"","secretRef":{"key":"webhook-secret","name":""}},"ingress":{"annotations":{},"enabled":false,"hosts":[],"ingressClassName":"","tls":[]},"port":9444}` | Git webhook receiver for push-event-driven sync. Disabled by default — enable when you want push-event-driven syncs. When disabled, the controller does not start the HTTP receiver server. When enabled without HMAC, any network client that can reach the Service can trigger a reconcile. Configure hmac for production use. |
+| webhookReceiver | object | `{"enabled":false,"hmac":{"secret":"","secretRef":{"key":"webhook-secret","name":""}},"ingress":{"annotations":{},"enabled":false,"hosts":[],"ingressClassName":"","tls":[]},"port":9444,"token":{"secret":"","secretRef":{"key":"webhook-token","name":""}}}` | Git webhook receiver for push-event-driven sync. Disabled by default — enable when you want push-event-driven syncs. When disabled, the controller does not start the HTTP receiver server. When enabled without HMAC, any network client that can reach the Service can trigger a reconcile. Configure hmac for production use. |
 | webhookReceiver.enabled | bool | `false` | Enable the webhook receiver HTTP server and its Service. |
 | webhookReceiver.hmac | object | `{"secret":"","secretRef":{"key":"webhook-secret","name":""}}` | HMAC secret for validating webhook signatures (X-Hub-Signature-256). Provide either a literal value or a reference to an existing Secret. |
 | webhookReceiver.hmac.secret | string | `""` | HMAC secret value. Ignored if secretRef is set. |
@@ -94,4 +94,9 @@ Kubernetes: `>= 1.28.0`
 | webhookReceiver.ingress.ingressClassName | string | `""` | Ingress class name (e.g. "nginx", "traefik", "alb"). When empty, the cluster default ingress class is used. |
 | webhookReceiver.ingress.tls | list | `[]` | TLS configuration. Omit to rely on ingress controller defaults or cert-manager annotations. Example:   - secretName: stoker-webhook-tls     hosts:       - stoker.example.com |
 | webhookReceiver.port | int | `9444` | Port for the inbound git webhook receiver. |
+| webhookReceiver.token | object | `{"secret":"","secretRef":{"key":"webhook-token","name":""}}` | Static bearer token for authenticating webhook requests. Kargo and other callers that cannot compute HMAC signatures should use this. If both token and hmac are configured, either method can authorize a request. |
+| webhookReceiver.token.secret | string | `""` | Bearer token value. Ignored if secretRef is set. |
+| webhookReceiver.token.secretRef | object | `{"key":"webhook-token","name":""}` | Reference to an existing Secret containing the bearer token. |
+| webhookReceiver.token.secretRef.key | string | `"webhook-token"` | Key within the Secret. |
+| webhookReceiver.token.secretRef.name | string | `""` | Name of the Secret. |
 
