@@ -1,0 +1,1041 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [
+    {
+      "icon": "external link",
+      "title": "Fleet Overview",
+      "tooltip": "Back to fleet-wide view",
+      "type": "link",
+      "url": "/d/stoker-fleet"
+    }
+  ],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "panels": [],
+      "title": "CR Status",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "options": { "0": { "text": "Not Ready" } }, "type": "value" },
+            { "options": { "1": { "text": "Ready" } }, "type": "value" }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": 0 }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "expr": "stoker_controller_cr_ready{namespace=~\"$namespace\", name=~\"$cr\"}",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Ready",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "options": { "0": { "text": "Active" } }, "type": "value" },
+            { "options": { "1": { "text": "Paused" } }, "type": "value" }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "expr": "stoker_controller_cr_paused{namespace=~\"$namespace\", name=~\"$cr\"}",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Paused",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "options": {
+                "0": { "color": "text", "text": "0/0" },
+                "1": { "color": "red", "text": "0/1" },
+                "2": { "color": "red", "text": "0/2" },
+                "3": { "color": "red", "text": "0/3" },
+                "4": { "color": "red", "text": "0/4" },
+                "5": { "color": "red", "text": "0/5" },
+                "101": { "color": "green", "text": "1/1" },
+                "102": { "color": "red", "text": "1/2" },
+                "103": { "color": "red", "text": "1/3" },
+                "202": { "color": "green", "text": "2/2" },
+                "203": { "color": "orange", "text": "2/3" },
+                "303": { "color": "green", "text": "3/3" },
+                "304": { "color": "orange", "text": "3/4" },
+                "404": { "color": "green", "text": "4/4" },
+                "405": { "color": "orange", "text": "4/5" },
+                "505": { "color": "green", "text": "5/5" }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": 0 }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "expr": "max by (name, namespace) (stoker_controller_gateways_synced{namespace=~\"$namespace\", name=~\"$cr\"}) * 100 + max by (name, namespace) (stoker_controller_gateways_discovered{namespace=~\"$namespace\", name=~\"$cr\"})",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Gateways Synced",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Gateways missing the stoker-agent sidecar.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 2 }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "id": 4,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "expr": "stoker_controller_gateways_missing_sidecar{namespace=~\"$namespace\", name=~\"$cr\"}",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Missing Sidecars",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Whether the Ignition designer is blocking sync.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "options": { "0": { "text": "No" } }, "type": "value" },
+            { "options": { "1": { "text": "Blocked" } }, "type": "value" }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "id": 5,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "expr": "max(stoker_agent_designer_sessions_blocked{namespace=~\"$agent_namespace\"})",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Designer Blocked",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Last sync result (1=success, 0=failure).",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "options": { "0": { "text": "Failed" } }, "type": "value" },
+            { "options": { "1": { "text": "Success" } }, "type": "value" }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": 0 }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "id": 6,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "expr": "min(stoker_agent_last_sync_success{namespace=~\"$agent_namespace\"})",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Last Sync",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "filterable": false,
+            "footer": { "reducers": [] },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }] }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Value" }, "properties": [{ "id": "custom.hideFrom.viz", "value": true }] },
+          { "matcher": { "id": "byName", "options": "Time" }, "properties": [{ "id": "custom.hideFrom.viz", "value": true }] }
+        ]
+      },
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 5 },
+      "id": 7,
+      "options": { "cellHeight": "sm", "showHeader": true },
+      "targets": [
+        {
+          "expr": "stoker_controller_cr_info{namespace=~\"$namespace\", name=~\"$cr\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "CR Info",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true,
+              "__name__": true,
+              "container": true,
+              "endpoint": true,
+              "exported_namespace": true,
+              "instance": true,
+              "job": true,
+              "pod": true,
+              "service": true
+            },
+            "indexByName": {
+              "name": 0,
+              "namespace": 1,
+              "git_repo": 2,
+              "git_ref": 3,
+              "auth_type": 4,
+              "polling_interval": 5
+            },
+            "renameByName": {
+              "auth_type": "Auth",
+              "namespace": "Namespace",
+              "git_ref": "Ref",
+              "git_repo": "Repository",
+              "name": "CR",
+              "polling_interval": "Poll Interval"
+            }
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 8 },
+      "id": 101,
+      "panels": [],
+      "title": "Conditions",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Status of each condition on the GatewaySync CR.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "options": { "0": { "text": "False" } }, "type": "value" },
+            { "options": { "1": { "text": "True" } }, "type": "value" }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": 0 }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 9 },
+      "id": 8,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "expr": "stoker_controller_condition_status{namespace=~\"$namespace\", name=~\"$cr\"}",
+          "legendFormat": "{{ type }}",
+          "refId": "A"
+        }
+      ],
+      "title": "Condition Status",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 },
+      "id": 102,
+      "panels": [],
+      "title": "Gateway Details",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Per-gateway sync status and last sync time.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "filterable": false,
+            "footer": { "reducers": [] },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }] }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Status" },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "0": { "color": "yellow", "text": "Pending" },
+                      "1": { "color": "green", "text": "Synced" },
+                      "2": { "color": "red", "text": "Error" },
+                      "3": { "color": "orange", "text": "Missing Sidecar" }
+                    },
+                    "type": "value"
+                  }
+                ]
+              },
+              { "id": "custom.cellOptions", "value": { "mode": "basic", "type": "color-background" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Last Sync" },
+            "properties": [
+              { "id": "unit", "value": "dateTimeFromNow" }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 14 },
+      "id": 9,
+      "options": { "cellHeight": "sm", "showHeader": true },
+      "targets": [
+        {
+          "expr": "stoker_controller_gateway_sync_status{namespace=~\"$namespace\", name=~\"$cr\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "status"
+        },
+        {
+          "expr": "stoker_controller_gateway_last_sync_timestamp_seconds{namespace=~\"$namespace\", name=~\"$cr\"} * 1000",
+          "format": "table",
+          "instant": true,
+          "refId": "lastsync"
+        }
+      ],
+      "title": "Gateway Status",
+      "transformations": [
+        {
+          "id": "seriesToColumns",
+          "options": { "byField": "gateway" }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "__name__": true,
+              "__name__ 1": true,
+              "__name__ 2": true,
+              "container": true,
+              "container 1": true,
+              "container 2": true,
+              "endpoint": true,
+              "endpoint 1": true,
+              "endpoint 2": true,
+              "exported_namespace": true,
+              "exported_namespace 1": true,
+              "exported_namespace 2": true,
+              "instance": true,
+              "instance 1": true,
+              "instance 2": true,
+              "job": true,
+              "job 1": true,
+              "job 2": true,
+              "name": true,
+              "name 1": true,
+              "name 2": true,
+              "namespace": true,
+              "namespace 1": true,
+              "namespace 2": true,
+              "pod": true,
+              "pod 1": true,
+              "pod 2": true,
+              "service": true,
+              "service 1": true,
+              "service 2": true
+            },
+            "indexByName": {
+              "gateway": 0,
+              "Value #status": 1,
+              "Value #lastsync": 2
+            },
+            "renameByName": {
+              "gateway": "Gateway",
+              "Value #status": "Status",
+              "Value #lastsync": "Last Sync"
+            }
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 20 },
+      "id": 103,
+      "panels": [],
+      "title": "Controller Performance",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }, { "color": "red", "value": 80 }] },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 21 },
+      "id": 10,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "hideZeros": false, "mode": "multi", "sort": "none" }
+      },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le) (rate(stoker_controller_reconcile_duration_seconds_bucket{namespace=~\"$namespace\", name=~\"$cr\"}[$__rate_interval])))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(stoker_controller_reconcile_duration_seconds_bucket{namespace=~\"$namespace\", name=~\"$cr\"}[$__rate_interval])))", "legendFormat": "p95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum by (le) (rate(stoker_controller_reconcile_duration_seconds_bucket{namespace=~\"$namespace\", name=~\"$cr\"}[$__rate_interval])))", "legendFormat": "p99", "refId": "C" }
+      ],
+      "title": "Reconcile Duration",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }, { "color": "red", "value": 80 }] },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 21 },
+      "id": 11,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "hideZeros": false, "mode": "multi", "sort": "none" }
+      },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le) (rate(stoker_controller_ref_resolve_duration_seconds_bucket{namespace=~\"$namespace\", name=~\"$cr\"}[$__rate_interval])))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(stoker_controller_ref_resolve_duration_seconds_bucket{namespace=~\"$namespace\", name=~\"$cr\"}[$__rate_interval])))", "legendFormat": "p95", "refId": "B" }
+      ],
+      "title": "Ref Resolution Duration",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }, { "color": "red", "value": 80 }] },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 21 },
+      "id": 12,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "hideZeros": false, "mode": "multi", "sort": "none" }
+      },
+      "targets": [
+        {
+          "expr": "sum by (result) (rate(stoker_controller_reconcile_total{namespace=~\"$namespace\", name=~\"$cr\"}[$__rate_interval]))",
+          "legendFormat": "{{ result }}",
+          "refId": "A"
+        }
+      ],
+      "title": "Reconcile Results Rate",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 },
+      "id": 104,
+      "panels": [],
+      "title": "Agent Performance",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Duration of the last file sync operation per agent pod.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 5 }, { "color": "red", "value": 30 }] },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 30 },
+      "id": 13,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "expr": "stoker_agent_sync_duration_seconds_sum{namespace=~\"$agent_namespace\", profile=~\"$profile\"} / stoker_agent_sync_duration_seconds_count{namespace=~\"$agent_namespace\", profile=~\"$profile\"}",
+          "legendFormat": "{{ pod }}",
+          "refId": "A"
+        }
+      ],
+      "title": "Avg Sync Duration",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Duration of the last git clone or fetch operation per agent pod.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 5 }, { "color": "red", "value": 30 }] },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 30 },
+      "id": 14,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "expr": "stoker_agent_git_fetch_duration_seconds_sum{namespace=~\"$agent_namespace\"} / stoker_agent_git_fetch_duration_seconds_count{namespace=~\"$agent_namespace\"}",
+          "legendFormat": "{{ pod }} ({{ operation }})",
+          "refId": "A"
+        }
+      ],
+      "title": "Avg Git Fetch Duration",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Duration of the last Ignition scan API call per agent pod.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 5 }, { "color": "red", "value": 30 }] },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 30 },
+      "id": 15,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "expr": "stoker_agent_scan_duration_seconds_sum{namespace=~\"$agent_namespace\"} / stoker_agent_scan_duration_seconds_count{namespace=~\"$agent_namespace\"}",
+          "legendFormat": "{{ pod }}",
+          "refId": "A"
+        }
+      ],
+      "title": "Avg Scan Duration",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Total syncs completed by agents in this namespace.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "success" },
+            "properties": [{ "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } }]
+          }
+        ]
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 30 },
+      "id": 16,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "expr": "sum by (result) (stoker_agent_sync_total{namespace=~\"$agent_namespace\", profile=~\"$profile\"})",
+          "legendFormat": "{{ result }}",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Syncs",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Files added, modified, and deleted in the last sync.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "added" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "modified" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "deleted" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+        ]
+      },
+      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 35 },
+      "id": 17,
+      "options": {
+        "displayMode": "gradient",
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "targets": [
+        { "expr": "sum(stoker_agent_files_added{namespace=~\"$agent_namespace\", profile=~\"$profile\"})", "legendFormat": "added", "refId": "A" },
+        { "expr": "sum(stoker_agent_files_modified{namespace=~\"$agent_namespace\", profile=~\"$profile\"})", "legendFormat": "modified", "refId": "B" },
+        { "expr": "sum(stoker_agent_files_deleted{namespace=~\"$agent_namespace\", profile=~\"$profile\"})", "legendFormat": "deleted", "refId": "C" }
+      ],
+      "title": "File Changes (Last Sync)",
+      "type": "bargauge"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Reasons: commit_unchanged (normal), paused, profile_error, designer_blocked",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "text", "value": null }, { "color": "orange", "value": 10 }, { "color": "red", "value": 100 }] }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "commit_unchanged" },
+            "properties": [{ "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "text", "value": null }] } }]
+          }
+        ]
+      },
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 35 },
+      "id": 18,
+      "options": {
+        "displayMode": "gradient",
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "expr": "sum by (reason) (stoker_agent_sync_skipped_total{namespace=~\"$agent_namespace\"})",
+          "legendFormat": "{{ reason }}",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Sync Skips by Reason",
+      "type": "bargauge"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Number of active Ignition designer sessions.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 3 }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 40 },
+      "id": 19,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "expr": "sum(stoker_agent_designer_sessions_active{namespace=~\"$agent_namespace\"})",
+          "legendFormat": "sessions",
+          "refId": "A"
+        }
+      ],
+      "title": "Designer Sessions",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Time from pod start to first successful sync (gateway commissioning).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 60 }, { "color": "red", "value": 300 }] },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 40 },
+      "id": 20,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "expr": "stoker_agent_gateway_startup_duration_seconds_sum{namespace=~\"$agent_namespace\"} / stoker_agent_gateway_startup_duration_seconds_count{namespace=~\"$agent_namespace\"}",
+          "legendFormat": "{{ pod }}",
+          "refId": "A"
+        }
+      ],
+      "title": "Avg Gateway Startup",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Timestamp of the last sync and whether it was successful.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "text", "value": null }] },
+          "unit": "dateTimeFromNow"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 40 },
+      "id": 21,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "expr": "stoker_agent_last_sync_timestamp_seconds{namespace=~\"$agent_namespace\"} * 1000",
+          "legendFormat": "{{ pod }}",
+          "refId": "A"
+        }
+      ],
+      "title": "Last Sync Time",
+      "type": "stat"
+    }
+  ],
+  "preload": false,
+  "refresh": "30s",
+  "schemaVersion": 42,
+  "tags": ["stoker", "kubernetes", "ignition"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "includeAll": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "type": "datasource"
+      },
+      {
+        "current": {},
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "definition": "label_values(stoker_controller_cr_ready, namespace)",
+        "includeAll": false,
+        "multi": false,
+        "name": "namespace",
+        "options": [],
+        "query": "label_values(stoker_controller_cr_ready, namespace)",
+        "refresh": 2,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "definition": "label_values(stoker_controller_cr_ready{namespace=~\"$namespace\"}, name)",
+        "includeAll": false,
+        "multi": false,
+        "name": "cr",
+        "options": [],
+        "query": "label_values(stoker_controller_cr_ready{namespace=~\"$namespace\"}, name)",
+        "refresh": 2,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "definition": "label_values(stoker_agent_sync_total, namespace)",
+        "includeAll": true,
+        "multi": true,
+        "name": "agent_namespace",
+        "label": "Agent Namespace",
+        "options": [],
+        "query": "label_values(stoker_agent_sync_total, namespace)",
+        "refresh": 2,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "definition": "label_values(stoker_agent_sync_total{namespace=~\"$agent_namespace\"}, profile)",
+        "includeAll": true,
+        "multi": true,
+        "name": "profile",
+        "options": [],
+        "query": "label_values(stoker_agent_sync_total{namespace=~\"$agent_namespace\"}, profile)",
+        "refresh": 2,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Stoker GatewaySync Detail",
+  "uid": "stoker-detail",
+  "version": 1,
+  "weekStart": ""
+}

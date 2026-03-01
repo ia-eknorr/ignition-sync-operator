@@ -180,6 +180,7 @@ func (a *Agent) Run(ctx context.Context) error {
 // commissioning defaults would otherwise shadow the git-sourced config.
 func (a *Agent) postCommissionSync(ctx context.Context, commit, ref string) {
 	log := logf.FromContext(ctx).WithName("post-commission")
+	startupStart := time.Now()
 
 	// Poll until gateway port is responding. We can't use HealthCheck() here
 	// because it requires API token auth, and the commissioning defaults may
@@ -197,6 +198,7 @@ func (a *Agent) postCommissionSync(ctx context.Context, commit, ref string) {
 			continue
 		}
 
+		a.Metrics.GatewayStartupDuration.Observe(time.Since(startupStart).Seconds())
 		log.Info("gateway responsive, running post-commission re-sync")
 		if err := a.syncOnce(ctx, commit, ref, false, a.lastSyncedProfiles); err != nil {
 			log.Error(err, "post-commission sync failed")
@@ -250,6 +252,7 @@ func (a *Agent) handleSyncTrigger(ctx context.Context, gitURL string, auth trans
 
 	if meta.Paused == "true" {
 		log.Info("CR is paused, skipping sync")
+		a.Metrics.SyncSkippedTotal.WithLabelValues("paused").Inc()
 		return
 	}
 
@@ -264,6 +267,7 @@ func (a *Agent) handleSyncTrigger(ctx context.Context, gitURL string, auth trans
 	// Check if commit or profiles changed.
 	if meta.Commit == a.lastSyncedCommit && meta.Profiles == a.lastSyncedProfiles {
 		log.V(1).Info("commit and profiles unchanged, skipping sync", "commit", meta.Commit)
+		a.Metrics.SyncSkippedTotal.WithLabelValues("commit_unchanged").Inc()
 		return
 	}
 
@@ -291,6 +295,7 @@ func (a *Agent) handleSyncTrigger(ctx context.Context, gitURL string, auth trans
 	profile, profileName, err := a.lookupProfile(meta)
 	if err != nil {
 		log.Error(err, "failed to look up profile for designer check")
+		a.Metrics.SyncSkippedTotal.WithLabelValues("profile_error").Inc()
 		a.reportError(ctx, result.Commit, result.Ref, fmt.Sprintf("looking up profile: %v", err))
 		return
 	}
@@ -301,6 +306,7 @@ func (a *Agent) handleSyncTrigger(ctx context.Context, gitURL string, auth trans
 	if !profile.Paused && !profile.DryRun {
 		if blocked := a.checkDesignerSessions(ctx, profile.DesignerSessionPolicy, result.Commit, result.Ref); blocked {
 			a.Metrics.DesignerBlocked.Set(1)
+			a.Metrics.SyncSkippedTotal.WithLabelValues("designer_blocked").Inc()
 			return
 		}
 		a.Metrics.DesignerBlocked.Set(0)
@@ -366,8 +372,11 @@ func (a *Agent) checkDesignerSessions(ctx context.Context, policy, commit, ref s
 	sessions, err := a.IgnitionAPI.GetDesignerSessions(ctx)
 	if err != nil {
 		log.Info("failed to query designer sessions (continuing sync)", "error", err)
+		a.Metrics.DesignerSessionsActive.Set(0)
 		return false
 	}
+
+	a.Metrics.DesignerSessionsActive.Set(float64(len(sessions)))
 
 	if len(sessions) == 0 {
 		return false
@@ -467,6 +476,9 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 
 	filesChanged := int32(syncResult.FilesAdded + syncResult.FilesModified + syncResult.FilesDeleted)
 	a.Metrics.FilesChanged.WithLabelValues(profileName).Set(float64(filesChanged))
+	a.Metrics.FilesAdded.WithLabelValues(profileName).Set(float64(syncResult.FilesAdded))
+	a.Metrics.FilesModified.WithLabelValues(profileName).Set(float64(syncResult.FilesModified))
+	a.Metrics.FilesDeleted.WithLabelValues(profileName).Set(float64(syncResult.FilesDeleted))
 
 	log.Info("files synced",
 		"added", syncResult.FilesAdded,

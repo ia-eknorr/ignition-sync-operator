@@ -120,6 +120,7 @@ func (r *GatewaySyncReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	if gs.Spec.Paused {
 		log.Info("CR is paused, skipping reconciliation")
+		crPaused.WithLabelValues(gs.Name, gs.Namespace).Set(1)
 		wasPaused := conditionHasReason(gs.Status.Conditions, conditions.TypeReady, conditions.ReasonPaused)
 		r.setCondition(ctx, &gs, conditions.TypeReady, metav1.ConditionFalse, conditions.ReasonPaused, "Reconciliation paused")
 		if !wasPaused {
@@ -127,6 +128,7 @@ func (r *GatewaySyncReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 		return ctrl.Result{}, r.patchStatus(ctx, &gs, base)
 	}
+	crPaused.WithLabelValues(gs.Name, gs.Namespace).Set(0)
 
 	// --- Step 1: Validate profiles ---
 
@@ -474,6 +476,9 @@ func (r *GatewaySyncReconciler) resolveGitHubAppToken(ctx context.Context, gs *s
 // cleanupOwnedResources removes ConfigMaps and Secrets owned by this CR during deletion.
 func (r *GatewaySyncReconciler) cleanupOwnedResources(ctx context.Context, gs *stokerv1alpha1.GatewaySync) error {
 	log := logf.FromContext(ctx)
+
+	// Remove all Prometheus metric series for this CR.
+	cleanupCRMetrics(gs.Name, gs.Namespace)
 
 	// Clean up metadata, status, and changes ConfigMaps
 	cmNames := []string{

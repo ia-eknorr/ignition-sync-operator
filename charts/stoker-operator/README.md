@@ -37,6 +37,42 @@ Two webhook-like features exist and are configured separately:
 | Sidecar injection | `webhook.*` | MutatingWebhook that injects the stoker-agent into annotated pods |
 | Push receiver | `webhookReceiver.*` | HTTP endpoint that accepts GitHub/GitLab push events for immediate sync |
 
+## Monitoring
+
+Both the controller and agent sidecar expose Prometheus metrics. Enable
+`serviceMonitor` and `podMonitor` to have prometheus-operator discover them
+automatically.
+
+### Grafana Dashboards
+
+Two pre-built dashboards are included in `dashboards/`:
+
+| Dashboard | File | Purpose |
+|-----------|------|---------|
+| **Fleet Overview** | `stoker-fleet.json` | High-level health across all GatewaySync CRs — summary stats, CR status cards, controller performance, agent averages, webhooks |
+| **GatewaySync Detail** | `stoker-detail.json` | Deep dive into a single CR — conditions, per-gateway status table, controller and agent performance, file breakdown, designer sessions |
+
+The fleet dashboard links to the detail view — click any CR card to drill down.
+
+**Sidecar auto-discovery (kube-prometheus-stack)** — If your Grafana uses the
+[k8s-sidecar](https://github.com/kiwigrid/k8s-sidecar) (the default in
+kube-prometheus-stack), enable the dashboard ConfigMap:
+
+```yaml
+grafanaDashboard:
+  enabled: true
+```
+
+The sidecar detects the labeled ConfigMap and provisions both dashboards
+automatically. This is additive — it does not modify or remove any existing
+dashboards. If the sidecar watches a specific namespace rather than all
+namespaces, set `grafanaDashboard.namespace` to your Grafana namespace.
+
+**Manual import** — For Grafana instances without the sidecar (standalone,
+Docker, Grafana Cloud), copy the JSON files and import them via
+**Dashboards > New > Import** in the Grafana UI. Both dashboards use a
+`$datasource` template variable so they work with any Prometheus data source.
+
 ## Requirements
 
 Kubernetes: `>= 1.28.0`
@@ -52,11 +88,11 @@ Kubernetes: `>= 1.28.0`
 | certManager | object | `{"enabled":true}` | cert-manager integration for webhook TLS certificates. Requires cert-manager to be installed in the cluster. |
 | certManager.enabled | bool | `true` | Create a self-signed Issuer and Certificate for webhook TLS. Requires cert-manager to be installed in the cluster. |
 | fullnameOverride | string | `""` | Override the full release name used in resource names. |
-| grafanaDashboard | object | `{"annotations":{},"enabled":false,"labels":{},"namespace":""}` | Grafana dashboard provisioning via ConfigMap with sidecar auto-discovery. The ConfigMap is labeled with `grafana_dashboard: "1"` for automatic import. |
+| grafanaDashboard | object | `{"annotations":{},"enabled":false,"labels":{},"namespace":""}` | Grafana dashboard provisioning via sidecar auto-discovery. Creates a ConfigMap labeled `grafana_dashboard: "1"` that the Grafana sidecar (k8s-sidecar) detects and provisions automatically. This is the standard pattern used by kube-prometheus-stack and does not affect existing dashboards. If your Grafana instance does not use the sidecar, you can import the dashboard JSON manually from charts/stoker-operator/dashboards/stoker-overview.json. |
 | grafanaDashboard.annotations | object | `{}` | Annotations for the dashboard ConfigMap. |
-| grafanaDashboard.enabled | bool | `false` | Create a ConfigMap containing the Stoker Grafana dashboard. |
-| grafanaDashboard.labels | object | `{}` | Additional labels for the dashboard ConfigMap. |
-| grafanaDashboard.namespace | string | `""` | Namespace for the dashboard ConfigMap. Defaults to the release namespace. |
+| grafanaDashboard.enabled | bool | `false` | Create a ConfigMap containing the Stoker Grafana dashboard. Enable when your Grafana uses the k8s-sidecar for dashboard auto-discovery (default in kube-prometheus-stack). |
+| grafanaDashboard.labels | object | `{}` | Additional labels for the dashboard ConfigMap. Override if your sidecar uses a label other than `grafana_dashboard: "1"`. |
+| grafanaDashboard.namespace | string | `""` | Namespace for the dashboard ConfigMap. Defaults to the release namespace. Set this to your Grafana namespace if the sidecar only watches a specific namespace. |
 | image | object | `{"pullPolicy":"IfNotPresent","repository":"ghcr.io/ia-eknorr/stoker-operator","tag":""}` | Controller container image configuration. |
 | image.pullPolicy | string | `"IfNotPresent"` | Image pull policy (Always, IfNotPresent, Never). |
 | image.repository | string | `"ghcr.io/ia-eknorr/stoker-operator"` | Image repository for the controller manager. |

@@ -39,6 +39,42 @@ Two webhook-like features exist and are configured separately:
 | Sidecar injection | `webhook.*` | MutatingWebhook that injects the stoker-agent into annotated pods |
 | Push receiver | `webhookReceiver.*` | HTTP endpoint that accepts GitHub/GitLab push events for immediate sync |
 
+## Monitoring
+
+Both the controller and agent sidecar expose Prometheus metrics. Enable
+`serviceMonitor` and `podMonitor` to have prometheus-operator discover them
+automatically.
+
+### Grafana Dashboards
+
+Two pre-built dashboards are included in `dashboards/`:
+
+| Dashboard | File | Purpose |
+|-----------|------|---------|
+| **Fleet Overview** | `stoker-fleet.json` | High-level health across all GatewaySync CRs — summary stats, CR status cards, controller performance, agent averages, webhooks |
+| **GatewaySync Detail** | `stoker-detail.json` | Deep dive into a single CR — conditions, per-gateway status table, controller and agent performance, file breakdown, designer sessions |
+
+The fleet dashboard links to the detail view — click any CR card to drill down.
+
+**Sidecar auto-discovery (kube-prometheus-stack)** — If your Grafana uses the
+[k8s-sidecar](https://github.com/kiwigrid/k8s-sidecar) (the default in
+kube-prometheus-stack), enable the dashboard ConfigMap:
+
+```yaml
+grafanaDashboard:
+  enabled: true
+```
+
+The sidecar detects the labeled ConfigMap and provisions both dashboards
+automatically. This is additive — it does not modify or remove any existing
+dashboards. If the sidecar watches a specific namespace rather than all
+namespaces, set `grafanaDashboard.namespace` to your Grafana namespace.
+
+**Manual import** — For Grafana instances without the sidecar (standalone,
+Docker, Grafana Cloud), copy the JSON files and import them via
+**Dashboards > New > Import** in the Grafana UI. Both dashboards use a
+`$datasource` template variable so they work with any Prometheus data source.
+
 {{ template "chart.requirementsSection" . }}
 
 {{ template "chart.valuesSection" . }}

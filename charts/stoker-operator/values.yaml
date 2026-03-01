@@ -91,14 +91,22 @@ prometheusRule:
   # -- Additional alerting rules appended to the default set.
   additionalRules: []
 
-# -- Grafana dashboard provisioning via ConfigMap with sidecar auto-discovery.
-# The ConfigMap is labeled with `grafana_dashboard: "1"` for automatic import.
+# -- Grafana dashboard provisioning via sidecar auto-discovery.
+# Creates a ConfigMap labeled `grafana_dashboard: "1"` that the Grafana sidecar
+# (k8s-sidecar) detects and provisions automatically. This is the standard
+# pattern used by kube-prometheus-stack and does not affect existing dashboards.
+# If your Grafana instance does not use the sidecar, you can import the dashboard
+# JSON manually from charts/stoker-operator/dashboards/stoker-overview.json.
 grafanaDashboard:
   # -- Create a ConfigMap containing the Stoker Grafana dashboard.
+  # Enable when your Grafana uses the k8s-sidecar for dashboard auto-discovery
+  # (default in kube-prometheus-stack).
   enabled: false
   # -- Namespace for the dashboard ConfigMap. Defaults to the release namespace.
+  # Set this to your Grafana namespace if the sidecar only watches a specific namespace.
   namespace: ""
   # -- Additional labels for the dashboard ConfigMap.
+  # Override if your sidecar uses a label other than `grafana_dashboard: "1"`.
   labels: {}
   # -- Annotations for the dashboard ConfigMap.
   annotations: {}

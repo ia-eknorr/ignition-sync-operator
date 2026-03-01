@@ -23,6 +23,14 @@ type AgentMetrics struct {
 	DesignerBlocked   prometheus.Gauge
 	LastSyncTimestamp prometheus.Gauge
 	LastSyncSuccess   prometheus.Gauge
+
+	// Tier 2 metrics
+	FilesAdded             *prometheus.GaugeVec
+	FilesModified          *prometheus.GaugeVec
+	FilesDeleted           *prometheus.GaugeVec
+	DesignerSessionsActive prometheus.Gauge
+	SyncSkippedTotal       *prometheus.CounterVec
+	GatewayStartupDuration prometheus.Histogram
 }
 
 // NewAgentMetrics creates and registers all agent metrics on a standalone registry.
@@ -123,6 +131,60 @@ func NewAgentMetrics() *AgentMetrics {
 				Help:      "Whether the last sync was successful (1=success, 0=error).",
 			},
 		),
+
+		FilesAdded: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: "stoker",
+				Subsystem: "agent",
+				Name:      "files_added",
+				Help:      "Number of files added in the last sync.",
+			},
+			[]string{"profile"},
+		),
+		FilesModified: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: "stoker",
+				Subsystem: "agent",
+				Name:      "files_modified",
+				Help:      "Number of files modified in the last sync.",
+			},
+			[]string{"profile"},
+		),
+		FilesDeleted: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: "stoker",
+				Subsystem: "agent",
+				Name:      "files_deleted",
+				Help:      "Number of files deleted in the last sync.",
+			},
+			[]string{"profile"},
+		),
+		DesignerSessionsActive: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Namespace: "stoker",
+				Subsystem: "agent",
+				Name:      "designer_sessions_active",
+				Help:      "Number of active Ignition Designer sessions.",
+			},
+		),
+		SyncSkippedTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "stoker",
+				Subsystem: "agent",
+				Name:      "sync_skipped_total",
+				Help:      "Total number of sync operations skipped.",
+			},
+			[]string{"reason"},
+		),
+		GatewayStartupDuration: prometheus.NewHistogram(
+			prometheus.HistogramOpts{
+				Namespace: "stoker",
+				Subsystem: "agent",
+				Name:      "gateway_startup_duration_seconds",
+				Help:      "Time from agent startup to gateway becoming responsive.",
+				Buckets:   []float64{5, 10, 30, 60, 120, 300, 600},
+			},
+		),
 	}
 
 	reg.MustRegister(
@@ -136,6 +198,12 @@ func NewAgentMetrics() *AgentMetrics {
 		m.DesignerBlocked,
 		m.LastSyncTimestamp,
 		m.LastSyncSuccess,
+		m.FilesAdded,
+		m.FilesModified,
+		m.FilesDeleted,
+		m.DesignerSessionsActive,
+		m.SyncSkippedTotal,
+		m.GatewayStartupDuration,
 	)
 
 	return m
