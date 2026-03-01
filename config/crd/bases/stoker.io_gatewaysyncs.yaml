@@ -20,27 +20,29 @@ spec:
     - jsonPath: .status.lastSyncRef
       name: Ref
       type: string
-    - jsonPath: .status.lastSyncCommitShort
-      name: Commit
-      type: string
-    - jsonPath: .status.profileCount
-      name: Profiles
-      type: integer
-    - jsonPath: .status.conditions[?(@.type=="AllGatewaysSynced")].status
-      name: Synced
-      type: string
     - jsonPath: .status.conditions[?(@.type=="AllGatewaysSynced")].message
       name: Gateways
       type: string
     - jsonPath: .status.conditions[?(@.type=="Ready")].status
       name: Ready
       type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].message
+      name: Status
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .status.lastSyncCommitShort
+      name: Commit
+      priority: 1
+      type: string
+    - jsonPath: .status.profileCount
+      name: Profiles
+      priority: 1
+      type: integer
     - jsonPath: .status.lastSyncTime
       name: Last Sync
       priority: 1
-      type: date
-    - jsonPath: .metadata.creationTimestamp
-      name: Age
       type: date
     name: v1alpha1
     schema:
