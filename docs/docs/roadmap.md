@@ -6,15 +6,16 @@ description: Planned features and milestones for Stoker.
 
 # Roadmap
 
-Current version: **v0.4.10** — [see the changelog](https://github.com/ia-eknorr/stoker-operator/blob/main/CHANGELOG.md) for release history.
+Current version: **v0.5.0** — [see the changelog](https://github.com/ia-eknorr/stoker-operator/blob/main/CHANGELOG.md) for release history.
 
-## v0.5.0 — Observability & Reliability
+## v0.5.0 — Observability & Reliability ✓
 
-Metrics, hardening, and config improvements for production deployments.
+Metrics, dashboards, and monitoring for production deployments.
 
-- Prometheus metrics for controller (reconcile duration, ref resolution latency, gateway counts, error rates)
-- Prometheus metrics for agent (sync duration, files changed, git fetch duration, error counts) with dedicated metrics endpoint
-- Grafana dashboard JSON shipped in Helm chart
+- ✓ Prometheus metrics for controller (reconcile duration, ref resolution, gateway counts, CR info, conditions, per-gateway status)
+- ✓ Prometheus metrics for agent (sync duration, files changed/added/modified/deleted, git fetch, scan, designer sessions, sync skips, gateway startup)
+- ✓ Two Grafana dashboards shipped in Helm chart (fleet overview + per-CR detail with drill-down)
+- ✓ ServiceMonitor and PodMonitor templates with `honorLabels` support
 - SSH host key verification with optional `knownHostsSecretRef` (fix `InsecureIgnoreHostKey`)
 - Exponential backoff for transient git and API errors (30s → 60s → 120s → 5m cap)
 - Designer session project-level granularity (sync Project B while designer has Project A open)
@@ -30,9 +31,9 @@ Remove scaling walls and make the agent more reactive.
 - Webhook receiver rate limiting
 - In-flight sync completion deadline on graceful shutdown
 
-## v0.7.0 — Observability & Conditions
+## v0.7.0 — Conditions & Validation
 
-Operational visibility for fleet management.
+Operational visibility and safety for fleet management.
 
 - New condition types: `AgentReady`, `RefSkew`
 - Drift detection (re-sync same commit reports unexpected changes)

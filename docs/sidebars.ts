@@ -24,6 +24,7 @@ const sidebars: SidebarsConfig = {
         "guides/content-templating",
         "guides/json-patches",
         "guides/webhook-sync",
+        "guides/monitoring",
         "guides/multi-site-deployment",
       ],
     },

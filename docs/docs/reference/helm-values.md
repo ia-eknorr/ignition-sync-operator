@@ -44,15 +44,28 @@ helm install stoker oci://ghcr.io/ia-eknorr/charts/stoker-operator \
 |-----|------|---------|-------------|
 | `certManager.enabled` | bool | `true` | Create a self-signed Issuer and Certificate for webhook TLS. Requires cert-manager. |
 
-### Metrics
+### Metrics & Monitoring
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `metrics.enabled` | bool | `true` | Enable the metrics Service. |
 | `metrics.service.type` | string | `ClusterIP` | Service type for the metrics endpoint. |
 | `metrics.service.port` | int | `8443` | Port the metrics service listens on. |
-| `serviceMonitor.enabled` | bool | `false` | Create a Prometheus ServiceMonitor. Requires prometheus-operator CRDs. |
+| `serviceMonitor.enabled` | bool | `false` | Create a Prometheus ServiceMonitor for the controller. Requires prometheus-operator CRDs. |
+| `serviceMonitor.labels` | object | `{}` | Additional labels for the ServiceMonitor (e.g. for Prometheus selector matching). |
+| `serviceMonitor.interval` | string | `""` | Scrape interval. Falls back to the Prometheus default if empty. |
+| `serviceMonitor.scrapeTimeout` | string | `""` | Scrape timeout. Falls back to the Prometheus default if empty. |
+| `podMonitor.enabled` | bool | `false` | Create a PodMonitor for agent sidecar metrics. Requires prometheus-operator CRDs. |
+| `podMonitor.labels` | object | `{}` | Additional labels for the PodMonitor. |
+| `podMonitor.interval` | string | `""` | Scrape interval for agent metrics. |
+| `podMonitor.scrapeTimeout` | string | `""` | Scrape timeout for agent metrics. |
+| `grafanaDashboard.enabled` | bool | `false` | Create a ConfigMap containing Grafana dashboards (fleet overview + CR detail). Enable when using the k8s-sidecar for auto-discovery. |
+| `grafanaDashboard.namespace` | string | `""` | Namespace for the dashboard ConfigMap. Defaults to the release namespace. Set to your Grafana namespace if the sidecar only watches a specific namespace. |
+| `grafanaDashboard.labels` | object | `{}` | Additional labels for the dashboard ConfigMap. Override if your sidecar uses a label other than `grafana_dashboard: "1"`. |
+| `grafanaDashboard.annotations` | object | `{}` | Annotations for the dashboard ConfigMap. |
 | `networkPolicy.enabled` | bool | `false` | Create a NetworkPolicy restricting ingress to the metrics port. |
+
+See the [Monitoring guide](../guides/monitoring.md) for details on available metrics and dashboard setup.
 
 ### Sidecar Injection Webhook
 

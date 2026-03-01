@@ -113,4 +113,5 @@ HMAC signature validation via `X-Hub-Signature-256` is supported when configured
 
 - [Quickstart](../quickstart.md) — get started with a working example
 - [Git Authentication](../guides/git-authentication.md) — set up auth for private repos
+- [Monitoring](../guides/monitoring.md) — Prometheus metrics and Grafana dashboards
 - [GatewaySync CR Reference](../reference/gatewaysync-cr.md) — full spec reference
