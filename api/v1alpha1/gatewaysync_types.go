@@ -63,6 +63,17 @@ type GitAuthSpec struct {
 type SSHKeyAuth struct {
 	// secretRef points to the Secret containing the SSH private key.
 	SecretRef SecretKeyRef `json:"secretRef"`
+
+	// knownHosts optionally references a Secret for SSH host key verification.
+	// When omitted, host key verification is disabled (InsecureIgnoreHostKey).
+	// +optional
+	KnownHosts *KnownHosts `json:"knownHosts,omitempty"`
+}
+
+// KnownHosts references a Secret containing SSH known_hosts data.
+type KnownHosts struct {
+	// secretRef points to the Secret containing the known_hosts file.
+	SecretRef SecretKeyRef `json:"secretRef"`
 }
 
 // GitHubAppAuth authenticates using a GitHub App installation.

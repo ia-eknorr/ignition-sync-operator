@@ -71,13 +71,24 @@ description: Common issues, debug commands, and FAQ.
 - **Auth failure** — the token/SSH key/GitHub App credentials are wrong or expired
 - **Network access** — the controller pod can't reach the git host (check network policies)
 - **Ref doesn't exist** — the specified branch or tag doesn't exist in the remote
+- **SSH host key mismatch** — if `knownHosts` is configured and the git server's key doesn't match, the connection is rejected. Re-scan the host: `ssh-keyscan <host> > known_hosts` and update the Secret.
 - **GitHub App exchange failed** — if the condition reason is `GitHubAppExchangeFailed`, check that the App ID, Installation ID, and PEM key are correct. Verify the app has **Contents: Read** permission and is installed on the target repository. Clock skew >60s between the controller and GitHub can also cause JWT validation failures.
+
+The condition message includes the retry interval (e.g., `retry in 30s`). Consecutive failures back off exponentially (30s → 60s → 120s → 240s → 5min cap). Fixing the root cause or triggering a webhook resets the backoff immediately.
 
 Check controller logs for the specific error:
 
 ```bash
 kubectl logs -n stoker-system deploy/stoker-stoker-operator-controller-manager | grep "ls-remote\|GitHub App"
 ```
+
+### SSHHostKeyVerification=False
+
+**Symptoms:** `kubectl describe gs <name>` shows `SSHHostKeyVerification=False` with reason `HostKeyVerificationDisabled`.
+
+**Cause:** SSH key auth is configured without `knownHosts`, so connections use `InsecureIgnoreHostKey`. This is a security warning — connections are vulnerable to MITM attacks.
+
+**Fix:** Add a `knownHosts` Secret. See the [SSH host key verification](../guides/git-authentication.md#ssh-host-key-verification) guide.
 
 ### AllGatewaysSynced=False
 

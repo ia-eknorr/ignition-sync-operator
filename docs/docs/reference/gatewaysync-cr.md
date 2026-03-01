@@ -95,12 +95,20 @@ auth:
     secretRef:
       name: ssh-key
       key: id_ed25519
+    knownHosts:                # optional — enables host key verification
+      secretRef:
+        name: ssh-known-hosts
+        key: known_hosts
 ```
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `sshKey.secretRef.name` | string | Yes | Name of the Secret containing the SSH private key |
 | `sshKey.secretRef.key` | string | Yes | Key within the Secret |
+| `sshKey.knownHosts.secretRef.name` | string | No | Name of a Secret containing SSH `known_hosts` data |
+| `sshKey.knownHosts.secretRef.key` | string | No | Key within the known_hosts Secret |
+
+When `knownHosts` is omitted, SSH connections use `InsecureIgnoreHostKey` (no MITM protection). The controller sets a `SSHHostKeyVerification=False` warning condition to flag this. See the [Git Authentication guide](../guides/git-authentication.md#ssh-host-key-verification) for setup instructions.
 
 #### GitHub App authentication
 
@@ -393,4 +401,5 @@ The `AllGatewaysSynced` condition is `True` only when all discovered gateways re
 | `ProfilesValid` | All embedded profiles pass validation (no path traversal, no absolute paths) |
 | `AllGatewaysSynced` | All discovered gateway pods report `Synced` status |
 | `SidecarInjected` | All discovered gateway pods have the stoker-agent sidecar container |
+| `SSHHostKeyVerification` | SSH host key verification status — `True` when `knownHosts` is configured, `False` (warning) when SSH auth is used without it. Only present on CRs using SSH key authentication. |
 | `Ready` | `RefResolved`, `ProfilesValid`, and `AllGatewaysSynced` are all `True` |

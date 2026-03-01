@@ -31,6 +31,7 @@ const (
 	volumeAPIKey         = "api-key"
 	volumeGitHubToken    = "git-token"
 	volumeGitTmp         = "git-tmp"
+	volumeKnownHosts     = "known-hosts"
 
 	// Mount paths inside the agent container.
 	mountRepo           = "/repo"
@@ -38,6 +39,7 @@ const (
 	mountGitCredentials = "/etc/stoker/git-credentials"
 	mountAPIKey         = "/etc/stoker/api-key"
 	mountGitHubToken    = "/etc/stoker/git-token"
+	mountKnownHosts     = "/etc/stoker/known-hosts"
 
 	// Environment variable for operator-level default agent image.
 	envDefaultAgentImage = "DEFAULT_AGENT_IMAGE"
@@ -370,6 +372,12 @@ func buildEnvVars(crName, gatewayName, profile, gatewayPort, gatewayTLS string, 
 				Name:  "GIT_SSH_KEY_FILE",
 				Value: mountGitCredentials + "/" + gs.Spec.Git.Auth.SSHKey.SecretRef.Key,
 			})
+			if gs.Spec.Git.Auth.SSHKey.KnownHosts != nil {
+				env = append(env, corev1.EnvVar{
+					Name:  "GIT_KNOWN_HOSTS_FILE",
+					Value: mountKnownHosts + "/" + gs.Spec.Git.Auth.SSHKey.KnownHosts.SecretRef.Key,
+				})
+			}
 		} else if gs.Spec.Git.Auth.Token != nil {
 			env = append(env, corev1.EnvVar{
 				Name:  "GIT_TOKEN_FILE",
@@ -433,6 +441,11 @@ func needsGitCredentialVolume(gs *stokerv1alpha1.GatewaySync) bool {
 	return gs.Spec.Git.Auth.SSHKey != nil || gs.Spec.Git.Auth.Token != nil
 }
 
+// needsKnownHostsVolume returns true when SSH auth with known_hosts is configured.
+func needsKnownHostsVolume(gs *stokerv1alpha1.GatewaySync) bool {
+	return gs.Spec.Git.Auth != nil && gs.Spec.Git.Auth.SSHKey != nil && gs.Spec.Git.Auth.SSHKey.KnownHosts != nil
+}
+
 // needsGitHubTokenVolume returns true when GitHub App auth is configured.
 // The controller writes the installation token to a Secret named
 // stoker-github-token-{crName} which the agent mounts to authenticate git operations.
@@ -460,6 +473,11 @@ func agentVolumeMounts(gs *stokerv1alpha1.GatewaySync) []corev1.VolumeMount {
 	if needsGitHubTokenVolume(gs) {
 		mounts = append(mounts, corev1.VolumeMount{
 			Name: volumeGitHubToken, MountPath: mountGitHubToken, ReadOnly: true,
+		})
+	}
+	if needsKnownHostsVolume(gs) {
+		mounts = append(mounts, corev1.VolumeMount{
+			Name: volumeKnownHosts, MountPath: mountKnownHosts, ReadOnly: true,
 		})
 	}
 	return mounts
@@ -510,6 +528,17 @@ func agentVolumes(gs *stokerv1alpha1.GatewaySync) []corev1.Volume {
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName:  gitHubTokenSecretName(gs.Name),
+					DefaultMode: &secretMode,
+				},
+			},
+		})
+	}
+	if needsKnownHostsVolume(gs) {
+		vols = append(vols, corev1.Volume{
+			Name: volumeKnownHosts,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName:  gs.Spec.Git.Auth.SSHKey.KnownHosts.SecretRef.Name,
 					DefaultMode: &secretMode,
 				},
 			},

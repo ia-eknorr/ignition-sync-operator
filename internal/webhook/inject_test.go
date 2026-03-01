@@ -499,6 +499,149 @@ func TestInject_AgentResourcesFromCR(t *testing.T) {
 	}
 }
 
+func TestInject_SSHAuth_WithKnownHosts(t *testing.T) {
+	gs := testGatewaySync()
+	gs.Spec.Git.Auth = &stokerv1alpha1.GitAuthSpec{
+		SSHKey: &stokerv1alpha1.SSHKeyAuth{
+			SecretRef: stokerv1alpha1.SecretKeyRef{
+				Name: "ssh-key-secret",
+				Key:  "ssh-privatekey",
+			},
+			KnownHosts: &stokerv1alpha1.KnownHosts{
+				SecretRef: stokerv1alpha1.SecretKeyRef{
+					Name: "known-hosts-secret",
+					Key:  "known_hosts",
+				},
+			},
+		},
+	}
+
+	pod := basePod(map[string]string{
+		stokertypes.AnnotationInject: "true",
+		stokertypes.AnnotationCRName: "my-sync",
+	})
+
+	patched := injectDirect(t, pod, gs)
+	agent := findInitContainer(patched)
+	if agent == nil {
+		t.Fatal("stoker-agent not found")
+	}
+
+	// Should have GIT_KNOWN_HOSTS_FILE env var.
+	assertEnvVar(t, agent, "GIT_KNOWN_HOSTS_FILE", mountKnownHosts+"/known_hosts")
+
+	// Should have the known-hosts volume and mount.
+	assertHasVolume(t, patched, volumeKnownHosts)
+	assertVolumeSecret(t, patched, volumeKnownHosts, "known-hosts-secret")
+
+	found := false
+	for _, vm := range agent.VolumeMounts {
+		if vm.Name == volumeKnownHosts {
+			found = true
+			if vm.MountPath != mountKnownHosts {
+				t.Errorf("known-hosts mount path: got %q, want %q", vm.MountPath, mountKnownHosts)
+			}
+			if !vm.ReadOnly {
+				t.Error("known-hosts volume mount should be read-only")
+			}
+		}
+	}
+	if !found {
+		t.Error("known-hosts volume mount not found in stoker-agent")
+	}
+}
+
+func TestInject_SSHAuth_WithoutKnownHosts_NoExtraVolume(t *testing.T) {
+	gs := testGatewaySync()
+	gs.Spec.Git.Auth = &stokerv1alpha1.GitAuthSpec{
+		SSHKey: &stokerv1alpha1.SSHKeyAuth{
+			SecretRef: stokerv1alpha1.SecretKeyRef{
+				Name: "ssh-key-secret",
+				Key:  "ssh-privatekey",
+			},
+			// No KnownHosts
+		},
+	}
+
+	pod := basePod(map[string]string{
+		stokertypes.AnnotationInject: "true",
+		stokertypes.AnnotationCRName: "my-sync",
+	})
+
+	patched := injectDirect(t, pod, gs)
+
+	// Should NOT have known-hosts volume.
+	for _, v := range patched.Spec.Volumes {
+		if v.Name == volumeKnownHosts {
+			t.Error("known-hosts volume should not be present without KnownHosts config")
+		}
+	}
+
+	// Should NOT have GIT_KNOWN_HOSTS_FILE env var.
+	agent := findInitContainer(patched)
+	for _, env := range agent.Env {
+		if env.Name == "GIT_KNOWN_HOSTS_FILE" {
+			t.Error("GIT_KNOWN_HOSTS_FILE should not be set without KnownHosts config")
+		}
+	}
+}
+
+func TestNeedsKnownHostsVolume(t *testing.T) {
+	tests := []struct {
+		name string
+		gs   *stokerv1alpha1.GatewaySync
+		want bool
+	}{
+		{
+			name: "no auth",
+			gs:   &stokerv1alpha1.GatewaySync{},
+			want: false,
+		},
+		{
+			name: "ssh without known_hosts",
+			gs: &stokerv1alpha1.GatewaySync{
+				Spec: stokerv1alpha1.GatewaySyncSpec{
+					Git: stokerv1alpha1.GitSpec{
+						Auth: &stokerv1alpha1.GitAuthSpec{
+							SSHKey: &stokerv1alpha1.SSHKeyAuth{
+								SecretRef: stokerv1alpha1.SecretKeyRef{Name: "key", Key: "k"},
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "ssh with known_hosts",
+			gs: &stokerv1alpha1.GatewaySync{
+				Spec: stokerv1alpha1.GatewaySyncSpec{
+					Git: stokerv1alpha1.GitSpec{
+						Auth: &stokerv1alpha1.GitAuthSpec{
+							SSHKey: &stokerv1alpha1.SSHKeyAuth{
+								SecretRef: stokerv1alpha1.SecretKeyRef{Name: "key", Key: "k"},
+								KnownHosts: &stokerv1alpha1.KnownHosts{
+									SecretRef: stokerv1alpha1.SecretKeyRef{Name: "kh", Key: "known_hosts"},
+								},
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := needsKnownHostsVolume(tt.gs)
+			if got != tt.want {
+				t.Errorf("needsKnownHostsVolume() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // --- Helpers ---
 
 // injectDirect calls injectSidecar on a pod copy with the given CR for testing.

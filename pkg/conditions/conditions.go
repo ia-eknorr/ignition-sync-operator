@@ -16,24 +16,29 @@ const (
 
 	// TypeSidecarInjected indicates whether all gateway pods have the stoker-agent sidecar.
 	TypeSidecarInjected = "SidecarInjected"
+
+	// TypeSSHHostKeyVerification indicates whether SSH host key verification is enabled.
+	TypeSSHHostKeyVerification = "SSHHostKeyVerification"
 )
 
 // Condition reasons for GatewaySync status.conditions[].reason
 const (
-	ReasonReconciling             = "Reconciling"
-	ReasonRefResolved             = "RefResolved"
-	ReasonRefResolutionFailed     = "RefResolutionFailed"
-	ReasonSyncSucceeded           = "SyncSucceeded"
-	ReasonSyncInProgress          = "SyncInProgress"
-	ReasonPaused                  = "Paused"
-	ReasonNoGateways              = "NoGatewaysDiscovered"
-	ReasonProfilesValid           = "ProfilesValid"
-	ReasonProfilesInvalid         = "ProfilesInvalid"
-	ReasonValidationPassed        = "ValidationPassed"
-	ReasonValidationFailed        = "ValidationFailed"
-	ReasonSidecarMissing          = "SidecarMissing"
-	ReasonSidecarPresent          = "SidecarPresent"
-	ReasonGitHubAppExchangeFailed = "GitHubAppExchangeFailed"
+	ReasonReconciling                 = "Reconciling"
+	ReasonRefResolved                 = "RefResolved"
+	ReasonRefResolutionFailed         = "RefResolutionFailed"
+	ReasonSyncSucceeded               = "SyncSucceeded"
+	ReasonSyncInProgress              = "SyncInProgress"
+	ReasonPaused                      = "Paused"
+	ReasonNoGateways                  = "NoGatewaysDiscovered"
+	ReasonProfilesValid               = "ProfilesValid"
+	ReasonProfilesInvalid             = "ProfilesInvalid"
+	ReasonValidationPassed            = "ValidationPassed"
+	ReasonValidationFailed            = "ValidationFailed"
+	ReasonSidecarMissing              = "SidecarMissing"
+	ReasonSidecarPresent              = "SidecarPresent"
+	ReasonGitHubAppExchangeFailed     = "GitHubAppExchangeFailed"
+	ReasonHostKeyVerificationDisabled = "HostKeyVerificationDisabled"
+	ReasonHostKeyVerificationEnabled  = "HostKeyVerificationEnabled"
 )
 
 // Event reasons for K8s Events (not used as condition reasons).

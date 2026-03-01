@@ -230,6 +230,32 @@ spec:
                       sshKey:
                         description: sshKey authenticates via SSH deploy key.
                         properties:
+                          knownHosts:
+                            description: |-
+                              knownHosts optionally references a Secret for SSH host key verification.
+                              When omitted, host key verification is disabled (InsecureIgnoreHostKey).
+                            properties:
+                              secretRef:
+                                description: secretRef points to the Secret containing
+                                  the known_hosts file.
+                                properties:
+                                  key:
+                                    description: key is the key within the Secret
+                                      data.
+                                    minLength: 1
+                                    type: string
+                                  name:
+                                    description: name is the name of the Secret in
+                                      the same namespace.
+                                    minLength: 1
+                                    type: string
+                                required:
+                                - key
+                                - name
+                                type: object
+                            required:
+                            - secretRef
+                            type: object
                           secretRef:
                             description: secretRef points to the Secret containing
                               the SSH private key.

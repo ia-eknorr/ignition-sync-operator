@@ -11,6 +11,7 @@ import (
 // HealthServer exposes /healthz, /readyz, and /startupz endpoints.
 type HealthServer struct {
 	initialSyncDone atomic.Bool
+	shuttingDown    atomic.Bool
 	server          *http.Server
 }
 
@@ -35,6 +36,16 @@ func (hs *HealthServer) MarkReady() {
 	hs.initialSyncDone.Store(true)
 }
 
+// MarkNotReady signals that the agent is shutting down. Readyz returns 503.
+func (hs *HealthServer) MarkNotReady() {
+	hs.shuttingDown.Store(true)
+}
+
+// IsShuttingDown returns true after MarkNotReady has been called.
+func (hs *HealthServer) IsShuttingDown() bool {
+	return hs.shuttingDown.Load()
+}
+
 // Start begins serving health endpoints. Blocks until ctx is cancelled.
 func (hs *HealthServer) Start(ctx context.Context) {
 	log := logf.FromContext(ctx).WithName("health")
@@ -56,6 +67,11 @@ func (hs *HealthServer) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (hs *HealthServer) handleReadyz(w http.ResponseWriter, _ *http.Request) {
+	if hs.shuttingDown.Load() {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte("shutting down"))
+		return
+	}
 	if hs.initialSyncDone.Load() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))

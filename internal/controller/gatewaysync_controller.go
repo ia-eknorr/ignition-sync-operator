@@ -51,6 +51,12 @@ type cachedToken struct {
 	expiry time.Time
 }
 
+// backoffState tracks consecutive failures for exponential backoff.
+type backoffState struct {
+	failureCount int
+	lastFailure  time.Time
+}
+
 // GatewaySyncReconciler reconciles a GatewaySync object.
 type GatewaySyncReconciler struct {
 	client.Client
@@ -61,6 +67,9 @@ type GatewaySyncReconciler struct {
 
 	// tokenCache holds GitHub App installation tokens keyed by "appID:installationID".
 	tokenCache map[string]cachedToken
+
+	// backoff tracks consecutive failures per CR for exponential backoff.
+	backoff map[types.NamespacedName]*backoffState
 }
 
 // +kubebuilder:rbac:groups=stoker.io,resources=gatewaysyncs,verbs=get;list;watch;update;patch
@@ -96,6 +105,11 @@ func (r *GatewaySyncReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Capture the original for merge-patch base (avoids resourceVersion conflicts).
 	base := gs.DeepCopy()
+
+	// Reset backoff on webhook-triggered reconcile so it isn't delayed by previous failures.
+	if gs.Annotations[stokertypes.AnnotationRequestedRef] != "" {
+		r.resetBackoff(req.NamespacedName)
+	}
 
 	// --- Step 0: Finalizer handling ---
 
@@ -142,10 +156,26 @@ func (r *GatewaySyncReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// --- Step 2: Validate git auth secrets exist ---
 
 	if err := r.validateGitSecrets(ctx, &gs); err != nil {
-		r.setCondition(ctx, &gs, conditions.TypeReady, metav1.ConditionFalse, conditions.ReasonReconciling, err.Error())
+		r.recordFailure(req.NamespacedName)
+		delay := r.backoffDelay(req.NamespacedName)
+		r.setCondition(ctx, &gs, conditions.TypeReady, metav1.ConditionFalse, conditions.ReasonReconciling,
+			fmt.Sprintf("%s (retry in %s)", err.Error(), delay.Round(time.Second)))
 		_ = r.patchStatus(ctx, &gs, base)
 		reconcileResult = resultRequeue
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		return ctrl.Result{RequeueAfter: delay}, nil
+	}
+
+	// --- Step 2.5: SSH host key verification warning ---
+
+	if gs.Spec.Git.Auth != nil && gs.Spec.Git.Auth.SSHKey != nil {
+		if gs.Spec.Git.Auth.SSHKey.KnownHosts == nil {
+			r.setCondition(ctx, &gs, conditions.TypeSSHHostKeyVerification, metav1.ConditionFalse,
+				conditions.ReasonHostKeyVerificationDisabled,
+				"SSH host key verification disabled — set spec.git.auth.sshKey.knownHosts to enable MITM protection")
+		} else {
+			r.setCondition(ctx, &gs, conditions.TypeSSHHostKeyVerification, metav1.ConditionTrue,
+				conditions.ReasonHostKeyVerificationEnabled, "SSH host key verification enabled")
+		}
 	}
 
 	// --- Step 3: Resolve git ref via ls-remote ---
@@ -155,22 +185,26 @@ func (r *GatewaySyncReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	refResolveDuration.WithLabelValues(gs.Name, gs.Namespace).Observe(time.Since(refStart).Seconds())
 
 	if err != nil {
+		r.recordFailure(req.NamespacedName)
+		delay := r.backoffDelay(req.NamespacedName)
 		reason := conditions.ReasonRefResolutionFailed
 		if gs.Spec.Git.Auth != nil && gs.Spec.Git.Auth.GitHubApp != nil && strings.Contains(err.Error(), "GitHub App") {
 			reason = conditions.ReasonGitHubAppExchangeFailed
 		}
 		wasAlreadyFailed := conditionHasStatus(gs.Status.Conditions, conditions.TypeRefResolved, metav1.ConditionFalse)
-		r.setCondition(ctx, &gs, conditions.TypeRefResolved, metav1.ConditionFalse, reason, err.Error())
+		r.setCondition(ctx, &gs, conditions.TypeRefResolved, metav1.ConditionFalse, reason,
+			fmt.Sprintf("Ref resolution failed (retry in %s): %s", delay.Round(time.Second), err.Error()))
 		if !wasAlreadyFailed {
 			r.Recorder.Eventf(&gs, corev1.EventTypeWarning, reason, "Ref resolution failed: %s", err.Error())
 		}
 		gs.Status.RefResolutionStatus = "Error"
 		_ = r.patchStatus(ctx, &gs, base)
 		reconcileResult = resultRequeue
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		return ctrl.Result{RequeueAfter: delay}, nil
 	}
 
 	// Ref resolved successfully
+	r.resetBackoff(req.NamespacedName)
 	r.setCondition(ctx, &gs, conditions.TypeRefResolved, metav1.ConditionTrue, conditions.ReasonRefResolved, result.Commit)
 	gs.Status.RefResolutionStatus = "Resolved"
 	if gs.Status.LastSyncCommit != result.Commit {
@@ -184,10 +218,13 @@ func (r *GatewaySyncReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// --- Step 3.5: Validate gateway API key secret ---
 
 	if err := r.validateAPIKeySecret(ctx, &gs); err != nil {
-		r.setCondition(ctx, &gs, conditions.TypeReady, metav1.ConditionFalse, conditions.ReasonReconciling, err.Error())
+		r.recordFailure(req.NamespacedName)
+		delay := r.backoffDelay(req.NamespacedName)
+		r.setCondition(ctx, &gs, conditions.TypeReady, metav1.ConditionFalse, conditions.ReasonReconciling,
+			fmt.Sprintf("%s (retry in %s)", err.Error(), delay.Round(time.Second)))
 		_ = r.patchStatus(ctx, &gs, base)
 		reconcileResult = resultRequeue
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		return ctrl.Result{RequeueAfter: delay}, nil
 	}
 
 	// --- Step 4: Create/update metadata ConfigMap ---
@@ -252,6 +289,45 @@ func (r *GatewaySyncReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	reconcileLog.Info("reconciliation complete", "commit", result.Commit, "gateways", len(gs.Status.DiscoveredGateways), "requeueAfter", requeueAfter)
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
+}
+
+// backoffDelay returns the requeue delay based on consecutive failures.
+// Sequence: 30s, 60s, 120s, 240s, 300s (capped).
+func (r *GatewaySyncReconciler) backoffDelay(key types.NamespacedName) time.Duration {
+	if r.backoff == nil {
+		return 30 * time.Second
+	}
+	state, ok := r.backoff[key]
+	if !ok || state.failureCount == 0 {
+		return 30 * time.Second
+	}
+	delay := 30 * time.Second
+	for i := 0; i < state.failureCount-1 && delay < 5*time.Minute; i++ {
+		delay *= 2
+	}
+	if delay > 5*time.Minute {
+		delay = 5 * time.Minute
+	}
+	return delay
+}
+
+func (r *GatewaySyncReconciler) recordFailure(key types.NamespacedName) {
+	if r.backoff == nil {
+		r.backoff = make(map[types.NamespacedName]*backoffState)
+	}
+	state, ok := r.backoff[key]
+	if !ok {
+		state = &backoffState{}
+		r.backoff[key] = state
+	}
+	state.failureCount++
+	state.lastFailure = time.Now()
+}
+
+func (r *GatewaySyncReconciler) resetBackoff(key types.NamespacedName) {
+	if r.backoff != nil {
+		delete(r.backoff, key)
+	}
 }
 
 // validVarKey matches Go identifiers: letters, digits, underscores; must start with letter or underscore.

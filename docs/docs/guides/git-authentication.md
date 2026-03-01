@@ -95,6 +95,37 @@ spec:
 
 **When to use:** Organizations that prefer SSH-based access or need deploy keys scoped to individual repositories.
 
+### SSH host key verification
+
+By default, SSH connections skip host key verification (`InsecureIgnoreHostKey`). The controller flags this with a `SSHHostKeyVerification=False` warning condition. To enable strict verification, provide a `known_hosts` Secret:
+
+```bash
+# Scan the git host and create a Secret
+ssh-keyscan github.com > known_hosts
+kubectl create secret generic ssh-known-hosts -n <namespace> \
+  --from-file=known_hosts=known_hosts
+```
+
+Then reference it in the CR:
+
+```yaml
+auth:
+  sshKey:
+    secretRef:
+      name: ssh-key
+      key: id_ed25519
+    knownHosts:
+      secretRef:
+        name: ssh-known-hosts
+        key: known_hosts
+```
+
+When `knownHosts` is configured, the condition changes to `SSHHostKeyVerification=True` and both the controller and agent use strict host key checking. If the git server's key doesn't match the `known_hosts` data, the connection is rejected.
+
+:::tip GitHub Enterprise
+For GitHub Enterprise Server, scan your enterprise host: `ssh-keyscan github.example.com > known_hosts`.
+:::
+
 </TabItem>
 <TabItem value="github-app" label="GitHub App">
 

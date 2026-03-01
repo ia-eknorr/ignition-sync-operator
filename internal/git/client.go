@@ -287,6 +287,12 @@ func buildGitEnv(repoURL string) (string, []string, func(), error) {
 			return repoURL, nil, noop, fmt.Errorf("writing SSH key to /tmp: %w", err)
 		}
 
+		// Determine host key checking mode based on GIT_KNOWN_HOSTS_FILE.
+		hostKeyOpts := "-o StrictHostKeyChecking=no"
+		if knownHostsFile := os.Getenv("GIT_KNOWN_HOSTS_FILE"); knownHostsFile != "" {
+			hostKeyOpts = fmt.Sprintf("-o StrictHostKeyChecking=yes -o UserKnownHostsFile=%s", knownHostsFile)
+		}
+
 		// OpenSSH refuses to run when the current UID has no /etc/passwd entry.
 		// Kubernetes pods inherit runAsUser from the pod spec (e.g. uid 2003 for
 		// Ignition), which may not exist in Alpine's passwd. Write a shell wrapper
@@ -300,11 +306,11 @@ printf "agent:x:%%d:\n" "$gid" > /tmp/.nss-group
 _nss=$(ls /usr/lib/libnss_wrapper.so* 2>/dev/null | head -1)
 if [ -n "$_nss" ]; then
   NSS_WRAPPER_PASSWD=/tmp/.nss-passwd NSS_WRAPPER_GROUP=/tmp/.nss-group LD_PRELOAD="$_nss" \
-  exec ssh -i %s -o StrictHostKeyChecking=no -o BatchMode=yes -o IdentitiesOnly=yes "$@"
+  exec ssh -i %s %s -o BatchMode=yes -o IdentitiesOnly=yes "$@"
 else
-  exec ssh -i %s -o StrictHostKeyChecking=no -o BatchMode=yes -o IdentitiesOnly=yes "$@"
+  exec ssh -i %s %s -o BatchMode=yes -o IdentitiesOnly=yes "$@"
 fi
-`, tmpKey, tmpKey)
+`, tmpKey, hostKeyOpts, tmpKey, hostKeyOpts)
 		if err := os.WriteFile(wrapperPath, []byte(wrapper), 0700); err != nil {
 			_ = os.Remove(tmpKey)
 			return repoURL, nil, noop, fmt.Errorf("writing SSH wrapper: %w", err)

@@ -819,6 +819,186 @@ var _ = Describe("GatewaySync Controller", func() {
 		})
 	})
 
+	Context("Exponential backoff", func() {
+		const resourceName = "test-backoff"
+		const secretName = "test-secret-backoff"
+		ctx := context.Background()
+		nn := types.NamespacedName{Name: resourceName, Namespace: "default"}
+
+		BeforeEach(func() {
+			createAPIKeySecret(ctx, secretName)
+			createCR(ctx, resourceName, secretName)
+		})
+
+		AfterEach(func() {
+			cr := &stokerv1alpha1.GatewaySync{}
+			if err := k8sClient.Get(ctx, nn, cr); err == nil {
+				controllerutil.RemoveFinalizer(cr, stokertypes.Finalizer)
+				_ = k8sClient.Update(ctx, cr)
+				_ = k8sClient.Delete(ctx, cr)
+			}
+			for _, prefix := range []string{"stoker-metadata-"} {
+				cm := &corev1.ConfigMap{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: prefix + resourceName, Namespace: "default"}, cm); err == nil {
+					_ = k8sClient.Delete(ctx, cm)
+				}
+			}
+		})
+
+		It("should increase requeue delay on consecutive failures", func() {
+			gitClient := &fakeGitClient{err: fmt.Errorf("connection refused")}
+			r := newReconciler(gitClient)
+
+			// Reconcile 1: add finalizer
+			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Reconcile 2: first failure — 30s
+			result, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(30 * time.Second))
+
+			// Reconcile 3: second failure — 60s
+			result, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(60 * time.Second))
+
+			// Reconcile 4: third failure — 120s
+			result, err = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(120 * time.Second))
+		})
+
+		It("should cap backoff at 5 minutes", func() {
+			gitClient := &fakeGitClient{err: fmt.Errorf("connection refused")}
+			r := newReconciler(gitClient)
+
+			// Add finalizer
+			_, _ = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+
+			// Drive up failures past the cap
+			for range 10 {
+				_, _ = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			}
+
+			result, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(5 * time.Minute))
+		})
+
+		It("should reset backoff on success", func() {
+			gitClient := &fakeGitClient{err: fmt.Errorf("connection refused")}
+			r := newReconciler(gitClient)
+
+			// Add finalizer
+			_, _ = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+
+			// Fail a few times
+			_, _ = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			_, _ = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			result, _ := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(result.RequeueAfter).To(Equal(120 * time.Second))
+
+			// Now succeed
+			gitClient.err = nil
+			gitClient.result = git.Result{Commit: "abc123", Ref: "main"}
+			result, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(60 * time.Second)) // normal polling
+
+			// Change the spec.git.ref to force a cache miss on next reconcile
+			cr := &stokerv1alpha1.GatewaySync{}
+			Expect(k8sClient.Get(ctx, nn, cr)).To(Succeed())
+			cr.Spec.Git.Ref = "v2.0.0"
+			Expect(k8sClient.Update(ctx, cr)).To(Succeed())
+
+			// Fail again — should be back to 30s (backoff was reset)
+			gitClient.err = fmt.Errorf("temporary error")
+			gitClient.result = git.Result{}
+			result, _ = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(result.RequeueAfter).To(Equal(30 * time.Second))
+		})
+	})
+
+	Context("SSH host key verification condition", func() {
+		const resourceName = "test-ssh-warning"
+		const secretName = "test-secret-ssh-warning"
+		ctx := context.Background()
+		nn := types.NamespacedName{Name: resourceName, Namespace: "default"}
+
+		BeforeEach(func() {
+			createAPIKeySecret(ctx, secretName)
+		})
+
+		AfterEach(func() {
+			cr := &stokerv1alpha1.GatewaySync{}
+			if err := k8sClient.Get(ctx, nn, cr); err == nil {
+				controllerutil.RemoveFinalizer(cr, stokertypes.Finalizer)
+				_ = k8sClient.Update(ctx, cr)
+				_ = k8sClient.Delete(ctx, cr)
+			}
+			for _, prefix := range []string{"stoker-metadata-"} {
+				cm := &corev1.ConfigMap{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: prefix + resourceName, Namespace: "default"}, cm); err == nil {
+					_ = k8sClient.Delete(ctx, cm)
+				}
+			}
+			// Clean up SSH key secret
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: "test-ssh-key", Namespace: "default"}, secret); err == nil {
+				_ = k8sClient.Delete(ctx, secret)
+			}
+		})
+
+		It("should set SSHHostKeyVerification=False when SSH without knownHosts", func() {
+			// Create the SSH key secret
+			sshSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-ssh-key", Namespace: "default"},
+				Data:       map[string][]byte{"key": []byte("fake-ssh-key")},
+			}
+			Expect(k8sClient.Create(ctx, sshSecret)).To(Succeed())
+
+			cr := &stokerv1alpha1.GatewaySync{
+				ObjectMeta: metav1.ObjectMeta{Name: resourceName, Namespace: "default"},
+				Spec: stokerv1alpha1.GatewaySyncSpec{
+					Git: stokerv1alpha1.GitSpec{
+						Repo: "git@github.com:example/test.git",
+						Ref:  "main",
+						Auth: &stokerv1alpha1.GitAuthSpec{
+							SSHKey: &stokerv1alpha1.SSHKeyAuth{
+								SecretRef: stokerv1alpha1.SecretKeyRef{Name: "test-ssh-key", Key: "key"},
+							},
+						},
+					},
+					Gateway: stokerv1alpha1.GatewaySpec{API: stokerv1alpha1.GatewayAPISpec{SecretName: secretName, SecretKey: "apiKey"}},
+					Sync: stokerv1alpha1.SyncSpec{
+						Profiles: map[string]stokerv1alpha1.SyncProfileSpec{
+							"default": {Mappings: []stokerv1alpha1.SyncMapping{{Source: "config", Destination: "config"}}},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+
+			r := newReconciler(&fakeGitClient{result: git.Result{Commit: "abc123", Ref: "main"}})
+			reconcileToSteadyState(ctx, nn, r)
+
+			updated := &stokerv1alpha1.GatewaySync{}
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+
+			var cond *metav1.Condition
+			for i := range updated.Status.Conditions {
+				if updated.Status.Conditions[i].Type == conditions.TypeSSHHostKeyVerification {
+					cond = &updated.Status.Conditions[i]
+					break
+				}
+			}
+			Expect(cond).NotTo(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal(conditions.ReasonHostKeyVerificationDisabled))
+		})
+	})
+
 	Context("Pod to CR mapping", func() {
 		It("should map annotated pod to GatewaySync reconcile request", func() {
 			r := newReconciler(&fakeGitClient{})

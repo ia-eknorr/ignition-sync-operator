@@ -50,7 +50,7 @@ Each agent sidecar exposes metrics on port 8083 via a standalone Prometheus regi
 | `stoker_agent_designer_sessions_active` | Gauge | — | Count of active Ignition Designer sessions |
 | `stoker_agent_last_sync_timestamp_seconds` | Gauge | — | Unix timestamp of the last successful sync |
 | `stoker_agent_last_sync_success` | Gauge | — | Whether the last sync succeeded (1/0) |
-| `stoker_agent_sync_skipped_total` | Counter | `reason` | Skipped syncs by reason (`commit_unchanged`, `paused`, `profile_error`, `designer_blocked`) |
+| `stoker_agent_sync_skipped_total` | Counter | `reason` | Skipped syncs by reason (`commit_unchanged`, `paused`, `profile_error`, `designer_blocked`, `backoff`) |
 | `stoker_agent_gateway_startup_duration_seconds` | Histogram | — | Time from agent start to gateway becoming responsive |
 
 ## Enabling scraping

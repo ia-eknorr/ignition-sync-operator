@@ -3,11 +3,13 @@ package git
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	gogithttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	gogitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -74,11 +76,49 @@ func resolveSSHAuth(ctx context.Context, c client.Client, namespace string, sshA
 		return nil, fmt.Errorf("parsing SSH private key: %w", err)
 	}
 
-	// Accept any host key — in-cluster git operations typically use internal mirrors
-	// or deploy keys where strict host verification is managed at the network level.
-	publicKey.HostKeyCallback = ssh.InsecureIgnoreHostKey()
+	if sshAuth.KnownHosts != nil {
+		hostKeyCallback, err := resolveKnownHosts(ctx, c, namespace, sshAuth.KnownHosts)
+		if err != nil {
+			return nil, err
+		}
+		publicKey.HostKeyCallback = hostKeyCallback
+	} else {
+		publicKey.HostKeyCallback = ssh.InsecureIgnoreHostKey()
+	}
 
 	return publicKey, nil
+}
+
+// resolveKnownHosts reads a known_hosts Secret and returns a HostKeyCallback.
+// Uses a temp file because knownhosts.New() requires a file path.
+func resolveKnownHosts(ctx context.Context, c client.Client, namespace string, kh *stokerv1alpha1.KnownHosts) (ssh.HostKeyCallback, error) {
+	khSecret := &corev1.Secret{}
+	khKey := types.NamespacedName{Name: kh.SecretRef.Name, Namespace: namespace}
+	if err := c.Get(ctx, khKey, khSecret); err != nil {
+		return nil, fmt.Errorf("getting known_hosts secret %s/%s: %w", namespace, kh.SecretRef.Name, err)
+	}
+	khData, ok := khSecret.Data[kh.SecretRef.Key]
+	if !ok {
+		return nil, fmt.Errorf("key %q not found in known_hosts secret %s/%s", kh.SecretRef.Key, namespace, kh.SecretRef.Name)
+	}
+
+	tmpFile, err := os.CreateTemp("", "stoker-known-hosts-*")
+	if err != nil {
+		return nil, fmt.Errorf("creating temp known_hosts file: %w", err)
+	}
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
+
+	if _, err := tmpFile.Write(khData); err != nil {
+		_ = tmpFile.Close()
+		return nil, fmt.Errorf("writing known_hosts: %w", err)
+	}
+	_ = tmpFile.Close()
+
+	hostKeyCallback, err := knownhosts.New(tmpFile.Name())
+	if err != nil {
+		return nil, fmt.Errorf("parsing known_hosts: %w", err)
+	}
+	return hostKeyCallback, nil
 }
 
 func resolveTokenAuth(ctx context.Context, c client.Client, namespace string, tokenAuth *stokerv1alpha1.TokenAuth) (transport.AuthMethod, error) {

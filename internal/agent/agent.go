@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -11,6 +12,7 @@ import (
 	gogitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-logr/logr"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -53,6 +55,14 @@ type Agent struct {
 	lastSyncedCommit   string
 	lastSyncedProfiles string // raw profiles JSON; re-sync when CR profile changes
 	initialSyncDone    bool
+
+	// Exponential backoff for consecutive sync failures.
+	consecutiveErrors int
+	backoffUntil      time.Time
+
+	// Graceful shutdown: track in-flight syncs.
+	syncInProgress atomic.Bool
+	shutdownCh     chan struct{}
 }
 
 // New creates a new Agent with all dependencies wired.
@@ -73,6 +83,7 @@ func New(cfg *Config, k8sClient client.Client, recorder record.EventRecorder) *A
 		Metrics:      NewAgentMetrics(),
 		Watcher:      NewWatcher(k8sClient, cfg.CRNamespace, cfg.CRName, time.Duration(cfg.SyncPeriod)*time.Second),
 		Recorder:     recorder,
+		shutdownCh:   make(chan struct{}, 1),
 	}
 }
 
@@ -160,12 +171,29 @@ func (a *Agent) Run(ctx context.Context) error {
 	// Start watcher in background.
 	go a.Watcher.Run(ctx)
 
-	// Main loop: watch for trigger events.
+	// Main loop: watch for trigger events with graceful shutdown.
+	const shutdownDeadline = 15 * time.Second
+
 	for {
 		select {
 		case <-ctx.Done():
-			log.Info("shutting down")
+			log.Info("shutdown signal received")
+			a.HealthServer.MarkNotReady()
+
+			if !a.syncInProgress.Load() {
+				log.Info("no sync in progress, shutting down immediately")
+				return nil
+			}
+
+			log.Info("waiting for in-flight sync to complete", "deadline", shutdownDeadline)
+			select {
+			case <-a.shutdownCh:
+				log.Info("in-flight sync completed during shutdown")
+			case <-time.After(shutdownDeadline):
+				log.Info("shutdown deadline exceeded, aborting")
+			}
 			return nil
+
 		case <-a.Watcher.Events():
 			log.V(1).Info("sync triggered")
 			a.handleSyncTrigger(ctx, gitURL, auth)
@@ -244,6 +272,13 @@ func (a *Agent) waitForMetadata(ctx context.Context) (*Metadata, error) {
 func (a *Agent) handleSyncTrigger(ctx context.Context, gitURL string, auth transport.AuthMethod) {
 	log := logf.FromContext(ctx).WithName("sync")
 
+	// Check backoff before doing any work.
+	if time.Now().Before(a.backoffUntil) {
+		log.V(1).Info("in backoff period, skipping sync", "until", a.backoffUntil)
+		a.Metrics.SyncSkippedTotal.WithLabelValues("backoff").Inc()
+		return
+	}
+
 	meta, err := ReadMetadataConfigMap(ctx, a.K8sClient, a.Config.CRNamespace, a.Config.CRName)
 	if err != nil {
 		log.Error(err, "failed to read metadata ConfigMap")
@@ -277,13 +312,29 @@ func (a *Agent) handleSyncTrigger(ctx context.Context, gitURL string, auth trans
 		log.Info("profiles changed, re-syncing", "commit", meta.Commit)
 	}
 
+	// Mark sync in progress for graceful shutdown tracking.
+	a.syncInProgress.Store(true)
+	defer func() {
+		a.syncInProgress.Store(false)
+		select {
+		case a.shutdownCh <- struct{}{}:
+		default:
+		}
+	}()
+
+	// Use a context that survives SIGTERM so in-flight syncs can complete.
+	syncCtx := context.WithoutCancel(ctx)
+
 	// Fetch and checkout new commit.
 	fetchStart := time.Now()
-	result, err := a.GitClient.CloneOrFetch(ctx, gitURL, meta.Ref, a.Config.RepoPath, auth)
+	result, err := a.GitClient.CloneOrFetch(syncCtx, gitURL, meta.Ref, a.Config.RepoPath, auth)
 	a.Metrics.GitFetchDuration.WithLabelValues("fetch").Observe(time.Since(fetchStart).Seconds())
 	if err != nil {
 		a.Metrics.GitFetchTotal.WithLabelValues("fetch", "error").Inc()
-		log.Error(err, "git fetch failed")
+		a.consecutiveErrors++
+		delay := min(30*time.Second<<(a.consecutiveErrors-1), 5*time.Minute)
+		a.backoffUntil = time.Now().Add(delay)
+		log.Error(err, "git fetch failed, backing off", "consecutiveErrors", a.consecutiveErrors, "retryIn", delay)
 		a.reportError(ctx, meta.Commit, meta.Ref, fmt.Sprintf("git fetch: %v", err))
 		return
 	}
@@ -316,8 +367,14 @@ func (a *Agent) handleSyncTrigger(ctx context.Context, gitURL string, auth trans
 
 	_ = profileName // used in syncWithProfile via metadata re-read
 
-	if syncErr := a.syncOnce(ctx, result.Commit, result.Ref, false, meta.Profiles); syncErr != nil {
-		log.Error(syncErr, "sync had errors")
+	if syncErr := a.syncOnce(syncCtx, result.Commit, result.Ref, false, meta.Profiles); syncErr != nil {
+		a.consecutiveErrors++
+		delay := min(30*time.Second<<(a.consecutiveErrors-1), 5*time.Minute)
+		a.backoffUntil = time.Now().Add(delay)
+		log.Error(syncErr, "sync had errors, backing off", "consecutiveErrors", a.consecutiveErrors, "retryIn", delay)
+	} else {
+		a.consecutiveErrors = 0
+		a.backoffUntil = time.Time{}
 	}
 }
 
@@ -495,6 +552,14 @@ func (a *Agent) syncOnce(ctx context.Context, commit, ref string, isInitial bool
 		"profile", profileName,
 		"dryRun", isDryRun,
 	)
+
+	// During shutdown, skip scan and status write — file sync (critical) is done.
+	if a.HealthServer.IsShuttingDown() {
+		log.Info("shutdown in progress, skipping scan and status write")
+		a.lastSyncedCommit = commit
+		a.lastSyncedProfiles = profiles
+		return nil
+	}
 
 	// Trigger Ignition scan API on every non-initial sync (regardless of filesChanged).
 	// Only report "Synced" if both scan endpoints return 200.
@@ -711,7 +776,15 @@ func (a *Agent) resolveFileAuth() transport.AuthMethod {
 	if sshKey := a.Config.GitSSHKey(); len(sshKey) > 0 {
 		publicKey, err := gogitssh.NewPublicKeys("git", sshKey, "")
 		if err == nil {
-			publicKey.HostKeyCallback = ssh.InsecureIgnoreHostKey()
+			if a.Config.GitKnownHostsFile != "" {
+				if hostKeyCallback, khErr := knownhosts.New(a.Config.GitKnownHostsFile); khErr == nil {
+					publicKey.HostKeyCallback = hostKeyCallback
+				} else {
+					publicKey.HostKeyCallback = ssh.InsecureIgnoreHostKey()
+				}
+			} else {
+				publicKey.HostKeyCallback = ssh.InsecureIgnoreHostKey()
+			}
 			return publicKey
 		}
 	}

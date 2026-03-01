@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.5.0] - 2026-03-01
+
+### Added
+
+- **SSH host key verification** — optional `knownHosts` field on `spec.git.auth.sshKey` references a Secret containing SSH `known_hosts` data; when configured, both the controller (`ls-remote`) and agent (clone/fetch) use strict host key checking instead of `InsecureIgnoreHostKey`; a new `SSHHostKeyVerification` status condition warns when SSH auth is used without `knownHosts`
+- **Exponential backoff** — transient git and secret validation errors now back off exponentially (30s → 60s → 120s → 240s → 5min cap) instead of retrying every 30s; backoff resets on success or webhook-triggered reconcile; applies to both controller ref resolution and agent sync loop
+- **Graceful shutdown** — agent catches SIGTERM, marks readiness probe as failing immediately, waits up to 15s for any in-flight file sync to complete before exiting; prevents partial file writes when pods are terminated
+
 ## [v0.4.10] - 2026-02-28
 
 ### Fixed
@@ -175,6 +183,8 @@ Initial release — controller + agent sidecar for Git-driven Ignition gateway c
 - **Functional test suite** with phased kind cluster tests (phases 02-09)
 - Unit tests with envtest for controller and syncengine
 
+[v0.5.0]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.5.0
+[v0.4.10]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.10
 [v0.4.9]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.9
 [v0.4.8]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.8
 [v0.4.7]: https://github.com/ia-eknorr/stoker-operator/releases/tag/v0.4.7
