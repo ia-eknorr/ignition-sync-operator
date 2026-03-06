@@ -248,6 +248,20 @@ func isUnderManagedRoot(relPath string, managedRoots map[string]bool) bool {
 	return false
 }
 
+// isAncestorOfManagedRoot returns true if relPath is a strict parent directory
+// of any managed root. For example, "config" is an ancestor of
+// "config/resources/core". Used to allow traversal into parent directories
+// without treating them as managed (i.e. eligible for orphan deletion).
+func isAncestorOfManagedRoot(relPath string, managedRoots map[string]bool) bool {
+	relPath = filepath.ToSlash(relPath)
+	for root := range managedRoots {
+		if strings.HasPrefix(root, relPath+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 // mergeStagingToLive walks staging and copies changed files to live.
 func mergeStagingToLive(stagingDir, liveDir string) (added, modified int, err error) {
 	err = filepath.WalkDir(stagingDir, func(stagingPath string, d fs.DirEntry, walkErr error) error {
@@ -332,6 +346,11 @@ func cleanOrphans(stagingDir, liveDir string, managedRoots map[string]bool, excl
 		// Only clean within managed roots.
 		if !isUnderManagedRoot(relPath, managedRoots) {
 			if d.IsDir() {
+				// Traverse into parent directories of managed roots so we can
+				// reach nested managed subtrees (e.g. "config" → "config/resources/dev").
+				if isAncestorOfManagedRoot(relPath, managedRoots) {
+					return nil
+				}
 				return filepath.SkipDir
 			}
 			return nil
@@ -348,6 +367,22 @@ func cleanOrphans(stagingDir, liveDir string, managedRoots map[string]bool, excl
 				return fmt.Errorf("removing orphan %s: %w", relPath, removeErr)
 			}
 			deleted++
+			// Remove now-empty parent directories up to the managed root boundary.
+			parentDir := filepath.Dir(livePath)
+			for {
+				parentRel, relErr := filepath.Rel(liveDir, parentDir)
+				if relErr != nil || !isUnderManagedRoot(filepath.ToSlash(parentRel), managedRoots) {
+					break
+				}
+				entries, rdErr := os.ReadDir(parentDir)
+				if rdErr != nil || len(entries) > 0 {
+					break
+				}
+				if rmErr := os.Remove(parentDir); rmErr != nil {
+					break
+				}
+				parentDir = filepath.Dir(parentDir)
+			}
 		}
 		return nil
 	})
@@ -417,6 +452,11 @@ func computeDryRunDiff(stagingDir, liveDir string, managedRoots map[string]bool,
 
 		if !isUnderManagedRoot(relPath, managedRoots) {
 			if d.IsDir() {
+				// Traverse into parent directories of managed roots so we can
+				// reach nested managed subtrees (e.g. "config" → "config/resources/dev").
+				if isAncestorOfManagedRoot(relPath, managedRoots) {
+					return nil
+				}
 				return filepath.SkipDir
 			}
 			return nil

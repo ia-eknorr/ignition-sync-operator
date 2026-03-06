@@ -489,6 +489,78 @@ func TestExecutePlan_RootLevelFileMappingDoesNotOrphanUnmanagedPaths(t *testing.
 	}
 }
 
+func TestExecutePlan_OrphanCleanup_NestedManagedRoot(t *testing.T) {
+	tmp := t.TempDir()
+	src := filepath.Join(tmp, "src")
+	staging := filepath.Join(tmp, "staging")
+	live := filepath.Join(tmp, "live")
+
+	// Git source has only "Features" — "Audit" was removed.
+	writeTestFile(t, filepath.Join(src, "Features", "config.json"), `{}`)
+
+	// Live gateway still has "Audit" from a prior sync (the orphan).
+	writeTestFile(t, filepath.Join(live, "config", "resources", "dev", "ignition", "audit-profile", "Audit", "config.json"), `{}`)
+	writeTestFile(t, filepath.Join(live, "config", "resources", "dev", "ignition", "audit-profile", "Features", "config.json"), `{}`)
+
+	engine := &Engine{}
+	plan := &SyncPlan{
+		Mappings: []ResolvedMapping{
+			{Source: src, Destination: "config/resources/dev/ignition/audit-profile", Type: "dir"},
+		},
+		StagingDir: staging,
+		LiveDir:    live,
+	}
+
+	result, err := engine.ExecutePlan(plan)
+	if err != nil {
+		t.Fatalf("ExecutePlan: %v", err)
+	}
+
+	// "Audit" must be deleted — it is not in git.
+	if _, err := os.Stat(filepath.Join(live, "config", "resources", "dev", "ignition", "audit-profile", "Audit")); !os.IsNotExist(err) {
+		t.Error("Audit/ should have been deleted by orphan cleanup")
+	}
+	// "Features" must survive — it is in git.
+	if _, err := os.Stat(filepath.Join(live, "config", "resources", "dev", "ignition", "audit-profile", "Features", "config.json")); err != nil {
+		t.Error("Features/config.json should have been preserved")
+	}
+	if result.FilesDeleted != 1 {
+		t.Errorf("expected 1 deleted, got %d", result.FilesDeleted)
+	}
+}
+
+func TestExecutePlan_DryRun_NestedManagedRoot_DetectsOrphan(t *testing.T) {
+	tmp := t.TempDir()
+	src := filepath.Join(tmp, "src")
+	staging := filepath.Join(tmp, "staging")
+	live := filepath.Join(tmp, "live")
+
+	writeTestFile(t, filepath.Join(src, "keep.json"), `{}`)
+	writeTestFile(t, filepath.Join(live, "config", "resources", "dev", "keep.json"), `{}`)
+	writeTestFile(t, filepath.Join(live, "config", "resources", "dev", "orphan.json"), `{}`)
+
+	engine := &Engine{}
+	plan := &SyncPlan{
+		Mappings: []ResolvedMapping{
+			{Source: src, Destination: "config/resources/dev", Type: "dir"},
+		},
+		StagingDir: staging,
+		LiveDir:    live,
+		DryRun:     true,
+	}
+
+	result, err := engine.ExecutePlan(plan)
+	if err != nil {
+		t.Fatalf("ExecutePlan: %v", err)
+	}
+	if result.DryRunDiff == nil {
+		t.Fatal("expected DryRunDiff")
+	}
+	if len(result.DryRunDiff.Deleted) != 1 {
+		t.Errorf("expected 1 deleted in dry-run diff, got %d: %v", len(result.DryRunDiff.Deleted), result.DryRunDiff.Deleted)
+	}
+}
+
 // Helpers
 
 func writeTestFile(t *testing.T, path, content string) {
